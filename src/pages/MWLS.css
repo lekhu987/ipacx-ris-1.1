@@ -1,0 +1,186 @@
+.mwl-content-area { 
+    padding: 20px 18px 18px 0px; 
+} 
+
+.page-header { 
+    font-size: 24px; 
+    margin-bottom: 12px; 
+    color: #333; 
+}
+
+/* Toolbar */
+.mwl-toolbar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.mwl-toolbar .btn {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.mwl-toolbar .btn.primary { background: #4a90e2; color: white; }
+.mwl-toolbar .btn.danger { background: #ff6b6b; color: white; }
+.mwl-toolbar .btn.secondary { background: #50c878; color: white; }
+.mwl-toolbar .btn:hover { filter: brightness(0.9); }
+
+/* === MWLS Table Base & Fixed Layout === */
+.mwl-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed; /* Essential for alignment */
+  font-weight: 600;
+}
+
+.mwl-table thead {
+  background: #f8f9fb;
+}
+
+.mwl-table th {
+  padding: 8px 10px;
+  font-weight: 600;
+  border-bottom: 1px solid #ddd;
+  position: relative;
+  vertical-align: top;
+  text-align: left;
+  display: table-cell;
+  background: #f8f9fb;
+  z-index: 2;
+  
+  font-size: 16px; /* Header font size */
+}
+
+/* Column widths (adjust based on MWLS columns) */
+.mwl-table th:nth-child(1) { width: 50px; }   /* Checkbox/Icon */
+.mwl-table th:nth-child(2) { width: 100px; }  /* Patient ID */
+.mwl-table th:nth-child(3) { width: 150px; }  /* Patient Name */
+.mwl-table th:nth-child(4) { width: 80px; } 
+.mwl-table th:nth-child(5) { width: 80px; }   /* Gender */
+.mwl-table th:nth-child(6) { width: 60px; }   /* Age */
+.mwl-table th:nth-child(7) { width: 80px; }  /* Modality */
+.mwl-table th:nth-child(8) { width: 120px; }  /* Scheduling Date */
+.mwl-table th:nth-child(9) { width: 120px; }  /* Body Part */
+.mwl-table th:nth-child(10) { width: 120px; }  /* Referring Physician */
+
+/* Filter input style */
+.mwl-table .filter-input {
+  width: 100%;
+  margin-top: 3px;
+  padding: 4px 6px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  box-sizing: border-box;
+  height: 24px;
+
+}
+
+/* Data cells */
+.mwl-table td {
+  padding: 10px;
+  
+  font-size: 13px;
+  font-weight: 400;
+  color: #000000;
+  border-bottom: 1px solid #eee;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Allow wrapping for long text */
+.mwl-table td.break {
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* Table cell for actions/icons */
+.mwl-table td.actions {
+  width: 60px; /* Adjust if needed */
+  text-align: center;
+  white-space: nowrap;
+}
+
+/* Icon button style */
+.mwl-table .icon-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  margin: 0 2px;
+}
+
+/* Borders between cells */
+.mwl-table th,
+.mwl-table td {
+  border-right: 1px solid #ddd;
+}
+
+.mwl-table th:last-child,
+.mwl-table td:last-child {
+  border-right: none;
+}
+
+/* Resizable columns handle */
+.mwl-table th.resizable::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+}
+
+/* Table wrapper */
+.table-wrapper {
+  position: relative;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+/* Empty table row */
+.mwl-table .empty {
+  text-align: center;
+  padding: 12px;
+  color: #666;
+}
+
+/* Loading */
+.mwl-loading {
+  padding: 20px;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+  .table-wrapper {
+    overflow-x: auto;
+  }
+}
+
+.small-alert-box {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #fff;
+  border: 1px solid #ddd;
+  padding: 15px 20px;
+  z-index: 9999;
+  border-radius: 6px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  width: 280px;
+  text-align: center;
+}

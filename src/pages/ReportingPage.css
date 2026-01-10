@@ -1,0 +1,277 @@
+/* ====================== SUMMARY CARDS ====================== */
+/* Main container for the top dashboard statistics */
+.summary-cards, .report-summary-cards {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+/* Individual card styling with hover transition */
+.summary-cards .card, .report-summary-cards .card {
+  flex: 1;
+  padding: 3px;
+  border-radius: 8px;
+  text-align: left;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  transition: transform 0.2s;
+}
+
+.report-summary-cards .card:hover {
+  transform: translateY(-2px);
+}
+
+.report-summary-cards .card h3 {
+  margin-top: 0;
+  font-size: 1em;
+  color: #555;
+}
+
+.report-summary-cards .card .count {
+  font-size: 2em;
+  font-weight: bold;
+  margin: 0;
+}
+
+/* ====================== BUTTONS ====================== */
+.btn {
+  border: 1px solid #ccc;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+/* Primary action buttons like "Add New Report" */
+.add-report-btn, .back-btn {
+  padding: 6px 12px !important;
+  font-size: 14px !important;
+  border-radius: 6px !important;
+  background: #1976d2 !important;
+  color: white !important;
+  height: auto !important;
+  line-height: normal !important;
+}
+
+/* Small icons used in the actions column */
+.icon-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+  color: #000;
+  padding: 4px 6px;
+}
+
+.icon-btn:hover {
+  transform: scale(1.15);
+  transition: transform 0.15s;
+}
+
+/* ====================== TOP BAR ====================== */
+.top-bar {
+  margin-top: 8px !important;
+  padding-top: 8px !important;
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+}
+
+.top-bar h2 {
+  margin: 0 !important;
+  padding: 0 !important;
+  font-size: 22px !important;
+}
+
+/* ====================== STATUS BADGE ====================== */
+/* Compact status badges to save horizontal space in the Status column */
+.status-badge.draft {
+  background-color: #ffe0b2;
+  color: #f57c00; 
+  padding: 2px 6px; /* Reduced padding */
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 11px; /* Smaller font for a tighter look */
+  display: inline-block;
+  min-width: 50px;
+  text-align: center;
+}
+
+.status-badge.final {
+  background-color: #c8e6c9;
+  color: #388e3c; 
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 11px;
+  display: inline-block;
+  min-width: 50px;
+  text-align: center;
+}
+
+/* ====================== TABLE CORE STYLES ====================== */
+.patient-table-wrap {
+  overflow-x: auto; /* Enables horizontal scroll if screen is too small */
+}
+
+.patient-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: auto;
+}
+
+/* Reduced cell padding and smaller font size to fit more data */
+.patient-table th, .patient-table td {
+  padding: 6px 4px !important; 
+  border: 1px solid #ddd;
+  text-align: left;
+  font-size: 13px;
+  white-space: nowrap; /* Keeps IDs and Dates on one line */
+  vertical-align: middle;
+}
+
+.patient-table th {
+  background: #f9f9f9;
+}
+
+.patient-table tbody tr:hover {
+  background: #f5f5f5;
+}
+
+/* ====================== COLUMN-SPECIFIC WIDTHS ====================== */
+/* Tightening columns for IDs, Modality, and Accession */
+.patient-table th:nth-child(1), .patient-table td:nth-child(1) { width: 30px; text-align: center; } /* # col */
+
+.patient-table th.patient-id, .patient-table td.patient-id { 
+  width: 80px; 
+}
+
+.patient-table th.modality, .patient-table td.modality { 
+  width: 50px; 
+  text-align: center; 
+}
+
+.patient-table th.accession, .patient-table td.accession { 
+  width: 70px; 
+}
+
+.patient-table th.study-date, .patient-table td.study-date { 
+  width: 85px; 
+}
+
+.patient-table th.status, .patient-table td.status { 
+  width: 70px; 
+  text-align: center; 
+}
+
+/* Flexible column: Patient Name allows text wrapping to save horizontal space */
+.patient-table th.patient-name, .patient-table td.patient-name {
+  min-width: 150px;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.2;
+}
+
+.empty-row {
+  text-align: center;
+  font-style: italic;
+  padding: 10px 0;
+}
+
+/* ====================== ACTIONS COLUMN FIX ====================== */
+/* Ensures the edit icons don't stretch the table width */
+.patient-root .patient-table th.actions-col,
+.patient-root .patient-table td.actions-col {
+  width: 50px !important;
+  min-width: 50px !important;
+  max-width: 50px !important;
+  text-align: center;
+  white-space: nowrap;
+  padding: 2px !important;
+}
+
+.patient-root .patient-table td.actions-col > div {
+  display: flex !important;
+  gap: 2px !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+.patient-root .patient-table td.actions-col .icon-btn {
+  width: 28px !important;
+  height: 28px !important;
+  font-size: 16px !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background: transparent !important;
+  border: none !important;
+  cursor: pointer !important;
+  color: #000 !important;
+  transition: transform 0.15s;
+}
+
+/* ====================== FILTERS & UI ====================== */
+.filters, .patient-quickbar {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.filters input, .filters select, .patient-quickbar input, .patient-quickbar select {
+  padding: 6px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+}
+
+.patient-loading {
+  padding: 20px;
+  text-align: center;
+  font-style: italic;
+  color: #666;
+}
+
+.pagination-corner {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.pagination-corner .page-number {
+  font-weight: 600;
+}
+
+/* ====================== SUMMARY CARD COLORS ====================== */
+.report-summary-cards .total-card {
+  background-color: #e3f2fd;
+  border-left: 5px solid #2196f3;
+}
+
+.report-summary-cards .draft-card {
+  background-color: #fff3e0;
+  border-left: 5px solid #ff9800;
+}
+
+.report-summary-cards .final-card {
+  background-color: #e8f5e9;
+  border-left: 5px solid #4caf50;
+}
+
+.report-summary-cards .today-card {
+  background-color: #fce4ec;
+  border-left: 5px solid #e91e63;
+}
+.status-badge.addendum {
+  background-color: #c8e6c9;
+  color: #7e2cf2e5; 
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 11px;
+  display: inline-block;
+  min-width: 50px;
+  text-align: center;
+}

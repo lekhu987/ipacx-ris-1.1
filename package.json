@@ -1,0 +1,56 @@
+{
+  "name": "ipacx-ris",
+  "version": "0.1.0",
+  "private": true,
+  "dependencies": {
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^13.5.0",
+    "@tiptap/extension-heading": "^3.11.0",
+    "@tiptap/extension-text-align": "^3.11.0",
+    "@tiptap/extension-text-style": "^3.11.0",
+    "@tiptap/extension-underline": "^3.11.0",
+    "@tiptap/react": "^3.11.0",
+    "@tiptap/starter-kit": "^3.11.0",
+    "axios": "^1.13.2",
+    "date-fns": "^2.30.0",
+    "dayjs": "^1.11.19",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.4",
+    "jwt-decode": "^4.0.0",
+    "multer": "^2.0.2",
+    "quill": "^2.0.3",
+    "react": "^19.2.0",
+    "react-data-table-component": "^7.7.0",
+    "react-date-range": "^2.0.1",
+    "react-dom": "^19.2.0",
+    "react-quill": "^2.0.0",
+    "react-router-dom": "^6.30.2",
+    "react-scripts": "5.0.1",
+    "styled-components": "^6.1.19",
+    "web-vitals": "^2.1.4"
+  },
+  "proxy": "http://localhost:5000",
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0"
+  }
+}

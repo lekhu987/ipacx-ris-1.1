@@ -1,0 +1,80 @@
+.layout-container {
+  display: flex;
+  height: 100vh;
+  width: 100%; /* make container full width */
+  overflow: hidden; /* prevent extra scroll */
+}
+
+/* Sidebar */
+.sidebar {
+  width: 160px;
+  background: #f1f1f1;
+  /* FIX: Remove ALL padding from the container. Alignment is now defined by children. */
+  padding: 0; 
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0; 
+}
+
+/* Application name at top */
+.app-name {
+  font-size: 22px;
+  margin-bottom: 20px;
+  /* FIX: Set top/bottom padding and the consistent 10px left alignment */
+  padding: 20px 10px 20px 10px;
+}
+
+/* Menu links (Dashboard, Scheduling, etc.) */
+.sidebar a {
+  text-decoration: none;
+  color: #000;
+  /* FIX: Consistent 10px left padding to align with App Name */
+  padding: 10px 10px 10px 10px;
+  font-size: 16px;
+  display: block;
+}
+
+.sidebar a:hover {
+  color: #004aad;
+}
+
+/* Admin Settings */
+.admin-section-title {
+  margin-top: 08px;
+  cursor: pointer;
+  /* FIX: Consistent 10px left padding */
+  padding: 5px 10px 5px 10px;
+}
+
+.admin-submenu a {
+  /* FIX: Remove margin-left and use padding-left for a 10px indent (20px total) */
+  margin-left: 0; 
+  padding: 5px 10px 5px 20px; 
+  font-size: 12px;
+  display: block;
+}
+
+/* Username + Logout */
+.bottom-username {
+  margin-top: auto;
+  border-top: 1px solid #ccc;
+  /* FIX: Apply consistent 10px left padding and full vertical padding */
+  padding: 20px 10px 20px 10px;
+  cursor: pointer;
+}
+
+.bottom-username button {
+  margin-top: 5px;
+  width: 100%;
+  background: #004aad;
+  color: white;
+  border: none;
+  padding: 4px;
+  cursor: pointer;
+}
+
+.content {
+  flex: 1;
+  padding: 0  20px; 
+  overflow-y: auto;
+}

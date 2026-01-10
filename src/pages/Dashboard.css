@@ -1,0 +1,76 @@
+.dashboard-root {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Header */
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  height: 60px;
+}
+
+.header-left h1 {
+  font-size: 22px;
+  font-weight: 600;
+  margin: 0;
+  color: #04090c;
+}
+
+/* Cards row */
+.dashboard-root .cards-row {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+/* 🔥 HIGH-SPECIFICITY CARD FIX */
+.dashboard-root .cards-row .card {
+  flex: 1 1 220px;
+  min-width: 180px;
+  background: linear-gradient(135deg, #6c8ac2, #6d7f9f) !important;
+  border-radius: 8px;
+  padding: 16px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+  position: relative;
+  color: #fff;
+}
+
+/* Hover */
+.dashboard-root .cards-row .card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+}
+
+/* Value */
+.dashboard-root .card-value {
+  font-size: 32px;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+/* Title */
+.dashboard-root .card-title {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #e0e6f0;
+}
+
+/* Date picker */
+.dashboard-root .card-date-picker {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 105px;
+  font-size: 12px;
+  padding: 4px 6px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #ffffff;
+  cursor: pointer;
+}

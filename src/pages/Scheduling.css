@@ -1,0 +1,48 @@
+.scheduling-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: px;
+}
+
+.add-btn {
+  padding: 6px 10px;
+  background-color: #2b5b9a;
+  color: white;
+  border: none;
+  border-radius: 0px;
+  cursor: pointer;
+}
+
+.add-btn:hover {
+  background-color: #00347a;
+}
+
+.date-nav {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+  gap: 10px;
+}
+
+.date-nav button {
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.schedule-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.schedule-table th,
+.schedule-table td {
+  border: 1px solid #ccc;
+  padding: 8px;
+  text-align: left;
+}
+
+.schedule-table th {
+  background-color:#f8f9fb;
+
+}

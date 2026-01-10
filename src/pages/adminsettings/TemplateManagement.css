@@ -1,0 +1,179 @@
+/* src/pages/adminsettings/TemplateManagement.css */
+.page-title {
+  font-size: 24px; 
+    margin-bottom: 12px; 
+    color: #333; 
+  color: #333;
+}
+
+/* Main buttons (Tabs) */
+.main-buttons-container,
+.sub-buttons-container {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.main-btn,
+.sub-btn {
+  padding: 10px 20px;
+  border: none;
+  border-radius: 8px;
+  background-color: #e0e0e0;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.main-btn.active,
+.sub-btn.active {
+  background-color: #4f46e5;
+  color: #fff;
+}
+
+.main-btn:hover:not(.active),
+.sub-btn:hover:not(.active) {
+  background-color: #d1d5db;
+}
+
+/* Add Template Form */
+.add-template-container {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  background-color: #fff;
+  padding: 25px;
+  border-radius: 10px;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.05);
+}
+
+.add-template-container label {
+  font-weight: 500;
+  color: #555;
+}
+
+.input-box {
+  padding: 10px 12px;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-size: 15px;
+  width: 100%;
+  box-sizing: border-box;
+  transition: all 0.2s ease;
+}
+
+.input-box:focus {
+  border-color: #4f46e5;
+  outline: none;
+}
+
+/* Buttons */
+.button-group {
+  display: flex;
+  gap: 15px;
+  margin-top: 10px;
+}
+
+.default-btn,
+.add-btn,
+.delete-btn {
+  padding: 10px 18px;
+  border: none;
+  border-radius: 8px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.default-btn {
+  background-color: #6b7280;
+  color: #fff;
+}
+
+.default-btn:hover {
+  background-color: #4b5563;
+}
+
+.add-btn {
+  background-color: #4f46e5;
+  color: #fff;
+}
+
+.add-btn:hover {
+  background-color: #4338ca;
+}
+
+.delete-btn {
+  background-color: #ef4444;
+  color: #fff;
+  padding: 6px 12px;
+  font-size: 14px;
+}
+
+.delete-btn:hover {
+  background-color: #b91c1c;
+}
+
+/* Table */
+.template-table {
+  width: 100%;
+  border-collapse: collapse;
+  background-color: #fff;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.05);
+}
+
+.template-table th,
+.template-table td {
+  padding: 12px 15px;
+  text-align: left;
+  font-size: 14px;
+  color: #333;
+}
+
+.template-table th {
+  background-color: #f3f4f6;
+  font-weight: 600;
+}
+
+.template-table tbody tr:nth-child(even) {
+  background-color: #f9fafb;
+}
+
+.template-table tbody tr:hover {
+  background-color: #e0e7ff;
+}
+
+/* Responsive adjustments */
+@media screen and (max-width: 768px) {
+  .main-buttons-container,
+  .sub-buttons-container {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .button-group {
+    flex-direction: column;
+  }
+
+  .template-table th,
+  .template-table td {
+    font-size: 13px;
+    padding: 8px 10px;
+  }
+}
+.edit-btn {
+  background-color: #22c55e;
+  color: #fff;
+  padding: 6px 12px;
+  font-size: 14px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+.edit-btn:hover {
+  background-color: #16a34a;
+}
