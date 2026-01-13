@@ -1,3 +1,4 @@
+/* Full page container centered */
 .login-container {
   height: 100vh;
   display: flex;
@@ -6,6 +7,7 @@
   background: #f0f2f5;
 }
 
+/* The login box */
 .login-box {
   width: 350px;
   padding: 30px;
@@ -16,19 +18,28 @@
   flex-direction: column;
 }
 
+/* Heading */
 .login-box h2 {
   text-align: center;
   margin-bottom: 20px;
+  font-size: 24px;
 }
 
+/* Inputs */
 .login-box input {
+  width: 100%;
   margin-bottom: 15px;
   padding: 12px;
   border-radius: 5px;
   border: 1px solid #aaa;
+  font-size: 16px;
+  box-sizing: border-box;
 }
 
+/* Login button */
 .login-box button {
+  display: block;      /* ensures it appears below inputs */
+  width: 100%;         /* full width */
   padding: 12px;
   background: #004aad;
   color: white;
@@ -36,8 +47,16 @@
   border-radius: 5px;
   font-size: 16px;
   cursor: pointer;
+  margin-top: 10px;    /* space above button */
 }
 
+/* Button hover effect */
 .login-box button:hover {
   background: #00347a;
+}
+
+/* Disabled button styling */
+.login-box button:disabled {
+  background: #7aa7e9;
+  cursor: not-allowed;
 }

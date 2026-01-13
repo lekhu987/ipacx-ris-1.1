@@ -1,4 +1,3 @@
-// src/components/Login/login.jsx
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
@@ -13,7 +12,9 @@ function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogin = async () => {
+  const handleLogin = async (e) => {
+    e.preventDefault();
+
     if (!username || !password) {
       return alert("Please enter username and password");
     }
@@ -21,43 +22,32 @@ function Login() {
     try {
       setLoading(true);
 
-      // Call login API
-      const res = await api.post("/api/login", { username, password });
-      console.log("FULL LOGIN RESPONSE:", res);
+      // Send login request with credentials
+      const res = await api.post(
+        "/api/auth/login",
+        { username, password },
+        { withCredentials: true } // important to receive cookies
+      );
 
-      if (!res.data || !res.data.accessToken || !res.data.user) {
-        console.error("Invalid login response:", res.data);
-        alert("Login failed: invalid server response");
-        return;
+      // Backend sends user info in response
+      if (!res.data || !res.data.user) {
+        console.error("Server response:", res.data);
+        return alert("Login failed: invalid server response");
       }
 
-      const { user, accessToken } = res.data;
+      const { user } = res.data;
 
-      // Set 45-minute expiry
-      const expiry = new Date(Date.now() + 45 * 60 * 1000);
+      // Save user in AuthContext/sessionStorage
+      login(user);
 
-      // Save session
-      sessionStorage.setItem("accessToken", accessToken);
-      sessionStorage.setItem("userData", JSON.stringify(user));
-      sessionStorage.setItem("tokenExpiry", expiry.toISOString());
-      sessionStorage.setItem("isSessionAuth", "true");
-
-      // Update Auth Context
-      login({
-        ...user,
-        accessToken,  
-        tokenExpiry: expiry.toISOString(),
-      });
-
-      // Redirect all users to dashboard
+      // Navigate to dashboard
       navigate("/dashboard");
-
     } catch (err) {
-      if (err.response) {
-        console.error("Login error response:", err.response.data);
-        alert(err.response.data.message || "Login failed: wrong credentials");
+      console.error("Login error:", err);
+
+      if (err.response?.data?.message) {
+        alert(err.response.data.message);
       } else {
-        console.error("Login error:", err);
         alert("Login failed: server not reachable");
       }
     } finally {
@@ -68,21 +58,24 @@ function Login() {
   return (
     <div className="login-container">
       <div className="login-box">
-        <h2>Login</h2>
-        <input
-          placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
-        <button onClick={handleLogin} disabled={loading}>
-          {loading ? "Logging in..." : "Login"}
-        </button>
+        <h2>iPacx RIS Login</h2>
+        <form onSubmit={handleLogin}>
+          <input
+            type="text"
+            placeholder="Username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <button type="submit" disabled={loading}>
+            {loading ? "Logging in..." : "Login"}
+          </button>
+        </form>
       </div>
     </div>
   );

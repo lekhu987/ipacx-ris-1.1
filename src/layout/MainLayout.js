@@ -70,7 +70,7 @@ function MainLayout({ children }) {
           {showUserInfo && (
             <div className="user-info" style={{ marginTop: "5px", fontSize: "0.85rem", color: "#0b0909ff" }}>
               <div>Role: {role}</div>
-              <div>Token expires: {tokenExpiry}</div>
+              
               <button
                 onClick={(e) => {
                   e.stopPropagation();

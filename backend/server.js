@@ -9,7 +9,7 @@ const multer = require("multer");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const cookieParser = require("cookie-parser");
-
+const auditMiddleware = require("./middleware/auditMiddleware");
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -17,22 +17,52 @@ if (!process.env.JWT_SECRET) {
   throw new Error("JWT_SECRET is not set");
 }
 const JWT_SECRET = process.env.JWT_SECRET;
-const JWT_EXPIRES = "8h";
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
+const ACCESS_EXPIRES = "15m";   // short-lived
+const REFRESH_EXPIRES = "7d";   // long-lived
+
 
 // Utils
 const generateFinalReportPDF = require("./utils/generateFinalReportPDF");
+app.use(express.json());
+app.use(cookieParser());
+// ======================================================
+// Decode JWT (for audit logs – does NOT block request)
+// ======================================================
+app.use((req, res, next) => {
+  const token =
+    req.cookies.accessToken ||
+    (req.headers.authorization &&
+      req.headers.authorization.split(" ")[1]);
+
+  if (!token) return next();
+
+  jwt.verify(token, JWT_SECRET, (err, decoded) => {
+    if (!err) {
+      req.user = decoded; // 👈 THIS IS WHAT AUDIT NEEDS
+    }
+    next();
+  });
+});
+
+
+
+
+// 📝 then audit
+app.use(auditMiddleware);
 
 // Middleware
 app.use(cors({
   origin: 'http://localhost:3000',  // frontend URL
   credentials: true                 // allow cookies
 }));
-app.use(express.json());
 app.use(
   "/uploads/report_images",
   express.static(path.join(__dirname, "uploads/report_images"))
 );
-app.use(cookieParser());
+
+
+
 
 // ======================================================
 // PostgreSQL CONNECTION
@@ -93,14 +123,15 @@ function authorizeRoles(...roles) {
   };
 }
 
-// login route
-app.post("/api/login", async (req, res) => {
+//login
+app.post("/api/auth/login", async (req, res) => {
   try {
     const { username, password } = req.body;
 
     if (!username || !password) {
       return res.status(400).json({ message: "Username & password required" });
     }
+
     const result = await pool.query(
       `
       SELECT id, username, role, password_hash, is_active
@@ -110,13 +141,12 @@ app.post("/api/login", async (req, res) => {
       [username]
     );
 
-    if (!result.rows.length) {
+    if (result.rows.length === 0) {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
     const user = result.rows[0];
 
-    // 🚫 inactive user
     if (!user.is_active) {
       return res.status(403).json({
         message: "Account is disabled. Contact admin."
@@ -131,25 +161,80 @@ app.post("/api/login", async (req, res) => {
     const accessToken = jwt.sign(
       { id: user.id, username: user.username, role: user.role },
       JWT_SECRET,
-      { expiresIn: JWT_EXPIRES }
+      { expiresIn: ACCESS_EXPIRES }
     );
 
-    const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000);
+    const refreshToken = jwt.sign(
+      { id: user.id, role: user.role },
+      JWT_REFRESH_SECRET,
+      { expiresIn: REFRESH_EXPIRES }
+    );
 
-    res.json({
+    // 🍪 refresh token
+    res.cookie("refreshToken", refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "Strict",
+      maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+
+    // 🍪 access token (IMPORTANT)
+    res.cookie("accessToken", accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "Strict",
+      maxAge: 15 * 60 * 1000
+    });
+
+    // 👤 for audit
+    req.user = {
+      id: user.id,
+      username: user.username,
+      role: user.role
+    };
+    req.auditAction = "USER LOGIN";
+
+    return res.json({
       user: {
         id: user.id,
         username: user.username,
-        role: user.role,
-      },
-      accessToken,
-      expiresAt,
+        role: user.role
+      }
     });
+
   } catch (err) {
     console.error("Login error:", err);
-    res.status(500).json({ message: "Internal server error" });
+    return res.status(500).json({ message: "Server error" });
   }
 });
+
+/* ============================
+   REFRESH TOKEN ROUTE
+============================ */
+app.post("/api/auth/refresh-token", (req, res) => {
+  try {
+    const refreshToken = req.cookies.refreshToken;
+
+    if (!refreshToken) {
+      return res.status(401).json({ error: "No refresh token" });
+    }
+
+    const payload = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
+
+    const newAccessToken = jwt.sign(
+      { id: payload.id, role: payload.role },
+      JWT_SECRET,
+      { expiresIn: ACCESS_EXPIRES }
+    );
+
+    return res.json({ accessToken: newAccessToken });
+
+  } catch (err) {
+    console.error("Refresh token error:", err);
+    return res.status(403).json({ error: "Invalid or expired refresh token" });
+  }
+});
+
 
 // ======================================================
 // AUTH: Get logged-in user
@@ -336,6 +421,225 @@ app.get("/api/studies", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch studies" });
   }
 });
+
+
+//to get all pacs server
+app.get("/api/pacs", authenticateToken, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT * FROM pacs ORDER BY id ASC"
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Fetch PACS error:", err.message);
+    res.status(500).json({ error: "Failed to fetch PACS" });
+  }
+});
+
+//add or update pacs
+app.post("/api/pacs", authenticateToken, authorizeRoles("ADMIN"), async (req, res) => {
+  const { id, pacs_name, ae_title, ip_address, port } = req.body;
+
+  if (!pacs_name || !ae_title || !ip_address || !port) {
+    return res.status(400).json({ error: "All fields required" });
+  }
+
+  try {
+    if (id) {
+      // UPDATE
+      const result = await pool.query(
+        `UPDATE pacs
+         SET pacs_name=$1, ae_title=$2, ip_address=$3, port=$4
+         WHERE id=$5
+         RETURNING *`,
+        [pacs_name, ae_title, ip_address, port, id]
+      );
+
+      if (!result.rows.length) {
+        return res.status(404).json({ error: "PACS not found" });
+      }
+
+      res.json(result.rows[0]);
+    } else {
+      // INSERT
+      const result = await pool.query(
+        `INSERT INTO pacs (pacs_name, ae_title, ip_address, port)
+         VALUES ($1,$2,$3,$4)
+         RETURNING *`,
+        [pacs_name, ae_title, ip_address, port]
+      );
+
+      res.json(result.rows[0]);
+    }
+  } catch (err) {
+    console.error("Save PACS error:", err.message);
+    res.status(500).json({ error: "Failed to save PACS" });
+  }
+});
+
+//delete pacs
+app.delete("/api/pacs/:id", authenticateToken, authorizeRoles("ADMIN"), async (req, res) => {
+  try {
+    const result = await pool.query(
+      "DELETE FROM pacs WHERE id=$1 RETURNING *",
+      [req.params.id]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ error: "PACS not found" });
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete PACS error:", err.message);
+    res.status(500).json({ error: "Failed to delete PACS" });
+  }
+});
+
+//to activate pacs
+app.post("/api/pacs/:id/activate", authenticateToken, authorizeRoles("ADMIN"), async (req, res) => {
+  try {
+    await pool.query(
+      "UPDATE pacs SET is_active=true WHERE id=$1",
+      [req.params.id]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Activate PACS error:", err.message);
+    res.status(500).json({ error: "Failed to activate PACS" });
+  }
+});
+
+//deactivate pacs
+app.post("/api/pacs/:id/deactivate", authenticateToken, authorizeRoles("ADMIN"), async (req, res) => {
+  try {
+    await pool.query(
+      "UPDATE pacs SET is_active=false WHERE id=$1",
+      [req.params.id]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Deactivate PACS error:", err.message);
+    res.status(500).json({ error: "Failed to deactivate PACS" });
+  }
+});
+
+//testing
+const net = require("net");
+
+app.post("/api/pacs/test", authenticateToken, async (req, res) => {
+  const { ip_address, port } = req.body;
+
+  if (!ip_address || !port) {
+    return res.status(400).json({ error: "IP and Port required" });
+  }
+
+  const socket = new net.Socket();
+  socket.setTimeout(3000);
+
+  socket.on("connect", () => {
+    socket.destroy();
+    res.json({ success: true, message: "PACS reachable" });
+  });
+
+  socket.on("timeout", () => {
+    socket.destroy();
+    res.status(504).json({ error: "Connection timeout" });
+  });
+
+  socket.on("error", () => {
+    res.status(500).json({ error: "Unable to connect to PACS" });
+  });
+
+  socket.connect(port, ip_address);
+});
+
+// Helper to get PACS by ID
+async function getPacsById(id) {
+  const result = await pool.query(
+    "SELECT * FROM pacs WHERE id=$1 AND is_active=true",
+    [id]
+  );
+  return result.rows[0];
+}
+
+// Helper to get all active PACS
+async function getActivePacs() {
+  const result = await pool.query(
+    "SELECT * FROM pacs WHERE is_active=true ORDER BY id"
+  );
+  return result.rows;
+}
+/* ======================================================
+   GET STUDIES FROM ACTIVE PACS (ORTHANC) – FIXED
+====================================================== */
+app.post("/api/pacs/studies", async (req, res) => {
+  try {
+    const { data: studyIds } = await axios.get(
+      `${ORTHANC_URL}studies`,
+      { auth: ORTHANC_AUTH }
+    );
+
+    if (!Array.isArray(studyIds) || studyIds.length === 0) {
+      return res.json([]);
+    }
+
+    const studies = [];
+
+    for (const studyId of studyIds) {
+      try {
+        const { data: study } = await axios.get(
+          `${ORTHANC_URL}studies/${studyId}`,
+          { auth: ORTHANC_AUTH }
+        );
+
+        // 1. Get Modality from the first series
+        let modality = "N/A";
+        if (Array.isArray(study.Series) && study.Series.length > 0) {
+          const seriesId = study.Series[0];
+          const { data: series } = await axios.get(
+            `${ORTHANC_URL}series/${seriesId}`,
+            { auth: ORTHANC_AUTH }
+          );
+          modality = series.MainDicomTags?.Modality || "N/A";
+        }
+
+        // 2. Format Patient Sex (Mirroring your logic)
+        const sexRaw = study.PatientMainDicomTags?.PatientSex || "O";
+        const patientSex = sexRaw === "M" ? "Male" : sexRaw === "F" ? "Female" : "Other";
+
+        // 3. Extract Age (Mirroring your logic)
+        const patientName = study.PatientMainDicomTags?.PatientName || "N/A";
+        // Assuming extractAgeFromName is defined in your backend
+        const patientAge = typeof extractAgeFromName === "function" 
+                           ? extractAgeFromName(patientName) 
+                           : "N/A";
+
+        // 4. Push normalized data to the array
+        studies.push({
+          PatientID: study.PatientMainDicomTags?.PatientID || "N/A",
+          PatientName: patientName,
+          PatientAge: patientAge,                    // ✅ Added
+          PatientSex: patientSex,                    // ✅ Added
+          AccessionNumber: study.MainDicomTags?.AccessionNumber || "N/A", // ✅ Added
+          StudyDescription: study.MainDicomTags?.StudyDescription || "No Description", // ✅ Fixed Key
+          StudyDate: study.MainDicomTags?.StudyDate || "N/A",
+          Modality: modality,
+          PACS: "orthanc",
+          StudyInstanceUID: study.MainDicomTags?.StudyInstanceUID || study.ID,
+        });
+      } catch (innerErr) {
+        console.error("Failed study:", studyId, innerErr.message);
+      }
+    }
+
+    res.json(studies);
+  } catch (err) {
+    console.error("PACS studies error:", err.message);
+    res.status(500).json({ error: "Failed to fetch studies" });
+  }
+});
+
 
 
 // Add MWL

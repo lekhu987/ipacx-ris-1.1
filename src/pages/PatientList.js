@@ -1,5 +1,5 @@
 // src/pages/patient/PatientList.jsx
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import PatientRegistration from "./PatientRegistration";
 import "./PatientList.css";
 
@@ -7,45 +7,73 @@ function PatientList() {
   const [showForm, setShowForm] = useState(false);
   const [patients, setPatients] = useState([]);
 
-  useEffect(() => {
-    // Simulate HIS sync
-    setPatients([
-      { id: "HIS100001", name: "Ramesh Kumar", mobile: "9999999999" },
-      { id: "HIS100002", name: "Sita Devi", mobile: "8888888888" }
-    ]);
-  }, []);
+  // Function to add the COMPLETE patient object to the list
+  const handleAddPatient = (newPatient) => {
+    setPatients((prevPatients) => [...prevPatients, newPatient]);
+  };
+const handlePaymentComplete = (patientId) => {
+  setPatients(prev =>
+    prev.map(p =>
+      p.patientId === patientId ? { ...p, paymentStatus: "Complete" } : p
+    )
+  );
+};
 
   return (
-    <div className="patient-list">
+    <div className="patient-list-container">
       <div className="header">
         <h2>Patient List</h2>
-        <button onClick={() => setShowForm(true)}>+ Register Patient</button>
+        <button className="add-patient-btn" onClick={() => setShowForm(true)}>
+          + Register Patient
+        </button>
       </div>
 
       {showForm && (
-        <div className="modal">
-          <PatientRegistration onClose={() => setShowForm(false)} />
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <PatientRegistration 
+              onClose={() => setShowForm(false)} 
+              onSave={handleAddPatient} 
+            />
+          </div>
         </div>
       )}
 
-      <table>
-        <thead>
-          <tr>
-            <th>Patient ID</th>
-            <th>Name</th>
-            <th>Mobile</th>
-          </tr>
-        </thead>
-        <tbody>
-          {patients.map(p => (
-            <tr key={p.id}>
-              <td>{p.id}</td>
-              <td>{p.name}</td>
-              <td>{p.mobile}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <div className="table-wrapper">
+        <table className="patient-table">
+         <thead>
+  <tr>
+    <th>Patient ID</th>
+    <th>Name</th>
+    <th>Gender</th>
+    <th>DOB</th>
+    <th>Mobile</th>
+    <th>Referring Doctor</th>
+    <th>Visit Type</th>
+    <th>Modality</th>
+    <th>Study Type</th>
+    <th>Payment Status</th> {/* New Column */}
+  </tr>
+</thead>
+<tbody>
+  {patients.map((p) => (
+    <tr key={p.patientId}>
+      <td><strong>{p.patientId}</strong></td>
+      <td>{p.firstName} {p.lastName}</td>
+      <td>{p.gender}</td>
+      <td>{p.dob}</td>
+      <td>{p.mobile}</td>
+      <td>{p.referringDoctor}</td>
+      <td>{p.visitType}</td>
+      <td>{p.modality}</td>
+      <td>{p.studyType}</td>
+      <td>{p.paymentStatus}</td> {/* Show status */}
+    </tr>
+  ))}
+</tbody>
+
+        </table>
+      </div>
     </div>
   );
 }

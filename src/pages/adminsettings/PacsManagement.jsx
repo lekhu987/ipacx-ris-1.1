@@ -17,15 +17,13 @@ function PacsManagement() {
     port: "",
   });
 
-  /* ================= FETCH ================= */
+  /* ================= FETCH PACS ================= */
   const fetchPacsList = async () => {
     try {
       const res = await api.get("/api/pacs");
-      // Sort by created order to show first added at top
-      const sortedList = res.data.sort((a, b) => a.id - b.id);
-      setPacsList(sortedList);
-    } catch {
-      setError("Failed to fetch PACS servers");
+      setPacsList(res.data || []);
+    } catch (err) {
+      setError("Failed to fetch PACS list");
     }
   };
 
@@ -33,17 +31,18 @@ function PacsManagement() {
     fetchPacsList();
   }, []);
 
-  /* ================= FORM ================= */
-  const handleFormChange = (e) => {
+  const selectedPacs = pacsList.find((p) => p.id === selectedPacsId);
+
+  /* ================= FORM HANDLING ================= */
+  const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
-
-  const selectedPacs = pacsList.find((p) => p.id === selectedPacsId);
 
   /* ================= SAVE (ADD / UPDATE) ================= */
   const handleSave = async () => {
     if (!form.pacs_name || !form.ae_title || !form.ip_address || !form.port) {
-      return alert("All fields are required");
+      alert("All fields are required");
+      return;
     }
 
     try {
@@ -51,8 +50,8 @@ function PacsManagement() {
       setError("");
 
       await api.post("/api/pacs", {
-        ...form,
         id: selectedPacsId || undefined,
+        ...form,
       });
 
       alert("PACS saved successfully");
@@ -61,7 +60,7 @@ function PacsManagement() {
       setForm({ pacs_name: "", ae_title: "", ip_address: "", port: "" });
       fetchPacsList();
     } catch (err) {
-      setError(err.response?.data?.error || "Failed to save PACS");
+      setError(err.response?.data?.message || "Failed to save PACS");
     } finally {
       setLoading(false);
     }
@@ -69,7 +68,10 @@ function PacsManagement() {
 
   /* ================= EDIT ================= */
   const handleEdit = () => {
-    if (!selectedPacsId) return alert("Select one PACS to edit");
+    if (!selectedPacs) {
+      alert("Select a PACS to edit");
+      return;
+    }
 
     setForm({
       pacs_name: selectedPacs.pacs_name,
@@ -82,8 +84,12 @@ function PacsManagement() {
 
   /* ================= DELETE ================= */
   const handleDelete = async () => {
-    if (!selectedPacsId) return alert("Select a PACS");
-    if (!window.confirm("Are you sure?")) return;
+    if (!selectedPacsId) {
+      alert("Select a PACS to delete");
+      return;
+    }
+
+    if (!window.confirm("Are you sure you want to delete this PACS?")) return;
 
     try {
       await api.delete(`/api/pacs/${selectedPacsId}`);
@@ -94,31 +100,28 @@ function PacsManagement() {
     }
   };
 
-  /* ================= ENABLE ================= */
+  /* ================= ENABLE / DISABLE ================= */
   const handleEnable = async () => {
     if (!selectedPacsId) return alert("Select a PACS");
-
     await api.post(`/api/pacs/${selectedPacsId}/activate`);
     fetchPacsList();
   };
 
-  /* ================= DISABLE ================= */
   const handleDisable = async () => {
     if (!selectedPacsId) return alert("Select a PACS");
-
     await api.post(`/api/pacs/${selectedPacsId}/deactivate`);
     fetchPacsList();
   };
 
-  /* ================= TEST ================= */
+  /* ================= TEST CONNECTION ================= */
   const handleTest = async () => {
-    if (!selectedPacsId) return alert("Select a PACS");
+    if (!selectedPacs) return alert("Select a PACS");
 
     try {
-      await api.post("/api/pacs/connect", {
+      await api.post("/api/pacs/test", {
         ip_address: selectedPacs.ip_address,
         port: selectedPacs.port,
-        protocol: "http",
+        ae_title: selectedPacs.ae_title,
       });
       alert("PACS connection successful");
     } catch {
@@ -134,14 +137,7 @@ function PacsManagement() {
 
       {/* TOOLBAR */}
       <div className="toolbar">
-        <button
-          onClick={() => {
-            setShowForm(true);
-            setSelectedPacsId(null);
-          }}
-        >
-          Add
-        </button>
+        <button onClick={() => setShowForm(true)}>Add</button>
         <button onClick={handleEdit}>Edit</button>
         <button onClick={handleDelete}>Delete</button>
         <button onClick={handleEnable}>Enable</button>
@@ -153,30 +149,31 @@ function PacsManagement() {
       {showForm && (
         <div className="pacs-form">
           <h3>{selectedPacsId ? "Edit PACS" : "Add PACS"}</h3>
+
           <input
             name="pacs_name"
             placeholder="PACS Name"
             value={form.pacs_name}
-            onChange={handleFormChange}
+            onChange={handleChange}
           />
           <input
             name="ae_title"
             placeholder="AE Title"
             value={form.ae_title}
-            onChange={handleFormChange}
+            onChange={handleChange}
           />
           <input
             name="ip_address"
             placeholder="IP Address"
             value={form.ip_address}
-            onChange={handleFormChange}
+            onChange={handleChange}
           />
           <input
-            name="port"
             type="number"
+            name="port"
             placeholder="Port"
             value={form.port}
-            onChange={handleFormChange}
+            onChange={handleChange}
           />
 
           <button onClick={handleSave} disabled={loading}>
@@ -191,7 +188,7 @@ function PacsManagement() {
         <thead>
           <tr>
             <th>Select</th>
-            <th>ID</th> {/* Serial Number */}
+            <th>#</th>
             <th>PACS Name</th>
             <th>AE Title</th>
             <th>IP</th>
@@ -209,7 +206,7 @@ function PacsManagement() {
                   onChange={() => setSelectedPacsId(p.id)}
                 />
               </td>
-              <td>{index + 1}</td> {/* Serial Number */}
+              <td>{index + 1}</td>
               <td>{p.pacs_name}</td>
               <td>{p.ae_title}</td>
               <td>{p.ip_address}</td>
