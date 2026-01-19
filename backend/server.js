@@ -6,62 +6,30 @@ const { Pool } = require("pg");
 const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
-const jwt = require("jsonwebtoken");
+// const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
-const cookieParser = require("cookie-parser");
-const auditMiddleware = require("./middleware/auditMiddleware");
+// const cookieParser = require("cookie-parser");
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-if (!process.env.JWT_SECRET) {
-  throw new Error("JWT_SECRET is not set");
-}
-const JWT_SECRET = process.env.JWT_SECRET;
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
-const ACCESS_EXPIRES = "15m";   // short-lived
-const REFRESH_EXPIRES = "7d";   // long-lived
-
-
 // Utils
 const generateFinalReportPDF = require("./utils/generateFinalReportPDF");
-app.use(express.json());
-app.use(cookieParser());
-// ======================================================
-// Decode JWT (for audit logs – does NOT block request)
-// ======================================================
-app.use((req, res, next) => {
-  const token =
-    req.cookies.accessToken ||
-    (req.headers.authorization &&
-      req.headers.authorization.split(" ")[1]);
-
-  if (!token) return next();
-
-  jwt.verify(token, JWT_SECRET, (err, decoded) => {
-    if (!err) {
-      req.user = decoded; // 👈 THIS IS WHAT AUDIT NEEDS
-    }
-    next();
-  });
-});
-
-
-
-
-// 📝 then audit
-app.use(auditMiddleware);
 
 // Middleware
 app.use(cors({
-  origin: 'http://localhost:3000',  // frontend URL
-  credentials: true                 // allow cookies
+  origin: [
+    "http://localhost:3000",
+    "http://192.168.1.7:3000" 
+  ],
+  credentials: true
 }));
+
+app.use(express.json());
 app.use(
   "/uploads/report_images",
   express.static(path.join(__dirname, "uploads/report_images"))
 );
-
-
 
 
 // ======================================================
@@ -96,184 +64,44 @@ function extractAgeFromName(name) {
   return "N/A";
 }
 
-// ======================================================
-// JWT Authentication Middleware
-// ======================================================
-function authenticateToken(req, res, next) {
-  const token = req.cookies.accessToken || (req.headers["authorization"] && req.headers["authorization"].split(" ")[1]);
-  if (!token) {
-    return res.status(401).json({ error: "Token missing" });
+// login route
+app.post("/api/login", async (req, res) => {
+  const { username, password } = req.body;
+
+  const result = await pool.query(
+    `SELECT id, username, role, password_hash, is_active
+     FROM users WHERE username=$1`,
+    [username]
+  );
+
+  if (!result.rows.length) {
+    return res.status(401).json({ message: "Invalid credentials" });
   }
-  jwt.verify(token, JWT_SECRET, (err, user) => {
-    if (err) return res.status(403).json({ error: "Invalid or expired token" });
-    req.user = user;
-    next();
-  });
-}
 
-// ======================================================
-// Role Authorization Middleware
-// ======================================================
-function authorizeRoles(...roles) {
-  return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
-      return res.status(403).json({ error: "Access denied" });
-    }
-    next();
-  };
-}
+  const user = result.rows[0];
 
-//login
-app.post("/api/auth/login", async (req, res) => {
-  try {
-    const { username, password } = req.body;
+  if (!user.is_active) {
+    return res.status(403).json({ message: "Account disabled" });
+  }
 
-    if (!username || !password) {
-      return res.status(400).json({ message: "Username & password required" });
-    }
+  const valid = await bcrypt.compare(password, user.password_hash);
+  if (!valid) {
+    return res.status(401).json({ message: "Invalid credentials" });
+  }
 
-    const result = await pool.query(
-      `
-      SELECT id, username, role, password_hash, is_active
-      FROM users
-      WHERE username = $1
-      `,
-      [username]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-
-    const user = result.rows[0];
-
-    if (!user.is_active) {
-      return res.status(403).json({
-        message: "Account is disabled. Contact admin."
-      });
-    }
-
-    const valid = await bcrypt.compare(password, user.password_hash);
-    if (!valid) {
-      return res.status(401).json({ message: "Invalid credentials" });
-    }
-
-    const accessToken = jwt.sign(
-      { id: user.id, username: user.username, role: user.role },
-      JWT_SECRET,
-      { expiresIn: ACCESS_EXPIRES }
-    );
-
-    const refreshToken = jwt.sign(
-      { id: user.id, role: user.role },
-      JWT_REFRESH_SECRET,
-      { expiresIn: REFRESH_EXPIRES }
-    );
-
-    // 🍪 refresh token
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "Strict",
-      maxAge: 7 * 24 * 60 * 60 * 1000
-    });
-
-    // 🍪 access token (IMPORTANT)
-    res.cookie("accessToken", accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "Strict",
-      maxAge: 15 * 60 * 1000
-    });
-
-    // 👤 for audit
-    req.user = {
+  // ✅ JUST RETURN USER
+  res.json({
+    success: true,
+    user: {
       id: user.id,
       username: user.username,
       role: user.role
-    };
-    req.auditAction = "USER LOGIN";
-
-    return res.json({
-      user: {
-        id: user.id,
-        username: user.username,
-        role: user.role
-      }
-    });
-
-  } catch (err) {
-    console.error("Login error:", err);
-    return res.status(500).json({ message: "Server error" });
-  }
-});
-
-/* ============================
-   REFRESH TOKEN ROUTE
-============================ */
-app.post("/api/auth/refresh-token", (req, res) => {
-  try {
-    const refreshToken = req.cookies.refreshToken;
-
-    if (!refreshToken) {
-      return res.status(401).json({ error: "No refresh token" });
     }
-
-    const payload = jwt.verify(refreshToken, JWT_REFRESH_SECRET);
-
-    const newAccessToken = jwt.sign(
-      { id: payload.id, role: payload.role },
-      JWT_SECRET,
-      { expiresIn: ACCESS_EXPIRES }
-    );
-
-    return res.json({ accessToken: newAccessToken });
-
-  } catch (err) {
-    console.error("Refresh token error:", err);
-    return res.status(403).json({ error: "Invalid or expired refresh token" });
-  }
-});
-
-
-// ======================================================
-// AUTH: Get logged-in user
-// ======================================================
-app.get("/api/auth/me", authenticateToken, (req, res) => {
-  res.json({
-    id: req.user.id,
-    username: req.user.username,
-    role: req.user.role
   });
 });
 
-// ======================================================
-// AUTH: Change Password
-// ======================================================
-app.put("/api/auth/change-password", authenticateToken, async (req, res) => {
-  const { oldPassword, newPassword } = req.body;
-  if (!oldPassword || !newPassword) {
-    return res.status(400).json({ error: "Old & new password required" });
-  }
-
-  const result = await pool.query(
-    "SELECT password_hash FROM users WHERE id=$1",
-    [req.user.id]
-  );
-  const valid = await bcrypt.compare(oldPassword, result.rows[0].password_hash);
-  if (!valid) return res.status(401).json({ error: "Old password incorrect" });
-
-  const hash = await bcrypt.hash(newPassword, 10);
-  await pool.query(
-    "UPDATE users SET password_hash=$1 WHERE id=$2",
-    [hash, req.user.id]
-  );
-
-  res.json({ success: true });
-});
-
 // USERS: Create user (ADMIN only)
-app.post("/api/users", authenticateToken, authorizeRoles("ADMIN"), async (req, res) => {
+app.post("/api/users", async (req, res) => {
   const { username, password, role, email } = req.body;
   if (!username || !password || !role || !email) {
     return res.status(400).json({ error: "All fields required" });
@@ -299,7 +127,7 @@ app.post("/api/users", authenticateToken, authorizeRoles("ADMIN"), async (req, r
 // ======================================================
 // USERS: Toggle active/inactive (ADMIN only)
 // ======================================================
-app.put("/api/users/:id/toggle", authenticateToken, authorizeRoles("ADMIN"), async (req, res) => {
+app.put("/api/users/:id/toggle", async (req, res) => {
   const result = await pool.query(
     `UPDATE users
      SET is_active = NOT is_active
@@ -313,7 +141,7 @@ app.put("/api/users/:id/toggle", authenticateToken, authorizeRoles("ADMIN"), asy
 
 
 // GET all users (ADMIN only)
-app.get("/api/users", authenticateToken, authorizeRoles("ADMIN"), async (req, res) => {
+app.get("/api/users",  async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, username, email, role, is_active, created_at
@@ -327,7 +155,7 @@ app.get("/api/users", authenticateToken, authorizeRoles("ADMIN"), async (req, re
   }
 });
 // Update user (ADMIN only)
-app.put("/api/users/:id", authenticateToken, authorizeRoles("ADMIN"), async (req, res) => {
+app.put("/api/users/:id", async (req, res) => {
   const { username, password, role, email } = req.body;
   const { id } = req.params;
 
@@ -354,7 +182,7 @@ app.put("/api/users/:id", authenticateToken, authorizeRoles("ADMIN"), async (req
   }
 });
 // Delete user (ADMIN only)
-app.delete("/api/users/:id", authenticateToken, authorizeRoles("ADMIN"), async (req, res) => {
+app.delete("/api/users/:id",  async (req, res) => {
   const { id } = req.params;
   try {
     const result = await pool.query(
@@ -424,7 +252,7 @@ app.get("/api/studies", async (req, res) => {
 
 
 //to get all pacs server
-app.get("/api/pacs", authenticateToken, async (req, res) => {
+app.get("/api/pacs",  async (req, res) => {
   try {
     const result = await pool.query(
       "SELECT * FROM pacs ORDER BY id ASC"
@@ -437,7 +265,7 @@ app.get("/api/pacs", authenticateToken, async (req, res) => {
 });
 
 //add or update pacs
-app.post("/api/pacs", authenticateToken, authorizeRoles("ADMIN"), async (req, res) => {
+app.post("/api/pacs",  async (req, res) => {
   const { id, pacs_name, ae_title, ip_address, port } = req.body;
 
   if (!pacs_name || !ae_title || !ip_address || !port) {
@@ -478,7 +306,7 @@ app.post("/api/pacs", authenticateToken, authorizeRoles("ADMIN"), async (req, re
 });
 
 //delete pacs
-app.delete("/api/pacs/:id", authenticateToken, authorizeRoles("ADMIN"), async (req, res) => {
+app.delete("/api/pacs/:id", async (req, res) => {
   try {
     const result = await pool.query(
       "DELETE FROM pacs WHERE id=$1 RETURNING *",
@@ -497,7 +325,7 @@ app.delete("/api/pacs/:id", authenticateToken, authorizeRoles("ADMIN"), async (r
 });
 
 //to activate pacs
-app.post("/api/pacs/:id/activate", authenticateToken, authorizeRoles("ADMIN"), async (req, res) => {
+app.post("/api/pacs/:id/activate",  async (req, res) => {
   try {
     await pool.query(
       "UPDATE pacs SET is_active=true WHERE id=$1",
@@ -511,7 +339,7 @@ app.post("/api/pacs/:id/activate", authenticateToken, authorizeRoles("ADMIN"), a
 });
 
 //deactivate pacs
-app.post("/api/pacs/:id/deactivate", authenticateToken, authorizeRoles("ADMIN"), async (req, res) => {
+app.post("/api/pacs/:id/deactivate",  async (req, res) => {
   try {
     await pool.query(
       "UPDATE pacs SET is_active=false WHERE id=$1",
@@ -526,8 +354,7 @@ app.post("/api/pacs/:id/deactivate", authenticateToken, authorizeRoles("ADMIN"),
 
 //testing
 const net = require("net");
-
-app.post("/api/pacs/test", authenticateToken, async (req, res) => {
+app.post("/api/pacs/test", async (req, res) => {
   const { ip_address, port } = req.body;
 
   if (!ip_address || !port) {
@@ -573,7 +400,7 @@ async function getActivePacs() {
 /* ======================================================
    GET STUDIES FROM ACTIVE PACS (ORTHANC) – FIXED
 ====================================================== */
-app.post("/api/pacs/studies", async (req, res) => {
+app.post("/api/pacs/studies",  async (req, res) => {
   try {
     const { data: studyIds } = await axios.get(
       `${ORTHANC_URL}studies`,
@@ -772,7 +599,7 @@ app.post("/api/mwl/:id/send", async (req, res) => {
 /* ======================================================
    GET STUDY + REPORT BY STUDY UID (FOR PREFILL)
 ====================================================== */
-app.get("/api/study-report/:uid", authenticateToken, async (req, res) => {
+app.get("/api/study-report/:uid",  async (req, res) => {
   try {
     const { uid } = req.params;
 
@@ -1582,9 +1409,7 @@ app.get("/api/reports/:id/pdf/print", async (req, res) => {
     res.status(500).send("Error generating print PDF");
   }
 });
-/* ======================================================
-   START SERVER
-====================================================== */
-app.listen(PORT, () => {
+//start server
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });

@@ -12,44 +12,40 @@ function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-
+  const handleLogin = async () => {
     if (!username || !password) {
-      return alert("Please enter username and password");
+      alert("Please enter username and password");
+      return;
     }
 
     try {
       setLoading(true);
 
-      // Send login request with credentials
-      const res = await api.post(
-        "/api/auth/login",
-        { username, password },
-        { withCredentials: true } // important to receive cookies
-      );
+      const res = await api.post("/api/login", {
+        username,
+        password,
+      });
 
-      // Backend sends user info in response
+      console.log("LOGIN RESPONSE:", res.data);
+
       if (!res.data || !res.data.user) {
-        console.error("Server response:", res.data);
-        return alert("Login failed: invalid server response");
+        alert("Login failed");
+        return;
       }
 
-      const { user } = res.data;
+      // ✅ Save user ONLY (no token)
+      login(res.data.user);
 
-      // Save user in AuthContext/sessionStorage
-      login(user);
-
-      // Navigate to dashboard
+      // ✅ Go to dashboard
       navigate("/dashboard");
-    } catch (err) {
-      console.error("Login error:", err);
 
+    } catch (err) {
       if (err.response?.data?.message) {
         alert(err.response.data.message);
       } else {
-        alert("Login failed: server not reachable");
+        alert("Server not reachable");
       }
+      console.error(err);
     } finally {
       setLoading(false);
     }
@@ -59,23 +55,24 @@ function Login() {
     <div className="login-container">
       <div className="login-box">
         <h2>iPacx RIS Login</h2>
-        <form onSubmit={handleLogin}>
-          <input
-            type="text"
-            placeholder="Username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          <button type="submit" disabled={loading}>
-            {loading ? "Logging in..." : "Login"}
-          </button>
-        </form>
+
+        <input
+          type="text"
+          placeholder="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+        />
+
+        <input
+          type="password"
+          placeholder="Password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+
+        <button onClick={handleLogin} disabled={loading}>
+          {loading ? "Logging in..." : "Login"}
+        </button>
       </div>
     </div>
   );
