@@ -3,7 +3,9 @@ import React, { useEffect, useRef, useState } from "react";
 import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
-import "./ReportPanel.css";
+import "./CreateReport.css";
+import api from "../api/axios";
+const ORTHANC_URL = process.env.REACT_APP_ORTHANC_URL || "http://192.168.1.34:8042";
 
 /* ===========================
       RichEditor component
@@ -23,7 +25,7 @@ function RichEditor({
       ref.current.innerHTML = value || "";
     }
   }, [value]);
-
+  
   return (
     <div
       ref={ref}
@@ -322,16 +324,13 @@ const [isAddendum, setIsAddendum] = useState(false);
 const [noteInput, setNoteInput] = useState("");
 const [parentReportId, setParentReportId] = useState(null);
 const [addendumConfirmed, setAddendumConfirmed] = useState(false);
-const viewer = document.getElementById("viewerPanel");
-const arrows = document.querySelector(".panel-arrows");
+//const viewer = document.getElementById("viewerPanel");
+//const arrows = document.querySelector(".panel-arrows");
+const viewerRef = useRef(null);
+const arrowsRef = useRef(null);
 const [viewerMinimized, setViewerMinimized] = useState(false);
 const [reportMinimized, setReportMinimized] = useState(false);
 
-function updateArrowPosition() {
-  const viewerWidth = viewer.offsetWidth;
-  arrows.style.left = `${viewerWidth - 10}px`; // always stick to boundary
-}
-//report tile
 // Auto-update report title based on modality + body part
 useEffect(() => {
   if (isManualTitle) return; // do not override manual edits
@@ -386,24 +385,20 @@ useEffect(() => {
   return () => recognition.stop();
 }, []);
 
-// template
 useEffect(() => {
   if (!study.Modality || !study.BodyPartExamined) return;
 
-  fetch("http://localhost:5000/api/report-templates")
-    .then(res => res.json())
-    .then(data => {
+  api.get("/api/report-templates")
+    .then(({ data }) => {
       const bodyPart = study.BodyPartExamined.trim().toLowerCase();
       const modality = study.Modality.trim();
 
-      // 1️⃣ First look for exact "plain" template
       const plainTemplate = data.filter(t =>
         t.modality === modality &&
         t.body_part.toLowerCase() === `${bodyPart}_plain` &&
         t.is_active
       );
 
-      // 2️⃣ If no "plain" template, fall back to normal template
       const filtered = plainTemplate.length > 0
         ? plainTemplate
         : data.filter(t =>
@@ -416,6 +411,7 @@ useEffect(() => {
     })
     .catch(err => console.error("Template load error", err));
 }, [study.Modality, study.BodyPartExamined]);
+
 
 const applyTemplate = (template) => {
   if (!template || !template.content) return;
@@ -456,64 +452,64 @@ useEffect(() => {
 
   const loadStudyAndReport = async () => {
     try {
-      // 1️⃣ Load study info
-      const studyRes = await fetch(`http://localhost:5000/api/studies/${studyUID}`);
-      const studyData = (await studyRes.json()) || {};
+      // 1️⃣ Load study
+      const { data: studyData } = await api.get(`/api/studies/${studyUID}`);
 
-      // 2️⃣ Load report (draft/final)
-      const reportRes = await fetch(`/api/reports/by-study/${studyUID}`);
-      let reportData = null;
-      if (reportRes.ok) {
-        try {
-          reportData = await reportRes.json();
-        } catch {
-          reportData = null;
-        }
-      }
+      // 2️⃣ Load report
+      const { data: reportData } = await api.get(
+        `/api/reports/by-study/${studyUID}`
+      );
 
       const reportContent = reportData?.report_content || {};
-      // ✅ ALWAYS set parentReportId from backend report
-if (reportData?.id) {
-  setParentReportId(reportData.id);
-}
 
-// 3️⃣ Check if opening as Addendum from location.state
-if (location.state?.isAddendum && location.state?.parentReportData) {
-  const parent = location.state.parentReportData;
+      // ✅ Parent report ID
+      if (reportData?.id) {
+        setParentReportId(reportData.id);
+      }
 
-  setHistory(parent.history || "");
-  setFindings(parent.findings || "");
-  setConclusion(parent.conclusion || "");
-  setStudy((prev) => ({
-    ...prev,
-    BodyPartExamined: parent.body_part || prev.BodyPartExamined,
-    Modality: parent.modality || prev.Modality,
-    ReferringPhysicianName: parent.referring_doctor || prev.ReferringPhysicianName,
-  }));
-  setParentReportId(parent.id);
-  setIsAddendum(true);
-  setNoteInput(location.state.addendumReason || "");
-} else if (reportData?.status === "Addendum" && reportData?.addendum_reason) {
-  // <-- NEW: populate noteInput from database
-  setIsAddendum(true);
-  setNoteInput(reportData.addendum_reason);
-}
- else {
-        // normal report
+      // 3️⃣ ADDENDUM handling
+      if (location.state?.isAddendum && location.state?.parentReportData) {
+        const parent = location.state.parentReportData;
+
+        setHistory(parent.history || "");
+        setFindings(parent.findings || "");
+        setConclusion(parent.conclusion || "");
+
+        setStudy((prev) => ({
+          ...prev,
+          BodyPartExamined: parent.body_part || prev.BodyPartExamined,
+          Modality: parent.modality || prev.Modality,
+          ReferringPhysicianName:
+            parent.referring_doctor || prev.ReferringPhysicianName,
+        }));
+
+        setParentReportId(parent.id);
+        setIsAddendum(true);
+        setNoteInput(location.state.addendumReason || "");
+      } else if (reportData?.status === "Addendum") {
+        setIsAddendum(true);
+        setNoteInput(reportData.addendum_reason || "");
+      } else {
+        // 4️⃣ NORMAL REPORT PREFILL
         setStudy({
           PatientName: studyData.PatientName || studyData.patient_name || "",
           PatientAge: studyData.PatientAge || studyData.patient_age || "",
           PatientSex: studyData.PatientSex || studyData.patient_sex || "",
           PatientID: studyData.PatientID || studyData.patient_id || "",
-          AccessionNumber: studyData.AccessionNumber || studyData.accession_number || "",
+          AccessionNumber:
+            studyData.AccessionNumber || studyData.accession_number || "",
           Modality: studyData.Modality || studyData.modality || "",
           StudyDate: studyData.StudyDate || studyData.study_date || "",
           StudyTime: studyData.StudyTime || studyData.study_time || "",
-          ReferringPhysicianName: reportData?.referring_doctor || studyData.ReferringPhysicianName || studyData.referring_physician || "",
-          BodyPartExamined: reportData?.body_part || studyData.BodyPartExamined || studyData.body_part || "",
+          ReferringPhysicianName:
+            reportData?.referring_doctor ||
+            studyData.ReferringPhysicianName ||
+            "",
+          BodyPartExamined:
+            reportData?.body_part || studyData.BodyPartExamined || "",
           ReportedBy: reportData?.reported_by || "",
           ApprovedBy: reportData?.approved_by || "",
-          ReportStatus: reportData?.status || "",
+          ReportStatus: reportData?.status || "Draft",
         });
 
         setHistory(reportContent.history || "");
@@ -521,34 +517,22 @@ if (location.state?.isAddendum && location.state?.parentReportData) {
         setConclusion(reportContent.conclusion || "");
       }
 
-      // 4️⃣ Load key images if present
-      if (Array.isArray(reportData?.images) && reportData.images.length > 0) {
-        const loadedImages = reportData.images.map(img =>
-          img.image_path.startsWith("http") ? img.image_path : `http://localhost:5000${img.image_path}`
+      // 5️⃣ KEY IMAGES
+      if (Array.isArray(reportData?.images)) {
+        const imgs = reportData.images.map((img) =>
+          img.image_path.startsWith("http")
+            ? img.image_path
+            : `${process.env.REACT_APP_API_URL}${img.image_path}`
         );
-        setKeyImages(loadedImages);
-        setShowKeyImages(true);
+
+        setKeyImages(imgs);
+        setShowKeyImages(imgs.length > 0);
       } else {
         setKeyImages([]);
         setShowKeyImages(false);
       }
-
     } catch (err) {
       console.error("Failed to load study/report", err);
-
-      // fallback to empty/defaults
-      setStudy(prev => ({
-        ...prev,
-        ReportStatus: "Draft",
-        ReportedBy: prev.ReportedBy || "",
-        ApprovedBy: prev.ApprovedBy || "",
-      }));
-      setReportTitle("CT REPORT");
-      setHistory("");
-      setFindings("");
-      setConclusion("");
-      setKeyImages([]);
-      setShowKeyImages(false);
     } finally {
       setLoading(false);
     }
@@ -556,7 +540,6 @@ if (location.state?.isAddendum && location.state?.parentReportData) {
 
   loadStudyAndReport();
 }, [studyUID, location.state]);
-
 
   /* ===========================
         Handle file uploads
@@ -573,19 +556,12 @@ if (location.state?.isAddendum && location.state?.parentReportData) {
   imageFiles.forEach((f) => formData.append("images", f));
 
   try {
-    const res = await fetch("/api/reports/upload", {
-      method: "POST",
-      body: formData,
-    });
-
-    const data = await res.json();
-
+    const { data } = await api.post("/api/reports/upload", formData);
     if (data.success) {
       setKeyImages((prev) => [
         ...prev,
-        ...data.paths.map(
-          (p) => `http://localhost:5000${p}`
-        ),
+       ...data.paths.map(p => `${process.env.REACT_APP_API_URL}${p}`)
+,
       ]);
        
     }
@@ -617,25 +593,24 @@ const handleSaveReport = async (status) => {
     reportTitle,
     referring_doctor: study.ReferringPhysicianName,
     body_part: study.BodyPartExamined,
-    image_paths: keyImages.map((url) => url.replace("http://localhost:5000", "")),
+   image_paths: keyImages.map((url) =>
+  url.replace(process.env.REACT_APP_API_URL, "")
+),
+
     parent_report_id: isAddendum ? parentReportId : null, // reference to original report
   addendum_reason: isAddendum ? noteInput : null,      // reason for addendum
   };
 
-  try {
-    const res = await fetch("/api/reports/save", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (data.success) {
-      alert(`Report saved as ${status}`);
-    }
-  } catch (err) {
-    console.error("Save report error", err);
-    alert("Failed to save report");
+ try {
+  const { data } = await api.post("/api/reports/save", payload);
+
+  if (data?.success) {
+    alert(`Report saved as ${status}`);
   }
+} catch (err) {
+  console.error("Save report error", err);
+  alert("Failed to save report");
+}
 };
 
 useEffect(() => {
@@ -649,27 +624,27 @@ useEffect(() => {
 
   const syncFinalReport = async () => {
     try {
-      const res = await fetch(`/api/reports/by-study/${studyUID}`);
-      if (!res.ok) return;
+      const { data } = await api.get(
+        `/api/reports/by-study/${studyUID}`
+      );
 
-      const data = await res.json();
       if (!data) return;
 
-      // ✅ USE FLATTENED DATA (FINAL FIX)
       if (data.history !== undefined) setHistory(data.history);
       if (data.findings !== undefined) setFindings(data.findings);
       if (data.conclusion !== undefined) setConclusion(data.conclusion);
 
-      // ✅ IMAGES
       if (Array.isArray(data.images)) {
         const imgs = data.images.map(img =>
-          img.startsWith("http") ? img : `http://localhost:5000${img}`
+          img.startsWith("http")
+            ? img
+            : `${process.env.REACT_APP_API_URL}${img}`
         );
+
         setKeyImages(imgs);
         setShowKeyImages(imgs.length > 0);
       }
 
-      // ✅ STATUS + ADDENDUM
       if (data.status) {
         setStudy(prev => ({ ...prev, ReportStatus: data.status }));
       }
@@ -679,7 +654,6 @@ useEffect(() => {
         setNoteInput(data.addendum_reason);
         setAddendumConfirmed(true);
       }
-
     } catch (err) {
       console.error("Final report sync failed", err);
     }
@@ -824,21 +798,35 @@ useEffect(() => {
     study.PatientAge,
     study.PatientSex
   );
+const getViewerWidth = () => {
+  if (viewerMinimized) return "10%";
+  if (reportMinimized) return "90%";
+  return "50%";
+};
+
+const getReportWidth = () => {
+  if (reportMinimized) return "10%";
+  if (viewerMinimized) return "90%";
+  return "50%";
+};
 
   return (
     <div className="split-layout" style={{ display: "flex", height: "100vh", position: "relative", fontFamily: "'Times New Roman', Times, serif" }}>
     
  {/* Viewer Panel */}
-      <div
-        id="viewerPanel"
-        style={{
-          width: viewerMinimized ? "10%" : reportMinimized ? "90%" : "50%",
-          transition: "width 0.3s ease",
-          height: "100%",
-          borderRight: "2px solid #ccc",
-        }}
-      >
-        <iframe
+     <div
+  id="viewerPanel"
+  ref={viewerRef}
+  style={{
+    width: getViewerWidth(),
+    transition: "width 0.3s ease",
+    height: "100%",
+    borderRight: "2px solid #ccc",
+    overflow: "hidden",      // ✅ ADD
+    position: "relative",    // ✅ ADD
+  }}
+>
+ <iframe
           title="OHIF Viewer"
           src={
             studyUID
@@ -848,20 +836,21 @@ useEffect(() => {
           style={{ width: "100%", height: "100%", border: "none" }}
         />
       </div>
-
       {/* Middle controls (arrows) - left here but you told you moved focus to KeyImages so can hide or keep */}
-      <div
+     <div
   className="panel-arrows"
+  ref={arrowsRef}
   style={{
     position: "absolute",
     top: "50%",
-    left: viewerMinimized ? "10%" : reportMinimized ? "90%" : "50%", // dynamic based on widths
+    left: viewerMinimized ? "10%" : reportMinimized ? "90%" : "50%",
     transform: "translate(-50%, -50%)",
     zIndex: 10,
     display: "flex",
     gap: 4
   }}
 >
+
 
         <button className="arrow" onClick={() => { setReportMinimized(false); setViewerMinimized(true); }} style={{ fontSize: 12, padding: "4px 6px" }}>&lt;&lt;</button>
         <button className="arrow" onClick={() => { setReportMinimized(false); setViewerMinimized(false); }} style={{ fontSize: 12, padding: "4px 6px", margin: 4 }}>&lt; &gt;</button>
@@ -872,7 +861,7 @@ useEffect(() => {
     ref={reportRef}
         id="reportPanel"
         style={{
-          width: reportMinimized ? "10%" : viewerMinimized ? "90%" : "50%",
+          width: getReportWidth(),
           transition: "width 0.3s ease",
           padding: 12,
           boxSizing: "border-box",
@@ -1149,7 +1138,7 @@ useEffect(() => {
   )}
 </div>
 
-            <button className="status-btn close" onClick={() => navigate("/reporting")} style={{ padding: "6px 14px", borderRadius: 4, background: "#dc3545", color: "#fff" }}>X</button>
+            <button className="status-btn close" onClick={() => navigate("/pacspage")} style={{ padding: "6px 14px", borderRadius: 4, background: "#dc3545", color: "#fff" }}>X</button>
           </div>
         </div>
         </div>

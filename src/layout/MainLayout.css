@@ -1,80 +1,165 @@
-.layout-container {
+/* ===== LAYOUT ===== */
+.ris-layout {
   display: flex;
   height: 100vh;
-  width: 100%; /* make container full width */
-  overflow: hidden; /* prevent extra scroll */
+  width: 100%;
+  overflow: hidden;
 }
 
-/* Sidebar */
-.sidebar {
-  width: 160px;
-  background: #f1f1f1;
-  /* FIX: Remove ALL padding from the container. Alignment is now defined by children. */
-  padding: 0; 
+/* ===== SIDEBAR ===== */
+.ris-sidebar {
+  width: 170px;
+  background: #d0d3d9;
   display: flex;
   flex-direction: column;
-  flex-shrink: 0; 
+  transition: width 0.25s ease;
+  flex-shrink: 0;
+  border-right: 1px solid #ddd;
+  position: relative;
 }
 
-/* Application name at top */
-.app-name {
-  font-size: 22px;
-  margin-bottom: 20px;
-  /* FIX: Set top/bottom padding and the consistent 10px left alignment */
-  padding: 20px 10px 20px 10px;
+.ris-sidebar.collapsed {
+  width: 60px;
 }
 
-/* Menu links (Dashboard, Scheduling, etc.) */
-.sidebar a {
+/* HEADER */
+.ris-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px;
+}
+
+.ris-app-name {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.ris-toggle-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* MENU */
+.ris-menu {
+  display: flex;
+  flex-direction: column;
+}
+
+.ris-menu-item-wrapper {
+  position: relative;
+}
+
+.ris-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
   text-decoration: none;
-  color: #000;
-  /* FIX: Consistent 10px left padding to align with App Name */
-  padding: 10px 10px 10px 10px;
-  font-size: 16px;
-  display: block;
+  color: #111827;
+  font-size: 14px;
 }
 
-.sidebar a:hover {
+.ris-menu-item:hover {
+  background: #e5e7eb;
   color: #004aad;
 }
 
-/* Admin Settings */
-.admin-section-title {
-  margin-top: 08px;
-  cursor: pointer;
-  /* FIX: Consistent 10px left padding */
-  padding: 5px 10px 5px 10px;
-}
-
-.admin-submenu a {
-  /* FIX: Remove margin-left and use padding-left for a 10px indent (20px total) */
-  margin-left: 0; 
-  padding: 5px 10px 5px 20px; 
+/* TOOLTIP WHEN COLLAPSED */
+.ris-tooltip {
+  position: absolute;
+  left: 60px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: #004aad;
+  color: #fff;
+  padding: 4px 8px;
+  border-radius: 4px;
   font-size: 12px;
-  display: block;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s;
 }
 
-/* Username + Logout */
-.bottom-username {
+.ris-menu-item-wrapper:hover .ris-tooltip {
+  opacity: 1;
+}
+
+/* ADMIN */
+.ris-admin-title {
+  margin-top: 10px;
+  padding: 10px 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.ris-admin-submenu a {
+  display: block;
+  padding: 6px 6px 6px 32px;
+  font-size: 12px;
+  text-decoration: none;
+  color: #111827;
+}
+
+.ris-admin-submenu a:hover {
+  background: #e5e7eb;
+  color: #004aad;
+}
+
+/* USER */
+.ris-user {
   margin-top: auto;
-  border-top: 1px solid #ccc;
-  /* FIX: Apply consistent 10px left padding and full vertical padding */
-  padding: 20px 10px 20px 10px;
+  padding: 12px;
+  border-top: 1px solid #ddd;
   cursor: pointer;
 }
 
-.bottom-username button {
-  margin-top: 5px;
+.ris-username {
+  font-weight: 600;
+}
+
+.ris-user-info {
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.ris-user-info button {
   width: 100%;
+  margin-top: 6px;
+  padding: 5px;
+  border: none;
   background: #004aad;
   color: white;
-  border: none;
-  padding: 4px;
   cursor: pointer;
 }
-
-.content {
+/* CONTENT AREA */
+.ris-content {
   flex: 1;
-  padding: 0  20px; 
+  margin-left: 0; /* no extra margin needed because sidebar is flex */
   overflow-y: auto;
+  background: #ffffff;
+  transition: margin-left 0.25s ease; /* smooth spacing if needed */
+}
+
+/* Optional: adjust header inside content */
+.ris-content h1,
+.ris-content h2,
+.ris-content h3 {
+  margin-top: 0;
+  margin-bottom: 12px; /* space after header */
+}
+
+/* Ensure content does not overlap sidebar when collapsed */
+.ris-sidebar.collapsed ~ .ris-content {
+  padding-left: 24px; /* minimal padding when sidebar is collapsed */
+}
+
+.ris-sidebar:not(.collapsed) ~ .ris-content {
+  padding-left: 12px; /* or increase if you want more spacing */
 }

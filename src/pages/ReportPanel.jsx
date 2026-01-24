@@ -4,6 +4,7 @@ import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import "./ReportPanel.css";
+import api from "../api/axios";
 
 /* ===========================
       RichEditor component
@@ -383,7 +384,7 @@ useEffect(() => {
 useEffect(() => {
   if (!study.Modality || !study.BodyPartExamined) return;
 
-  fetch("http://localhost:5000/api/report-templates")
+  fetch("/api/report-templates")
     .then(res => res.json())
     .then(data => {
       const bodyPart = study.BodyPartExamined.trim().toLowerCase();
@@ -450,7 +451,7 @@ useEffect(() => {
   const loadStudyAndReport = async () => {
     try {
       // 1️⃣ Load study info
-      const studyRes = await fetch(`http://localhost:5000/api/studies/${studyUID}`);
+      const studyRes = await fetch(`/api/studies/${encodeURIComponent(studyUID)}`);
       const studyData = (await studyRes.json()) || {};
 
       // 2️⃣ Load report (draft/final)
@@ -517,7 +518,7 @@ if (location.state?.isAddendum && location.state?.parentReportData) {
       // 4️⃣ Load key images if present
       if (Array.isArray(reportData?.images) && reportData.images.length > 0) {
         const loadedImages = reportData.images.map(img =>
-          img.image_path.startsWith("http") ? img.image_path : `http://localhost:5000${img.image_path}`
+          img.image_path
         );
         setKeyImages(loadedImages);
         setShowKeyImages(true);
@@ -576,9 +577,7 @@ if (location.state?.isAddendum && location.state?.parentReportData) {
     if (data.success) {
       setKeyImages((prev) => [
         ...prev,
-        ...data.paths.map(
-          (p) => `http://localhost:5000${p}`
-        ),
+        ...data.paths,
       ]);
        
     }
@@ -610,7 +609,7 @@ const handleSaveReport = async (status) => {
     reportTitle,
     referring_doctor: study.ReferringPhysicianName,
     body_part: study.BodyPartExamined,
-    image_paths: keyImages.map((url) => url.replace("http://localhost:5000", "")),
+    image_paths: keyImages,
     parent_report_id: isAddendum ? parentReportId : null, // reference to original report
   addendum_reason: isAddendum ? noteInput : null,      // reason for addendum
   };
@@ -655,9 +654,7 @@ useEffect(() => {
 
       // ✅ IMAGES
       if (Array.isArray(data.images)) {
-        const imgs = data.images.map(img =>
-          img.startsWith("http") ? img : `http://localhost:5000${img}`
-        );
+        const imgs = data.images;
         setKeyImages(imgs);
         setShowKeyImages(imgs.length > 0);
       }

@@ -5,6 +5,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { StudiesContext } from "../context/StudiesContext";
 import "./ReportingPage.css";
 import ReportPrintLayout from "../components/ReportPrintLayout.jsx";
+import api from "../api/axios";
 
 const rowsPerPage = 20;
 
@@ -60,7 +61,7 @@ const handlePrintReport = () => {
 
   const reportId = selectedReports[0]; // only one allowed
   window.open(
-    `http://localhost:5000/api/reports/${reportId}/pdf/print`,
+    `/api/reports/${reportId}/pdf/print`,
     "_blank"
   );
 };
@@ -102,7 +103,7 @@ const openAddendumPage = async () => {
             const sr = await fetch(`/api/studies/${encodeURIComponent(uid)}`);
             if (!sr.ok) return;
             studyMap[uid] = await sr.json();
-          } catch {}
+           } catch (err) {} 
         })
       );
 
@@ -315,7 +316,7 @@ const openAddendumPage = async () => {
         onClick={() => {
           // Changed from /study/:study_uid to /:id
           window.open(
-            `http://localhost:5000/api/reports/${r.id}/pdf`,
+            `/api/reports/${r.id}/pdf`,
             "_blank"
           );
         }}

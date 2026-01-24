@@ -3,13 +3,11 @@ import React, { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import MainLayout from "../layout/MainLayout";
 import "./AddPatient.css";
-
-const API_ROOT = process.env.REACT_APP_API_ROOT || "http://localhost:5000";
+import api from "../api/axios"; // Use your global axios instance
 
 export default function AddPatient() {
   const navigate = useNavigate();
   const location = useLocation(); // receives state.editEntry
-  
 
   const [formData, setFormData] = useState({
     id: null,
@@ -31,7 +29,6 @@ export default function AddPatient() {
 
   const formatDateForInput = (dateString) => {
     if (!dateString) return "";
-    // accept ISO dates or YYYYMMDD
     if (/^\d{8}$/.test(dateString)) {
       // YYYYMMDD -> YYYY-MM-DD
       return `${dateString.slice(0,4)}-${dateString.slice(4,6)}-${dateString.slice(6,8)}`;
@@ -104,28 +101,16 @@ export default function AddPatient() {
     }
 
     try {
-      const url = formData.id ? `${API_ROOT}/api/mwl/${formData.id}` : `${API_ROOT}/api/mwl`;
-      const method = formData.id ? "PUT" : "POST";
-
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
-
-      if (!res.ok) {
-        const text = await res.text();
-        throw new Error(text || "Failed to save patient to MWL");
+      if (formData.id) {
+        await api.put(`/api/mwl/${formData.id}`, formData);
+        setSuccessMsg("Patient updated!");
+      } else {
+        await api.post("/api/mwl", formData);
+        setSuccessMsg("Patient added!");
+        generateNewPatient(); // reset form for new entry
       }
-
-      await res.json();
-
-      setSuccessMsg(formData.id ? "Patient updated!" : "Patient added!");
-      // after add, you might choose to navigate back to MWL listing
-      // navigate("/mwl"); // optional
-      if (!formData.id) generateNewPatient();
     } catch (err) {
-      setErrorMsg(err.message || "Save failed");
+      setErrorMsg(err.response?.data?.message || err.message || "Save failed");
     } finally {
       setLoading(false);
     }
@@ -225,25 +210,24 @@ export default function AddPatient() {
               {loading ? "Saving…" : "Save"}
             </button>
             <button
-  type="button"
-  className="btn cancel"
-  onClick={() => {
-    const from = location.state?.fromPage;
-    switch(from) {
-      case "patientlist":
-        navigate(-1);
-        break;
-      case "mwls":
-        navigate("/mwls");
-        break;
-      default:
-        navigate("/mwls");
-    }
-  }}
->
-  Cancel
-</button>
-
+              type="button"
+              className="btn cancel"
+              onClick={() => {
+                const from = location.state?.fromPage;
+                switch (from) {
+                  case "patientlist":
+                    navigate(-1);
+                    break;
+                  case "mwls":
+                    navigate("/mwls");
+                    break;
+                  default:
+                    navigate("/mwls");
+                }
+              }}
+            >
+              Cancel
+            </button>
           </div>
 
           {successMsg && <p className="success-msg">{successMsg}</p>}

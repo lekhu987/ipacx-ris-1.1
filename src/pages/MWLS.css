@@ -38,7 +38,7 @@
   width: 100%;
   border-collapse: collapse;
   table-layout: fixed; /* Essential for alignment */
-  font-weight: 600;
+  font-weight: 100;
 }
 
 .mwl-table thead {
@@ -56,7 +56,7 @@
   background: #f8f9fb;
   z-index: 2;
   
-  font-size: 16px; /* Header font size */
+  font-size: 12px; /* Header font size */
 }
 
 /* Column widths (adjust based on MWLS columns) */

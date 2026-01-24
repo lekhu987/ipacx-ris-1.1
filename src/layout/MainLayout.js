@@ -1,92 +1,138 @@
-// src/layout/MainLayout.jsx
-import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import {
+  LayoutDashboard,
+  Users,
+  CreditCard,
+  CalendarDays,
+  Boxes,
+  ClipboardList,
+  Monitor,
+  FileText,
+  Settings,
+  Menu,
+  ChevronLeft,
+} from "lucide-react";
 import "./MainLayout.css";
 
 function MainLayout({ children }) {
+  // Initialize collapsed state from sessionStorage
+  const [collapsed, setCollapsed] = useState(() => {
+    const saved = sessionStorage.getItem("sidebarCollapsed");
+    return saved ? JSON.parse(saved) : false;
+  });
   const [showAdminMenu, setShowAdminMenu] = useState(false);
   const [showUserInfo, setShowUserInfo] = useState(false);
-  const navigate = useNavigate();
 
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const username = user?.username || "User";
   const role = user?.role || "N/A";
-  const tokenExpiry = user?.tokenExpiry
-    ? new Date(user.tokenExpiry).toLocaleString()
-    : "N/A";
 
   const handleLogout = () => {
-    logout(); // clears user from context
-    navigate("/"); // go to login page
+    logout();
+    navigate("/");
   };
 
+  // Save collapsed state in sessionStorage whenever it changes
+  useEffect(() => {
+    sessionStorage.setItem("sidebarCollapsed", JSON.stringify(collapsed));
+  }, [collapsed]);
+
+  const toggleSidebar = () => {
+    setCollapsed(!collapsed);
+  };
+
+  const menuItems = [
+    { name: "Dashboard", icon: <LayoutDashboard size={18} />, path: "/dashboard" },
+    { name: "Patient List", icon: <Users size={18} />, path: "/patient-list" },
+   // { name: "Billing", icon: <CreditCard size={18} />, path: "/billing" },
+    { name: "Scheduling", icon: <CalendarDays size={18} />, path: "/scheduling" },
+   // { name: "Inventory", icon: <Boxes size={18} />, path: "/inventory" },
+    { name: "Modality WorkList", icon: <ClipboardList size={18} />, path: "/mwls" },
+    { name: "PACS Page", icon: <Monitor size={18} />, path: "/pacspage" },
+    { name: "Reporting", icon: <FileText size={18} />, path: "/reporting" },
+  ];
+
   return (
-    <div className="layout-container">
+    <div className="ris-layout">
       {/* SIDEBAR */}
-      <div className="sidebar">
-        <div className="app-name">iPacx RIS</div>
+      <aside className={`ris-sidebar ${collapsed ? "collapsed" : ""}`}>
+        {/* HEADER */}
+        <div className="ris-sidebar-header">
+          {!collapsed && <div className="ris-app-name">iPacx RIS</div>}
+          <button
+            className="ris-toggle-btn"
+            onClick={toggleSidebar}
+            title={collapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+          >
+            {collapsed ? <Menu size={20} /> : <ChevronLeft size={20} />}
+          </button>
+        </div>
 
-        {/* Main Menu */}
-        <Link to="/dashboard">Dashboard</Link>
-        <Link to="/patient-list">Patient List</Link>
-        <Link to="/billing">Billing</Link>
-        <Link to="/scheduling">Scheduling</Link>
-         <Link to="/inventory">Inventory</Link>
-        <Link to="/mwls">Modality WorkList</Link>
-         <Link to="/pacspage">PACS page</Link>
-        <Link to="/reporting">Reporting</Link>
-       
-
-        {/* ADMIN SETTINGS (only ADMIN sees this) */}
-        {role === "ADMIN" && (
-          <>
-            <div
-              className="admin-section-title"
-              onClick={() => setShowAdminMenu(!showAdminMenu)}
-            >
-              Admin Settings
+        {/* MENU */}
+        <nav className="ris-menu">
+          {menuItems.map((item) => (
+            <div key={item.name} className="ris-menu-item-wrapper">
+              <Link
+                to={item.path}
+                className={`ris-menu-item ${
+                  location.pathname === item.path ? "active" : ""
+                }`}
+              >
+                {item.icon}
+                {!collapsed && <span>{item.name}</span>}
+              </Link>
+              {collapsed && <div className="ris-tooltip">{item.name}</div>}
             </div>
+          ))}
 
-            {showAdminMenu && (
-              <div className="admin-submenu">
-                <Link to="/admin/user-management">User Management</Link>
-                <Link to="/admin/templates">Template Management</Link>
-                <Link to="/admin/pacs-management">PACS Management</Link>
-                <Link to="/admin/mwls-management">MWLS Management</Link>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* USERNAME CLICK TO SHOW ROLE & TOKEN */}
-        <div
-          className="bottom-username"
-          onClick={() => setShowUserInfo(!showUserInfo)}
-          style={{ cursor: "pointer" }}
-        >
-          <div>{username}</div>
-
-          {showUserInfo && (
-            <div className="user-info" style={{ marginTop: "5px", fontSize: "0.85rem", color: "#0b0909ff" }}>
-              <div>Role: {role}</div>
-              
-              <button
+          {/* ADMIN */}
+          {role === "ADMIN" && !collapsed && (
+            <>
+              <div
+                className="ris-admin-title"
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleLogout();
+                  setShowAdminMenu(!showAdminMenu);
                 }}
-                style={{ marginTop: "5px" }}
               >
-                Logout
-              </button>
+                <Settings size={16} />
+                <span>Admin Settings</span>
+              </div>
+
+              {showAdminMenu && (
+                <div className="ris-admin-submenu">
+                  <Link to="/admin/user-management">User Management</Link>
+                  <Link to="/admin/templates">Template Management</Link>
+                  <Link to="/admin/pacs-management">PACS Management</Link>
+                  <Link to="/admin/mwls-management">MWLS Management</Link>
+                </div>
+              )}
+            </>
+          )}
+        </nav>
+
+        {/* USER */}
+        <div
+          className="ris-user"
+          onClick={() => !collapsed && setShowUserInfo(!showUserInfo)}
+        >
+          {!collapsed && <div className="ris-username">{username}</div>}
+          {!collapsed && showUserInfo && (
+            <div className="ris-user-info">
+              <div>Role: {role}</div>
+              <button onClick={handleLogout}>Logout</button>
             </div>
           )}
         </div>
-      </div>
+      </aside>
 
-      {/* MAIN CONTENT */}
-      <div className="content">{children}</div>
+      {/* CONTENT */}
+      <main className="ris-content">{children}</main>
     </div>
   );
 }

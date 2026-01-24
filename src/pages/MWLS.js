@@ -1,9 +1,8 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import MainLayout from "../layout/MainLayout";
+import api from "../api/axios";
 import "./MWLS.css";
-
-const API_ROOT = process.env.REACT_APP_API_ROOT || "http://localhost:5000";
 
 export default function MWLS() {
   const [mwl, setMwl] = useState([]);
@@ -21,8 +20,7 @@ export default function MWLS() {
   const loadMwl = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`${API_ROOT}/api/mwl`);
-      const data = await res.json();
+      const { data } = await api.get("/api/mwl");
 
       const normalized = data.map((e) => ({
         id: e.id,
@@ -47,6 +45,7 @@ export default function MWLS() {
       setMwl(normalized);
     } catch (err) {
       console.error(err);
+      alert("Failed to load MWL");
     } finally {
       setLoading(false);
     }
@@ -74,21 +73,21 @@ export default function MWLS() {
   // ============================
   const handleDelete = async () => {
     if (!selectedIds.length) return alert("Select at least one patient");
-
     if (!window.confirm("Delete selected MWL entries?")) return;
 
-    await Promise.all(
-      selectedIds.map((id) =>
-        fetch(`${API_ROOT}/api/mwl/${id}`, { method: "DELETE" })
-      )
-    );
-
-    setSelectedIds([]);
-    loadMwl();
+    try {
+      await Promise.all(
+        selectedIds.map((id) => api.delete(`/api/mwl/${id}`))
+      );
+      setSelectedIds([]);
+      loadMwl();
+    } catch (err) {
+      alert("Delete failed");
+    }
   };
 
   // ============================
-  // SEND to Modality (directly using stored modality)
+  // Send to PACS
   // ============================
   const handleSendToPacs = async () => {
     if (!selectedIds.length) return alert("Select patient(s)");
@@ -97,25 +96,22 @@ export default function MWLS() {
       await Promise.all(
         selectedIds.map((id) => {
           const entry = mwl.find((p) => p.id === id);
-          const modality = entry.Modality; // ✅ use stored modality
-          if (!modality) {
+          if (!entry?.Modality) {
             alert(`MWL entry ${entry.PatientName} has no modality`);
             return null;
           }
 
-          return fetch(`${API_ROOT}/api/mwl/${id}/send`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ modality }),
+          return api.post(`/api/mwl/${id}/send`, {
+            modality: entry.Modality,
           });
         })
       );
 
-      alert(`Patient(s) sent to their respective modality successfully.`);
+      alert("Patient(s) sent to modality successfully");
       setSelectedIds([]);
       loadMwl();
     } catch (err) {
-      alert("Send failed: " + err.message);
+      alert("Send failed");
     }
   };
 
@@ -127,8 +123,9 @@ export default function MWLS() {
       return alert("Select exactly one patient to edit");
 
     const entry = mwl.find((p) => p.id === selectedIds[0]);
-
-    navigate("/add-patient", { state: { editEntry: entry, fromPage: "mwls" } });
+    navigate("/add-patient", {
+      state: { editEntry: entry, fromPage: "mwls" },
+    });
   };
 
   // ============================
@@ -148,20 +145,13 @@ export default function MWLS() {
       <div className="mwl-root">
         <h1 className="page-header">Modality WorkList Page</h1>
 
-        {/* Toolbar */}
         <div className="mwl-toolbar">
           <button className="btn primary" onClick={() => navigate("/add-patient")}>➕</button>
           <button className="btn primary" onClick={handleEdit}>✎</button>
           <button className="btn danger" onClick={handleDelete}>🗑</button>
-          <button
-            className="btn secondary"
-            onClick={handleSendToPacs} // ✅ send directly
-          >
-            📤
-          </button>
+          <button className="btn secondary" onClick={handleSendToPacs}>📤</button>
         </div>
 
-        {/* Table */}
         <div className="table-wrapper">
           {loading ? (
             <div className="mwl-loading">Loading…</div>
@@ -179,9 +169,7 @@ export default function MWLS() {
                   <th>
                     Patient ID
                     <input
-                      type="text"
                       className="filter-input"
-                      placeholder="Filter"
                       value={filterId}
                       onChange={(e) => setFilterId(e.target.value)}
                     />
@@ -189,9 +177,7 @@ export default function MWLS() {
                   <th>
                     Patient Name
                     <input
-                      type="text"
                       className="filter-input"
-                      placeholder="Filter"
                       value={filterName}
                       onChange={(e) => setFilterName(e.target.value)}
                     />
@@ -218,7 +204,9 @@ export default function MWLS() {
                         <input
                           type="checkbox"
                           checked={selectedIds.includes(e.id)}
-                          onChange={(ev) => handleCheckbox(e.id, ev.target.checked)}
+                          onChange={(ev) =>
+                            handleCheckbox(e.id, ev.target.checked)
+                          }
                         />
                       </td>
                       <td>{e.PatientID}</td>

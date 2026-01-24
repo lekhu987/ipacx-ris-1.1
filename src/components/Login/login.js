@@ -12,7 +12,12 @@ function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogin = async () => {
+  // ✅ Handle login
+  const handleLogin = async (e) => {
+    e.preventDefault(); // Prevent page reload
+
+    console.log("Login triggered", username, password);
+
     if (!username || !password) {
       alert("Please enter username and password");
       return;
@@ -21,10 +26,7 @@ function Login() {
     try {
       setLoading(true);
 
-      const res = await api.post("/api/login", {
-        username,
-        password,
-      });
+      const res = await api.post("/api/login", { username, password });
 
       console.log("LOGIN RESPONSE:", res.data);
 
@@ -33,12 +35,11 @@ function Login() {
         return;
       }
 
-      // ✅ Save user ONLY (no token)
+      // Save user context
       login(res.data.user);
 
-      // ✅ Go to dashboard
+      // Navigate to dashboard
       navigate("/dashboard");
-
     } catch (err) {
       if (err.response?.data?.message) {
         alert(err.response.data.message);
@@ -56,23 +57,26 @@ function Login() {
       <div className="login-box">
         <h2>iPacx RIS Login</h2>
 
-        <input
-          type="text"
-          placeholder="Username"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-        />
+        {/* ✅ Form to allow Enter key submission */}
+        <form onSubmit={handleLogin}>
+          <input
+            type="text"
+            placeholder="Username"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
 
-        <input
-          type="password"
-          placeholder="Password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+          <input
+            type="password"
+            placeholder="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
 
-        <button onClick={handleLogin} disabled={loading}>
-          {loading ? "Logging in..." : "Login"}
-        </button>
+          <button type="submit" disabled={loading}>
+            {loading ? "Logging in..." : "Login"}
+          </button>
+        </form>
       </div>
     </div>
   );

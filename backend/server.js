@@ -6,32 +6,21 @@ const { Pool } = require("pg");
 const fs = require("fs");
 const path = require("path");
 const multer = require("multer");
-// const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
-// const cookieParser = require("cookie-parser");
-
 const app = express();
 const PORT = process.env.PORT || 5000;
-
-// Utils
 const generateFinalReportPDF = require("./utils/generateFinalReportPDF");
 
-// Middleware
 app.use(cors({
-  origin: [
-    "http://localhost:3000",
-    "http://192.168.1.7:3000" 
-  ],
+  origin: true,   // 👈 allow all origins
   credentials: true
 }));
-
 app.use(express.json());
 app.use(
   "/uploads/report_images",
   express.static(path.join(__dirname, "uploads/report_images"))
 );
-
-
+app.disable("etag");
 // ======================================================
 // PostgreSQL CONNECTION
 // ======================================================
@@ -64,31 +53,49 @@ function extractAgeFromName(name) {
   return "N/A";
 }
 
+const patientDocsDir = path.join(__dirname, "uploads/patient_docs");
+if (!fs.existsSync(patientDocsDir)) {
+  fs.mkdirSync(patientDocsDir, { recursive: true });
+}
+
+const patientUploadStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, patientDocsDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname) || ".jpg"; // default to .jpg
+    cb(null, `PAT_${Date.now()}${ext}`);
+  },
+});
+
+const uploadPatient = multer({
+  storage: patientUploadStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith("image/")) {
+      return cb(new Error("Only image files allowed"));
+    }
+    cb(null, true);
+  },
+});
+
 // login route
 app.post("/api/login", async (req, res) => {
   const { username, password } = req.body;
-
   const result = await pool.query(
     `SELECT id, username, role, password_hash, is_active
      FROM users WHERE username=$1`,
     [username]
   );
-
   if (!result.rows.length) {
     return res.status(401).json({ message: "Invalid credentials" });
   }
-
   const user = result.rows[0];
-
   if (!user.is_active) {
     return res.status(403).json({ message: "Account disabled" });
   }
-
   const valid = await bcrypt.compare(password, user.password_hash);
   if (!valid) {
     return res.status(401).json({ message: "Invalid credentials" });
   }
-
   // ✅ JUST RETURN USER
   res.json({
     success: true,
@@ -197,7 +204,68 @@ app.delete("/api/users/:id",  async (req, res) => {
   }
 });
 
+// Auto-generate unique patient ID
+function generatePatientId() {
+  return `HIS${Date.now()}${Math.floor(Math.random() * 1000)}`;
+}
 
+
+// ===== Create Patient Route =====
+app.post("/api/patients", uploadPatient.single("id_proof_path"), async (req, res) => {
+  try {
+    const { first_name, last_name, gender, dob, mobile } = req.body;
+
+    if (!first_name || !last_name || !gender) {
+      return res.status(400).json({ error: "First name, last name, and gender are required" });
+    }
+
+    // Save only the path to the DB
+    const idProofPath = req.file ? `/uploads/patient_docs/${req.file.filename}` : null;
+
+    // Auto-generate patient ID
+    const patientId = `HIS${Date.now()}`;
+
+    const result = await pool.query(
+      `INSERT INTO patients 
+        (patient_id, first_name, last_name, gender, dob, mobile, id_proof_path)
+       VALUES ($1,$2,$3,$4,$5,$6,$7)
+       RETURNING *`,
+      [patientId, first_name, last_name, gender, dob || null, mobile || null, idProofPath]
+    );
+
+    res.status(201).json({ success: true, patient: result.rows[0] });
+  } catch (err) {
+    console.error("Patient registration error:", err.message);
+    res.status(500).json({ error: "Failed to register patient" });
+  }
+});
+
+// ===== Get All Patients =====
+app.get("/api/patients", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM patients ORDER BY created_at DESC");
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Error fetching patients:", err.message);
+    res.status(500).json({ error: "Failed to fetch patients" });
+  }
+});
+
+
+app.get("/api/appointments", async (req, res) => {
+  const { date } = req.query;
+
+  try {
+    const result = await pool.query(
+      "SELECT * FROM appointments WHERE appointment_date = $1",
+      [date]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 /* ======================================================
    GET STUDIES FROM ORTHANC
@@ -400,10 +468,31 @@ async function getActivePacs() {
 /* ======================================================
    GET STUDIES FROM ACTIVE PACS (ORTHANC) – FIXED
 ====================================================== */
-app.post("/api/pacs/studies",  async (req, res) => {
+app.post("/api/pacs/studies", async (req, res) => {
   try {
-    const { data: studyIds } = await axios.get(
-      `${ORTHANC_URL}studies`,
+    const { pacs_id, startDate, endDate } = req.body;
+
+    if (!pacs_id) {
+      return res.status(400).json({ error: "pacs_id required" });
+    }
+
+    /* ============================
+       1️⃣ FIND STUDIES (FAST)
+       ============================ */
+
+    const findPayload = {
+      Level: "Study",
+      Query: {},
+      Limit: 200, // increase if needed
+    };
+
+    if (startDate && endDate) {
+      findPayload.Query.StudyDate = `${startDate}-${endDate}`;
+    }
+
+    const { data: studyIds } = await axios.post(
+      `${ORTHANC_URL}tools/find`,
+      findPayload,
       { auth: ORTHANC_AUTH }
     );
 
@@ -411,63 +500,68 @@ app.post("/api/pacs/studies",  async (req, res) => {
       return res.json([]);
     }
 
-    const studies = [];
+    /* ============================
+       2️⃣ LOAD STUDY DETAILS (PARALLEL)
+       ============================ */
 
-    for (const studyId of studyIds) {
-      try {
-        const { data: study } = await axios.get(
-          `${ORTHANC_URL}studies/${studyId}`,
-          { auth: ORTHANC_AUTH }
-        );
-
-        // 1. Get Modality from the first series
-        let modality = "N/A";
-        if (Array.isArray(study.Series) && study.Series.length > 0) {
-          const seriesId = study.Series[0];
-          const { data: series } = await axios.get(
-            `${ORTHANC_URL}series/${seriesId}`,
+    const studies = await Promise.all(
+      studyIds.map(async (studyId) => {
+        try {
+          const { data: study } = await axios.get(
+            `${ORTHANC_URL}studies/${studyId}`,
             { auth: ORTHANC_AUTH }
           );
-          modality = series.MainDicomTags?.Modality || "N/A";
+
+          // ✅ Modality (no series call)
+          const modality =
+            study.MainDicomTags?.ModalitiesInStudy?.[0] || "N/A";
+
+          // ✅ Patient Sex formatting
+          const sexRaw = study.PatientMainDicomTags?.PatientSex || "O";
+          const patientSex =
+            sexRaw === "M" ? "Male" : sexRaw === "F" ? "Female" : "Other";
+
+          // ✅ Patient Age (your existing logic)
+          const patientName =
+            study.PatientMainDicomTags?.PatientName || "N/A";
+
+          const patientAge =
+            typeof extractAgeFromName === "function"
+              ? extractAgeFromName(patientName)
+              : "N/A";
+
+          return {
+            PatientID: study.PatientMainDicomTags?.PatientID || "N/A",
+            PatientName: patientName,
+            PatientAge: patientAge,
+            PatientSex: patientSex,
+            AccessionNumber:
+              study.MainDicomTags?.AccessionNumber || "N/A",
+            StudyDescription:
+              study.MainDicomTags?.StudyDescription || "No Description",
+            StudyDate: study.MainDicomTags?.StudyDate || "N/A",
+            Modality: modality,
+            PACS: "orthanc",
+            StudyInstanceUID:
+              study.MainDicomTags?.StudyInstanceUID || study.ID,
+          };
+        } catch (err) {
+          console.error("Failed study:", studyId, err.message);
+          return null;
         }
+      })
+    );
 
-        // 2. Format Patient Sex (Mirroring your logic)
-        const sexRaw = study.PatientMainDicomTags?.PatientSex || "O";
-        const patientSex = sexRaw === "M" ? "Male" : sexRaw === "F" ? "Female" : "Other";
+    /* ============================
+       3️⃣ CLEAN + RESPOND
+       ============================ */
 
-        // 3. Extract Age (Mirroring your logic)
-        const patientName = study.PatientMainDicomTags?.PatientName || "N/A";
-        // Assuming extractAgeFromName is defined in your backend
-        const patientAge = typeof extractAgeFromName === "function" 
-                           ? extractAgeFromName(patientName) 
-                           : "N/A";
-
-        // 4. Push normalized data to the array
-        studies.push({
-          PatientID: study.PatientMainDicomTags?.PatientID || "N/A",
-          PatientName: patientName,
-          PatientAge: patientAge,                    // ✅ Added
-          PatientSex: patientSex,                    // ✅ Added
-          AccessionNumber: study.MainDicomTags?.AccessionNumber || "N/A", // ✅ Added
-          StudyDescription: study.MainDicomTags?.StudyDescription || "No Description", // ✅ Fixed Key
-          StudyDate: study.MainDicomTags?.StudyDate || "N/A",
-          Modality: modality,
-          PACS: "orthanc",
-          StudyInstanceUID: study.MainDicomTags?.StudyInstanceUID || study.ID,
-        });
-      } catch (innerErr) {
-        console.error("Failed study:", studyId, innerErr.message);
-      }
-    }
-
-    res.json(studies);
+    res.json(studies.filter(Boolean));
   } catch (err) {
     console.error("PACS studies error:", err.message);
     res.status(500).json({ error: "Failed to fetch studies" });
   }
 });
-
-
 
 // Add MWL
 app.post("/api/mwl", async (req, res) => {
@@ -1409,7 +1503,33 @@ app.get("/api/reports/:id/pdf/print", async (req, res) => {
     res.status(500).send("Error generating print PDF");
   }
 });
-//start server
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
+// Test PostgreSQL connection at startup
+pool.connect()
+  .then(client => {
+    console.log("🟢 Connected to PostgreSQL database");
+    client.release();
+
+    // Check if React build folder exists
+    const buildPath = path.join(__dirname, "../build"); // adjust if needed
+    if (fs.existsSync(buildPath)) {
+      console.log("✅ React build folder found. Serving frontend...");
+
+      // Serve static files (JS, CSS, images)
+      app.use(express.static(buildPath));
+
+      // SPA fallback for React routes (must be after all /api routes)
+      app.get(/^\/(?!api).*/, (req, res) => {
+        res.sendFile(path.join(buildPath, "index.html"));
+      });
+    } else {
+      console.warn("⚠️ React build folder not found. Please run 'npm run build' in frontend.");
+    }
+
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+    });
+
+  })
+  .catch(err => {
+    console.error("🔴 Failed to connect to PostgreSQL:", err.message);
+  });

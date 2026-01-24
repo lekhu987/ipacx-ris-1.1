@@ -2,27 +2,20 @@
 import React, { useState, useEffect } from "react";
 import MainLayout from "../../layout/MainLayout";
 import "./TemplateManagement.css";
-
-const BACKEND_URL = "http://localhost:5000";
-
+import api from "../../api/axios";
 export default function TemplateManagement() {
   const activeMain = "Templates";
   const [activeSub, setActiveSub] = useState("View Templates");
   const [editingId, setEditingId] = useState(null);
-
   const [templates, setTemplates] = useState([]);
-
   const [templateName, setTemplateName] = useState("");
   const [isTemplateNameManual, setIsTemplateNameManual] = useState(false);
-
   const [templateModality, setTemplateModality] = useState("");
   const [templateBody, setTemplateBody] = useState("");
   const [templateType, setTemplateType] = useState("");
-
   const [History, setHistory] = useState("");
   const [findings, setFindings] = useState("");
   const [conclusion, setConclusion] = useState("");
-
   const [modalities, setModalities] = useState([]);
   const [bodyParts, setBodyParts] = useState([]);
 
@@ -33,8 +26,7 @@ export default function TemplateManagement() {
   ============================ */
   const fetchTemplates = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/report-templates`);
-      const data = await res.json();
+      const { data } = await api.get("/api/report-templates");
       setTemplates(data);
     } catch (err) {
       console.error(err);
@@ -49,9 +41,8 @@ export default function TemplateManagement() {
      FETCH MODALITIES
   ============================ */
   useEffect(() => {
-    fetch(`${BACKEND_URL}/api/modalities`)
-      .then(res => res.json())
-      .then(data => setModalities(data))
+    api.get("/api/modalities")
+      .then(({ data }) => setModalities(data))
       .catch(err => console.error(err));
   }, []);
 
@@ -67,9 +58,8 @@ export default function TemplateManagement() {
     const selected = modalities.find(m => m.code === templateModality);
     if (!selected) return;
 
-    fetch(`${BACKEND_URL}/api/body-parts?modality_id=${selected.id}`)
-      .then(res => res.json())
-      .then(data => setBodyParts(data))
+    api.get(`/api/body-parts?modality_id=${selected.id}`)
+      .then(({ data }) => setBodyParts(data))
       .catch(err => console.error(err));
   }, [templateModality, modalities]);
 
@@ -116,27 +106,16 @@ export default function TemplateManagement() {
     };
 
     try {
-      const url = isEditMode
-        ? `${BACKEND_URL}/api/report-templates/${editingId}`
-        : `${BACKEND_URL}/api/report-templates`;
-
-      const method = isEditMode ? "PUT" : "POST";
-
-      const response = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!response.ok) {
-        alert("Failed to save template");
-        return;
+      if (isEditMode) {
+        await api.put(`/api/report-templates/${editingId}`, payload);
+        alert("Template updated successfully");
+      } else {
+        await api.post(`/api/report-templates`, payload);
+        alert("Template added successfully");
       }
 
-      // Always re-fetch templates
+      // Re-fetch templates
       await fetchTemplates();
-
-      alert(isEditMode ? "Template updated successfully" : "Template added successfully");
 
       // Reset form
       setEditingId(null);
@@ -162,11 +141,13 @@ export default function TemplateManagement() {
   const deleteTemplate = async (id) => {
     if (!window.confirm("Delete this template?")) return;
 
-    await fetch(`${BACKEND_URL}/api/report-templates/${id}`, {
-      method: "DELETE",
-    });
-
-    fetchTemplates(); // Re-fetch after delete
+    try {
+      await api.delete(`/api/report-templates/${id}`);
+      await fetchTemplates(); // Re-fetch after delete
+    } catch (err) {
+      console.error(err);
+      alert("Failed to delete template");
+    }
   };
 
   /* ============================
