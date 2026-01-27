@@ -6,7 +6,9 @@ import { StudiesContext } from "../context/StudiesContext";
 import "./ReportingPage.css";
 import ReportPrintLayout from "../components/ReportPrintLayout.jsx";
 import api from "../api/axios";
+
 const rowsPerPage = 20;
+
 function dateInputToYYYYMMDD(v) {
   if (!v) return "";
   return v.replaceAll("-", "");
@@ -15,6 +17,7 @@ function dateInputToYYYYMMDD(v) {
 function getTodayDateInput() {
   return new Date().toISOString().slice(0, 10);
 }
+
 function getPastDateInput(days) {
   const past = new Date();
   past.setDate(past.getDate() - days);
@@ -35,6 +38,7 @@ export default function ReportingPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { studies: allStudies, loading: loadingStudies } = useContext(StudiesContext);
+
   const [showTable, setShowTable] = useState(false);
   const [savedReports, setSavedReports] = useState([]);
   const [loadingReports, setLoadingReports] = useState(true);
@@ -46,84 +50,93 @@ export default function ReportingPage() {
   const [filterGender, setFilterGender] = useState("");
   const [filterStatus, setFilterStatus] = useState("");
   const [previewReport, setPreviewReport] = useState(null);
+
   const [selectedReports, setSelectedReports] = useState([]);
-  const toggleSelectReport = (report) => {
-    setSelectedReports([report.id]); // always replace with the clicked report
-  };
-  const handlePrintReport = () => {
-    if (selectedReports.length === 0) return;
-    const reportId = selectedReports[0]; // only one allowed
-    window.open(`/api/reports/${reportId}/pdf/print`, "_blank");
-  };
-
-  useEffect(() => {
-    setFilterFromDate(getPastDateInput(7));
-    setFilterToDate(getTodayDateInput());
-  }, []);
-
-  const openAddendumPage = async () => {
-    if (selectedReports.length === 0) return;
-
-    const originalReport = savedReports.find(r => r.id === selectedReports[0]);
-    if (!originalReport) return;
-
-    navigate(`/report-panel?study=${encodeURIComponent(originalReport.study_uid)}`, {
-      state: {
-        isAddendum: true,
-        originalReportId: originalReport.id,
-        parentReport: originalReport,
-      },
-    });
-  };
-
- const fetchReports = async () => {
-  setLoadingReports(true);
-  try {
-    const { data: reports } = await api.get("/api/reports");
-
-    const uniqStudyUIDs = Array.from(new Set(reports.map(r => r.study_uid).filter(Boolean)));
-    const studyMap = {};
-
-    await Promise.all(
-      uniqStudyUIDs.map(async (uid) => {
-        try {
-          const { data: study } = await api.get(`/api/studies/${encodeURIComponent(uid)}`);
-          studyMap[uid] = study;
-        } catch (err) {
-          console.warn("Failed to fetch study", uid, err);
-        }
-      })
-    );
-
-    const enriched = reports.map(r => {
-      const study = studyMap[r.study_uid];
-      let displayStatus = r.status;
-      if (r.addendum_index > 0) displayStatus = "Addendum";
-      return {
-        ...r,
-        patient_name: r.addendum_index > 0 ? `${r.patient_name} (${r.addendum_index})` : r.patient_name,
-        accession_number: r.accession_number || study?.AccessionNumber || "",
-        modality: r.modality || study?.Modality || "",
-        study_date: study?.StudyDate || r.created_at,
-        status: displayStatus,
-      };
-    });
-
-    setSavedReports(enriched);
-  } catch (err) {
-    console.error("Failed to fetch reports:", err);
-  } finally {
-    setLoadingReports(false);
-  }
+const toggleSelectReport = (report) => {
+  setSelectedReports([report.id]); // always replace with the clicked report
 };
 
+const handlePrintReport = () => {
+  if (selectedReports.length === 0) return;
+
+  const reportId = selectedReports[0]; // only one allowed
+  window.open(
+    `http://localhost:5000/api/reports/${reportId}/pdf/print`,
+    "_blank"
+  );
+};
+useEffect(() => {
+  // Default filter: last 7 days
+  setFilterFromDate(getPastDateInput(7));
+  setFilterToDate(getTodayDateInput());
+}, []);
+
+const openAddendumPage = async () => {
+  if (selectedReports.length === 0) return;
+
+  const originalReport = savedReports.find(r => r.id === selectedReports[0]);
+  if (!originalReport) return;
+
+  // Directly navigate to report panel with addendum prefetch
+  navigate(`/report-panel?study=${encodeURIComponent(originalReport.study_uid)}`, {
+    state: {
+      isAddendum: true,
+      originalReportId: originalReport.id,
+      parentReport: originalReport,
+    },
+  });
+};
+
+
+  const fetchReports = async () => {
+    setLoadingReports(true);
+    try {
+      const res = await fetch("/api/reports");
+      if (!res.ok) throw new Error("Failed to load reports");
+      const reports = await res.json();
+
+      const uniqStudyUIDs = Array.from(new Set(reports.map(r => r.study_uid).filter(Boolean)));
+      const studyMap = {};
+      await Promise.all(
+        uniqStudyUIDs.map(async (uid) => {
+          try {
+            const sr = await fetch(`/api/studies/${encodeURIComponent(uid)}`);
+            if (!sr.ok) return;
+            studyMap[uid] = await sr.json();
+          } catch {}
+        })
+      );
+
+      const enriched = reports.map(r => {
+  const study = studyMap[r.study_uid];
+
+  // Determine proper status
+  let displayStatus = r.status; // default from API
+  if (r.addendum_index > 0) displayStatus = "Addendum"; // only override if truly an addendum
+
+  return {
+    ...r,
+    patient_name: r.addendum_index > 0 ? `${r.patient_name} (${r.addendum_index})` : r.patient_name,
+    accession_number: r.accession_number || study?.AccessionNumber || "",
+    modality: r.modality || study?.Modality || "",
+    study_date: study?.StudyDate || r.created_at,
+    status: displayStatus, // <- use computed status
+  };
+});
+
+      setSavedReports(enriched);
+    } catch (err) { console.error(err); } finally { setLoadingReports(false); }
+  };
+
   useEffect(() => { fetchReports(); }, []);
+  
   useEffect(() => {
     if (location.state?.refreshReports) {
       fetchReports();
       navigate(location.pathname, { replace: true, state: {} });
     }
   }, [location.state]);
+
   const reportStats = useMemo(() => {
     const totalReports = savedReports.length;
     const draftReports = savedReports.filter(r => r.status === "Draft").length;
@@ -133,53 +146,67 @@ export default function ReportingPage() {
     const todayReports = savedReports.filter(r => r.created_at?.startsWith(today)).length;
     return { totalReports, draftReports, finalReports, addendumReports, todayReports };
   }, [savedReports]);
+
   const currentData = showTable ? allStudies || [] : savedReports || [];
-  const filtered = useMemo(() => {
-    const lower = searchText.trim().toLowerCase();
-    const from = dateInputToYYYYMMDD(filterFromDate);
-    const to = dateInputToYYYYMMDD(filterToDate);
-    return currentData.filter((s) => {
-      const reportDateStr = showTable
-        ? s.StudyDate?.replaceAll("-", "") || ""
-        : s.created_at?.replaceAll("-", "").slice(0, 8) || "";
-      const dateOk = (!from || reportDateStr >= from) && (!to || reportDateStr <= to);
-      const searchOk = !lower ||
-        (s.PatientName?.toLowerCase().startsWith(lower)) ||
-        (s.PatientID?.toString().toLowerCase().startsWith(lower)) ||
-        (s.patient_name?.toLowerCase().startsWith(lower)) ||
-        (s.patient_id?.toString().toLowerCase().startsWith(lower));
-      const modalityOk = !filterModality || (s.Modality === filterModality || s.modality === filterModality);
-      const genderOk = !filterGender || (s.PatientSex === filterGender || s.patient_sex === filterGender);
-      const statusOk = showTable || !filterStatus || (s.status === filterStatus);
-      return dateOk && searchOk && modalityOk && genderOk && statusOk;
-    });
-  }, [currentData, searchText, filterFromDate, filterToDate, filterModality, filterGender, filterStatus, showTable]);
+ const filtered = useMemo(() => {
+  const lower = searchText.trim().toLowerCase();
+  const from = dateInputToYYYYMMDD(filterFromDate);
+  const to = dateInputToYYYYMMDD(filterToDate);
+
+  return currentData.filter((s) => {
+    // Use created_at for reports, StudyDate for PACS
+    const reportDateStr = showTable
+      ? s.StudyDate?.replaceAll("-", "") || ""
+      : s.created_at?.replaceAll("-", "").slice(0, 8) || "";
+    const dateOk = (!from || reportDateStr >= from) && (!to || reportDateStr <= to);
+
+    const searchOk = !lower ||
+      (s.PatientName?.toLowerCase().startsWith(lower)) ||
+      (s.PatientID?.toString().toLowerCase().startsWith(lower)) ||
+      (s.patient_name?.toLowerCase().startsWith(lower)) ||
+      (s.patient_id?.toString().toLowerCase().startsWith(lower));
+
+    const modalityOk = !filterModality || (s.Modality === filterModality || s.modality === filterModality);
+    const genderOk = !filterGender || (s.PatientSex === filterGender || s.patient_sex === filterGender);
+    const statusOk = showTable || !filterStatus || (s.status === filterStatus);
+
+    return dateOk && searchOk && modalityOk && genderOk && statusOk;
+  });
+}, [currentData, searchText, filterFromDate, filterToDate, filterModality, filterGender, filterStatus, showTable]);
+
+
   const paginated = filtered.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
+
   const handleClearFilters = () => {
     setSearchText(""); setFilterFromDate(""); setFilterToDate(""); setFilterModality(""); setFilterGender(""); setFilterStatus(""); setCurrentPage(1);
     setSelectedReports([]);
     if (showTable) { setFilterFromDate(getPastDateInput(30)); setFilterToDate(getTodayDateInput()); }
   };
+
   const handleSingleDateChange = (e) => {
     const v = e.target.value;
     if (!v) { setFilterFromDate(""); setFilterToDate(""); setCurrentPage(1); return; }
     setFilterFromDate(v); setFilterToDate(v); setCurrentPage(1);
   };
+
   const modalityOptions = useMemo(() => {
     const set = new Set(["CT", "MR", "CR", "US", "DX"]);
     (allStudies || []).forEach(s => { if (s.Modality && s.Modality !== "N/A") set.add(s.Modality); });
     return [...set].sort();
   }, [allStudies]);
+
   const toggleViewMode = (isAddingNew = false) => {
     handleClearFilters();
     setShowTable(isAddingNew);
     if (isAddingNew) { setFilterFromDate(getPastDateInput(30)); setFilterToDate(getTodayDateInput()); }
   };
+
   function ReportPreviewModal({ report, onClose }) {
     return (
       <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", display: "flex", justifyContent: "center", alignItems: "center", zIndex: 9999 }}>
         <div style={{ background: "#fff", width: "80%", height: "90%", overflowY: "auto", position: "relative", padding: 20 }}>
           <button onClick={onClose} style={{ position: "absolute", top: 10, right: 10, background: "#ff4d4d", color: "#fff", border: "none", borderRadius: "50%", width: 28, height: 28, cursor: "pointer" }}>✖</button>
+          {/* Print Layout will handle status=Addendum label */}
           <ReportPrintLayout report={report} />
         </div>
       </div>
@@ -198,18 +225,20 @@ export default function ReportingPage() {
               <button className="btn back-btn" onClick={() => toggleViewMode(false)}>⬅️ Back to Saved Reports</button>
             )}
           </div>
+
           {!showTable && (
             <>
               <div className="report-summary-cards">
                 <div className="card total-card" onClick={() => setFilterStatus("")}><h3>Total reports</h3><p className="count">{reportStats.totalReports}</p></div>
                 <div className="card draft-card" onClick={() => setFilterStatus("Draft")}><h3>Drafts</h3><p className="count">{reportStats.draftReports}</p></div>
                 <div className="card final-card" onClick={() => setFilterStatus("Final")}><h3>Final</h3><p className="count">{reportStats.finalReports}</p></div>
-
+                
                 <div className="card today-card">
     <h3>Today</h3>
     <p className="count">{reportStats.todayReports}</p>
   </div>
               </div>
+
               <div className="patient-quickbar" style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
                 <div style={{ display: "flex", gap: 6, marginRight: 4 }}>
                   <button className="icon-btn" title="Addendum" disabled={selectedReports.length !== 1} onClick={openAddendumPage}>📝</button>
@@ -222,22 +251,28 @@ export default function ReportingPage() {
 >
   🖨️
 </button>
+
                 </div>
+
                 <input type="text" placeholder="Search Patient..." value={searchText} onChange={(e) => { setSearchText(e.target.value); setCurrentPage(1); }} style={{ padding: '6px 8px', width: 160 }} />
+                
                 <select value={filterStatus} onChange={(e) => { setFilterStatus(e.target.value); setCurrentPage(1); }} style={{ padding: 6 }}>
                   <option value="">All Statuses</option>
                   <option value="Draft">Draft</option>
                   <option value="Final">Final</option>
                   <option value="Addendum">Addendum</option>
                 </select>
+
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                   <span style={{ fontSize: "0.85rem" }}>From:</span>
                   <input type="date" value={filterFromDate} onChange={(e) => { setFilterFromDate(e.target.value); setCurrentPage(1); }} style={{ padding: 5 }} />
                   <span style={{ fontSize: "0.85rem" }}>To:</span>
                   <input type="date" value={filterToDate} onChange={(e) => { setFilterToDate(e.target.value); setCurrentPage(1); }} style={{ padding: 5 }} />
                 </div>
+
                 <button className="btn" onClick={handleClearFilters} style={{ padding: '4px 12px', minWidth: '34px', fontWeight: 'bold' }}>✖</button>
               </div>
+
               <div className="patient-table-wrap">
                 <div className="patient-table-scroll">
                   <table className="patient-table">
@@ -256,6 +291,7 @@ export default function ReportingPage() {
   />
   {(currentPage - 1) * rowsPerPage + index + 1}
 </td>
+
                           <td>{r.patient_id}</td>
                           <td>{r.patient_name}</td>
                           <td>{r.modality}</td>
@@ -274,20 +310,19 @@ export default function ReportingPage() {
         ✏️
       </button>
     ) : (
-     <button
-  type="button"
-  className="icon-btn"
-  onClick={(e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    console.log("CLICKED");
-    debugger;
-  }}
->
-
-  📄
-</button>
-
+      <button
+        className="icon-btn"
+        title="Preview Report"
+        onClick={() => {
+          
+          window.open(
+            `http://localhost:5000/api/reports/${r.id}/pdf`,
+            "_blank"
+          );
+        }}
+      >
+        📄
+      </button>
     )}
   </div>
 </td>

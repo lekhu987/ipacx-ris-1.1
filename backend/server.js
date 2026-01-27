@@ -85,7 +85,7 @@ app.post("/api/login", async (req, res) => {
      FROM users WHERE username=$1`,
     [username]
   );
-  if (!result.rows.length) {
+  if (!result.rows.length) {  
     return res.status(401).json({ message: "Invalid credentials" });
   }
   const user = result.rows[0];
@@ -241,13 +241,26 @@ app.post("/api/patients", uploadPatient.single("id_proof_path"), async (req, res
 });
 
 // ===== Get All Patients =====
+// ===== Get Patients Count by Date =====
 app.get("/api/patients", async (req, res) => {
+  const { date } = req.query; // optional query param
   try {
-    const result = await pool.query("SELECT * FROM patients ORDER BY created_at DESC");
-    res.json(result.rows);
+    let result;
+    if (date) {
+      // Count patients registered on a specific date
+      result = await pool.query(
+        "SELECT COUNT(*) FROM patients WHERE DATE(created_at) = $1",
+        [date]
+      );
+      res.json({ count: parseInt(result.rows[0].count, 10) });
+    } else {
+      // Return all patients if no date is provided
+      result = await pool.query("SELECT * FROM patients ORDER BY created_at DESC");
+      res.json(result.rows);
+    }
   } catch (err) {
     console.error("Error fetching patients:", err.message);
-    res.status(500).json({ error: "Failed to fetch patients" });
+    res.status(500).json({ count: 0 });
   }
 });
 

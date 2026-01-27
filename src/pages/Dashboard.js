@@ -2,16 +2,9 @@ import React, { useEffect, useState } from "react";
 import MainLayout from "../layout/MainLayout";
 import "./Dashboard.css";
 
-const SummaryCard = ({ title, value, onClick, selectedDate, onDateChange }) => {
+const SummaryCard = ({ title, value }) => {
   return (
-    <div className="card" onClick={onClick}>
-      <input
-        type="date"
-        value={selectedDate}
-        onChange={(e) => onDateChange(e.target.value)}
-        className="card-date-picker"
-        onClick={(e) => e.stopPropagation()}
-      />
+    <div className="card">
       <div className="card-value">{value}</div>
       <div className="card-title">{title}</div>
     </div>
@@ -39,7 +32,7 @@ export default function Dashboard() {
     }
   };
 
-  /* ---------------- Reports (FIXED LOGIC) ---------------- */
+  /* ---------------- Reports ---------------- */
   const fetchReportsStats = async (date) => {
     try {
       const res = await fetch(`/api/reports?from=${date}&to=${date}`);
@@ -89,7 +82,6 @@ export default function Dashboard() {
     fetchAll(); // initial load
 
     const interval = setInterval(fetchAll, 5000); // auto-refresh every 5 sec
-
     return () => clearInterval(interval);
   }, [selectedDate]);
 
@@ -107,18 +99,21 @@ export default function Dashboard() {
           <div className="header-left">
             <h2>Dashboard</h2>
           </div>
+          <div className="header-right">
+            <label>
+              Select Date:{" "}
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+              />
+            </label>
+          </div>
         </div>
 
         <div className="cards-row">
           {kpis.map((k) => (
-            <SummaryCard
-              key={k.title}
-              title={k.title}
-              value={k.value}
-              selectedDate={selectedDate}
-              onDateChange={setSelectedDate}
-              onClick={() => {}}
-            />
+            <SummaryCard key={k.title} title={k.title} value={k.value} />
           ))}
         </div>
       </div>
