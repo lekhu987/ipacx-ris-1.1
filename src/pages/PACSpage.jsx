@@ -85,23 +85,24 @@
 
     // ===================== FILTER LOGIC =====================
   const filteredStudies = useMemo(() => {
-    return studies.filter(s => {
-      const matchId = s.PatientID?.toLowerCase().startsWith(filters.patientId.toLowerCase());
-      const matchName = s.PatientName?.toLowerCase().startsWith(filters.patientName.toLowerCase());
-      const matchAcc = s.AccessionNumber?.toLowerCase().startsWith(filters.accession.toLowerCase());
-      const matchMod = !filters.modality || s.Modality === filters.modality;
-      const matchGender = !filters.gender || s.PatientSex === filters.gender;
+  return studies.filter(s => {
+    const matchId = (s.PatientID || "").toLowerCase().startsWith((filters.patientId || "").toLowerCase());
+    const matchName = (s.PatientName || "").toLowerCase().startsWith((filters.patientName || "").toLowerCase());
+    const matchAcc = (s.AccessionNumber || "").toLowerCase().startsWith((filters.accession || "").toLowerCase());
+    const matchMod = !filters.modality || s.Modality === filters.modality;
+    const matchGender = !filters.gender || s.PatientSex === filters.gender;
 
-      let matchDate = true;
-      if (filters.startDate) {
-        const sDate = String(s.StudyDate).replace(/-/g, "");
-        if (sDate < filters.startDate) matchDate = false;
-        if (filters.endDate && sDate > filters.endDate) matchDate = false;
-      }
+    let matchDate = true;
+    if (filters.startDate) {
+      const sDate = String(s.StudyDate).replace(/-/g, "");
+      if (sDate < filters.startDate) matchDate = false;
+      if (filters.endDate && sDate > filters.endDate) matchDate = false;
+    }
 
-      return matchId && matchName && matchAcc && matchMod && matchGender && matchDate;
-    });
-  }, [studies, filters]);
+    return matchId && matchName && matchAcc && matchMod && matchGender && matchDate;
+  });
+}, [studies, filters]);
+
 
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
