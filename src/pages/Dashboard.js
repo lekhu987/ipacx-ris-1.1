@@ -1,119 +1,115 @@
 import React, { useEffect, useState } from "react";
 import MainLayout from "../layout/MainLayout";
 import "./Dashboard.css";
+import CustomDatePicker from "../components/CustomDatePicker";
 
-const SummaryCard = ({ title, value }) => {
-  return (
-    <div className="card">
-      <div className="card-value">{value}</div>
-      <div className="card-title">{title}</div>
-    </div>
-  );
-};
+const SummaryCard = ({ title, value }) => (
+  <div className="card">
+    <div className="card-value">{value}</div>
+    <div className="card-title">{title}</div>
+  </div>
+);
 
 export default function Dashboard() {
-  const [selectedDate, setSelectedDate] = useState(
-    new Date().toISOString().slice(0, 10)
-  );
+  const getTodayYYYYMMDD = () => {
+    const d = new Date();
+    return (
+      d.getFullYear() +
+      String(d.getMonth() + 1).padStart(2, "0") +
+      String(d.getDate()).padStart(2, "0")
+    );
+  };
 
-  const [appointmentsToday, setAppointmentsToday] = useState(0);
-  const [completedReportsToday, setCompletedReportsToday] = useState(0);
-  const [pendingReportsToday, setPendingReportsToday] = useState(0);
-  const [patientsRegisteredToday, setPatientsRegisteredToday] = useState(0);
+  const today = getTodayYYYYMMDD();
 
-  /* ---------------- Patients ---------------- */
-  const fetchPatients = async (date) => {
+  const [filters, setFilters] = useState({
+    startDate: today,
+    endDate: today,
+  });
+
+  const [appointments, setAppointments] = useState(0);
+  const [completedReports, setCompletedReports] = useState(0);
+  const [pendingReports, setPendingReports] = useState(0);
+  const [patients, setPatients] = useState(0);
+
+  /* ---------- Normalize Date ---------- */
+  const normalizeDate = (dateString) => {
+    if (!dateString) return "";
+    const numeric = dateString.replace(/\D/g, ""); // remove all non-numeric
+    return numeric.substring(0, 8); // YYYYMMDD
+  };
+
+  /* ---------- Date Filtering ---------- */
+  const isInRange = (dateString) => {
+    const yyyymmdd = normalizeDate(dateString);
+    if (!yyyymmdd) return false;
+    return (
+      (!filters.startDate || yyyymmdd >= filters.startDate) &&
+      (!filters.endDate || yyyymmdd <= filters.endDate)
+    );
+  };
+
+  /* ---------- API Calls ---------- */
+  const fetchPatients = async () => {
     try {
-      const res = await fetch(`/api/patients?date=${date}`);
+      const res = await fetch("/api/patients");
       const data = await res.json();
-      setPatientsRegisteredToday(data.count || 0);
+      setPatients(data.filter((p) => isInRange(p.created_at)).length);
     } catch {
-      setPatientsRegisteredToday(0);
+      setPatients(0);
     }
   };
 
-  /* ---------------- Reports ---------------- */
-  const fetchReportsStats = async (date) => {
+  const fetchReportsStats = async () => {
     try {
-      const res = await fetch(`/api/reports?from=${date}&to=${date}`);
+      const res = await fetch("/api/reports");
       const reports = await res.json();
 
-      const draftsToday = reports.filter(
-        (r) =>
-          r.status === "Draft" &&
-          r.created_at &&
-          r.created_at.startsWith(date)
-      ).length;
+      const filtered = reports.filter((r) => isInRange(r.created_at));
 
-      const finalsToday = reports.filter(
-        (r) =>
-          r.status === "Final" &&
-          r.created_at &&
-          r.created_at.startsWith(date)
-      ).length;
-
-      setPendingReportsToday(draftsToday);
-      setCompletedReportsToday(finalsToday);
+      setCompletedReports(filtered.filter((r) => r.status === "Final").length);
+      setPendingReports(filtered.filter((r) => r.status === "Draft").length);
     } catch {
-      setPendingReportsToday(0);
-      setCompletedReportsToday(0);
+      setCompletedReports(0);
+      setPendingReports(0);
     }
   };
 
-  /* ---------------- Appointments ---------------- */
-  const fetchAppointments = async (date) => {
+  const fetchAppointments = async () => {
     try {
-      const res = await fetch(`/api/appointments?date=${date}`);
+      const res = await fetch("/api/appointments");
       const data = await res.json();
-      setAppointmentsToday(data.count || 0);
+      setAppointments(data.filter((a) => isInRange(a.appointment_date)).length);
     } catch {
-      setAppointmentsToday(0);
+      setAppointments(0);
     }
   };
 
-  /* ---------------- Auto Refresh ---------------- */
   useEffect(() => {
-    const fetchAll = () => {
-      fetchPatients(selectedDate);
-      fetchReportsStats(selectedDate);
-      fetchAppointments(selectedDate);
-    };
+    fetchPatients();
+    fetchReportsStats();
+    fetchAppointments();
+  }, [filters]);
 
-    fetchAll(); // initial load
-
-    const interval = setInterval(fetchAll, 5000); // auto-refresh every 5 sec
-    return () => clearInterval(interval);
-  }, [selectedDate]);
-
+  /* ---------- KPIs ---------- */
   const kpis = [
-    { title: "Today's Appointments", value: appointmentsToday },
-    { title: "Completed Reports Today", value: completedReportsToday },
-    { title: "Pending Reports Today", value: pendingReportsToday },
-    { title: "Patients Registered Today", value: patientsRegisteredToday },
+    { title: "Appointments", value: appointments },
+    { title: "Completed Reports", value: completedReports },
+    { title: "Pending Reports", value: pendingReports },
+    { title: "Patients Registered", value: patients },
   ];
 
   return (
     <MainLayout>
       <div className="dashboard-root">
         <div className="dashboard-header">
-          <div className="header-left">
-            <h2>Dashboard</h2>
-          </div>
-          <div className="header-right">
-            <label>
-              Select Date:{" "}
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-              />
-            </label>
-          </div>
+          <h2>Dashboard</h2>
+          <CustomDatePicker filters={filters} setFilters={setFilters} />
         </div>
 
         <div className="cards-row">
           {kpis.map((k) => (
-            <SummaryCard key={k.title} title={k.title} value={k.value} />
+            <SummaryCard key={k.title} {...k} />
           ))}
         </div>
       </div>
