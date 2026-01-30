@@ -70,7 +70,7 @@
       if (savedPacs && savedStudies) {
         setActivePacs(JSON.parse(savedPacs));
         setStudies(JSON.parse(savedStudies));
-        return; // ⛔ stop reload
+        return; 
       }
 
       if (active.length > 0) {
@@ -139,13 +139,7 @@ const uniqueModalities = useMemo(() => {
           ))}
         </div>
 
-        {/* ===================== ACTIVE PACS INFO ===================== */}
-        {activePacs && (
-          <div className="active-server-banner">
-            Connected to: <strong>{activePacs.pacs_name}</strong> ({activePacs.ip_address}:{activePacs.port})
-          </div>
-        )}
-
+        
         {/* ===================== STUDIES TABLE ===================== */}
         <div className="patient-table-scroll">
           <table className="patient-table">
