@@ -115,7 +115,11 @@
     currentPage * rowsPerPage
   );
 
-  const uniqueModalities = [...new Set(studies.map(s => s.Modality))].filter(Boolean);
+
+const uniqueModalities = useMemo(() => {
+  return [...new Set(studies.map(s => s.Modality))].filter(Boolean);
+}, [studies]);
+
     return (
       <MainLayout>
         <div className="pacs-page-header">
@@ -168,10 +172,20 @@
 
                 <th>
                   <div className="th-title">Modality</div>
-                  <select name="modality" className="header-filter" value={filters.modality} onChange={handleFilterChange}>
-                    <option value="">All</option>
-                    {uniqueModalities.map(m => <option key={m} value={m}>{m}</option>)}
-                  </select>
+                  <select
+  name="modality"
+  className="header-filter"
+  value={filters.modality}
+  onChange={handleFilterChange}
+>
+  <option value="">All</option>
+  {uniqueModalities.map((m) => (
+    <option key={m} value={m}>
+      {m}
+    </option>
+  ))}
+</select>
+
                 </th>
                 <th>
                   <div className="th-title">Gender</div>

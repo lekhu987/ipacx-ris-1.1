@@ -485,23 +485,11 @@ app.post("/api/pacs/studies", async (req, res) => {
   try {
     const { pacs_id, startDate, endDate } = req.body;
 
-    if (!pacs_id) {
-      return res.status(400).json({ error: "pacs_id required" });
-    }
+    if (!pacs_id) return res.status(400).json({ error: "pacs_id required" });
 
-    /* ============================
-       1️⃣ FIND STUDIES (FAST)
-       ============================ */
-
-    const findPayload = {
-      Level: "Study",
-      Query: {},
-      Limit: 200, // increase if needed
-    };
-
-    if (startDate && endDate) {
-      findPayload.Query.StudyDate = `${startDate}-${endDate}`;
-    }
+    // Build search payload
+    const findPayload = { Level: "Study", Query: {}, Limit: 200 };
+    if (startDate && endDate) findPayload.Query.StudyDate = `${startDate}-${endDate}`;
 
     const { data: studyIds } = await axios.post(
       `${ORTHANC_URL}tools/find`,
@@ -509,54 +497,36 @@ app.post("/api/pacs/studies", async (req, res) => {
       { auth: ORTHANC_AUTH }
     );
 
-    if (!Array.isArray(studyIds) || studyIds.length === 0) {
-      return res.json([]);
-    }
-
-    /* ============================
-       2️⃣ LOAD STUDY DETAILS (PARALLEL)
-       ============================ */
+    if (!Array.isArray(studyIds) || studyIds.length === 0) return res.json([]);
 
     const studies = await Promise.all(
       studyIds.map(async (studyId) => {
         try {
-          const { data: study } = await axios.get(
-            `${ORTHANC_URL}studies/${studyId}`,
-            { auth: ORTHANC_AUTH }
-          );
+          const { data: study } = await axios.get(`${ORTHANC_URL}studies/${studyId}`, { auth: ORTHANC_AUTH });
 
-          // ✅ Modality (no series call)
-          const modality =
-            study.MainDicomTags?.ModalitiesInStudy?.[0] || "N/A";
-
-          // ✅ Patient Sex formatting
+          const patientName = study.PatientMainDicomTags?.PatientName || "N/A";
           const sexRaw = study.PatientMainDicomTags?.PatientSex || "O";
-          const patientSex =
-            sexRaw === "M" ? "Male" : sexRaw === "F" ? "Female" : "Other";
+          const patientSex = sexRaw === "M" ? "Male" : sexRaw === "F" ? "Female" : "Other";
 
-          // ✅ Patient Age (your existing logic)
-          const patientName =
-            study.PatientMainDicomTags?.PatientName || "N/A";
-
-          const patientAge =
-            typeof extractAgeFromName === "function"
-              ? extractAgeFromName(patientName)
-              : "N/A";
+          // ✅ Modality: try ModalitiesInStudy first, then first series, then fallback
+          let modality = study.MainDicomTags?.ModalitiesInStudy?.[0] || null;
+          if (!modality && study.Series?.length > 0) {
+            const series = await axios.get(`${ORTHANC_URL}series/${study.Series[0]}`, { auth: ORTHANC_AUTH });
+            modality = series.data.MainDicomTags?.Modality || "N/A";
+          }
+          if (!modality) modality = study.MainDicomTags?.Modality || "N/A";
 
           return {
             PatientID: study.PatientMainDicomTags?.PatientID || "N/A",
             PatientName: patientName,
-            PatientAge: patientAge,
+            PatientAge: extractAgeFromName(patientName),
             PatientSex: patientSex,
-            AccessionNumber:
-              study.MainDicomTags?.AccessionNumber || "N/A",
-            StudyDescription:
-              study.MainDicomTags?.StudyDescription || "No Description",
+            AccessionNumber: study.MainDicomTags?.AccessionNumber || "N/A",
+            StudyDescription: study.MainDicomTags?.StudyDescription || "No Description",
             StudyDate: study.MainDicomTags?.StudyDate || "N/A",
             Modality: modality,
             PACS: "orthanc",
-            StudyInstanceUID:
-              study.MainDicomTags?.StudyInstanceUID || study.ID,
+            StudyInstanceUID: study.MainDicomTags?.StudyInstanceUID || study.ID,
           };
         } catch (err) {
           console.error("Failed study:", studyId, err.message);
@@ -564,10 +534,6 @@ app.post("/api/pacs/studies", async (req, res) => {
         }
       })
     );
-
-    /* ============================
-       3️⃣ CLEAN + RESPOND
-       ============================ */
 
     res.json(studies.filter(Boolean));
   } catch (err) {

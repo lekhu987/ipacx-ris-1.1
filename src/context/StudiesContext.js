@@ -1,5 +1,6 @@
 // src/context/StudiesContext.jsx
 import React, { createContext, useState, useEffect } from "react";
+import api from "../api/axios";
 
 export const StudiesContext = createContext();
 
@@ -9,17 +10,18 @@ export function StudiesProvider({ children }) {
 
   useEffect(() => {
     let mounted = true;
-    fetch("http://localhost:5000/api/studies") // adjust your endpoint
-      .then((res) => res.json())
-      .then((data) => {
-        if (!mounted) return;
+
+    api.get("/api/studies")
+      .then(({ data }) => {
+        if (!mounted || !Array.isArray(data)) return;
+
         const normalized = data.map((s) => ({
           PatientID: s.PatientID || "N/A",
           PatientName: s.PatientName || "N/A",
           PatientSex: (() => {
             const sex = s.PatientSex || "O";
-            if (sex.toLowerCase() === "male" || sex.toLowerCase() === "m") return "M";
-            if (sex.toLowerCase() === "female" || sex.toLowerCase() === "f") return "F";
+            if (sex?.toLowerCase() === "male" || sex?.toLowerCase() === "m") return "M";
+            if (sex?.toLowerCase() === "female" || sex?.toLowerCase() === "f") return "F";
             return "O";
           })(),
           PatientAge: s.PatientAge || "N/A",
@@ -30,12 +32,19 @@ export function StudiesProvider({ children }) {
           StudyInstanceUID: s.StudyInstanceUID || s.ID || "",
           __raw: s,
         }));
+
         setStudies(normalized);
       })
-      .catch((err) => console.error(err))
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        console.error("Failed to fetch studies:", err);
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
 
-    return () => (mounted = false);
+    return () => {
+      mounted = false;
+    };
   }, []);
 
   return (
