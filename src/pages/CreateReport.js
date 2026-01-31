@@ -17,6 +17,7 @@ function RichEditor({
   onSelectionChange,
   placeholder,
   disabled = false,
+   editorKey, 
 }) {
   const ref = useRef();
 
@@ -29,6 +30,7 @@ function RichEditor({
   return (
     <div
       ref={ref}
+      data-editor={editorKey} 
       contentEditable={!disabled}
       suppressContentEditableWarning
       onFocus={() => {
@@ -350,9 +352,11 @@ useEffect(() => {
 }, [study.Modality, study.BodyPartExamined, isManualTitle]);
 
 
-//voice based 
+// 🎙️ Voice based dictation (insert at cursor)
 useEffect(() => {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const SpeechRecognition =
+    window.SpeechRecognition || window.webkitSpeechRecognition;
+
   if (!SpeechRecognition) {
     alert("Speech recognition is not supported in this browser.");
     return;
@@ -360,29 +364,66 @@ useEffect(() => {
 
   const recognition = new SpeechRecognition();
   recognition.continuous = true;
-  recognition.interimResults = true;
+  recognition.interimResults = false; // ✅ IMPORTANT: avoid duplicate inserts
   recognition.lang = "en-US";
 
   recognition.onresult = (event) => {
     let transcript = "";
+
     for (let i = event.resultIndex; i < event.results.length; i++) {
-      transcript += event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        transcript += event.results[i][0].transcript;
+      }
     }
 
+    if (!transcript.trim()) return;
     if (!activeEditorRef.current) return;
 
-    // Update React state only
-    const editor = activeEditorRef.current; // must be "history"/"findings"/"conclusion"
-    if (editor === "history") setHistory(prev => prev + " " + transcript);
-    else if (editor === "findings") setFindings(prev => prev + " " + transcript);
-    else if (editor === "conclusion") setConclusion(prev => prev + " " + transcript);
+    // 🔁 Restore cursor position
+    restoreSelection();
+
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) return;
+
+    const range = sel.getRangeAt(0);
+
+    // Remove any selected text
+    range.deleteContents();
+
+    // Insert dictated text
+    const textNode = document.createTextNode(" " + transcript);
+    range.insertNode(textNode);
+
+    // Move cursor after inserted text
+    range.setStartAfter(textNode);
+    range.setEndAfter(textNode);
+    sel.removeAllRanges();
+    sel.addRange(range);
+
+    // Save cursor for next dictation
+    saveSelection();
+
+    // 🔄 Sync DOM → React state
+    const editorType = activeEditorRef.current.dataset.editor;
+
+    if (editorType === "history") {
+      setHistory(activeEditorRef.current.innerHTML);
+    } else if (editorType === "findings") {
+      setFindings(activeEditorRef.current.innerHTML);
+    } else if (editorType === "conclusion") {
+      setConclusion(activeEditorRef.current.innerHTML);
+    }
   };
 
-  recognition.onerror = (e) => console.error("Speech recognition error:", e);
+  recognition.onerror = (e) => {
+    console.error("Speech recognition error:", e);
+  };
 
   recognitionRef.current = recognition;
 
-  return () => recognition.stop();
+  return () => {
+    recognition.stop();
+  };
 }, []);
 
 useEffect(() => {
@@ -549,19 +590,23 @@ useEffect(() => {
   if (!imageFiles.length) return;
 
   const formData = new FormData();
-
-  // 🔑 REQUIRED
+ // 🔑 REQUIRED
   formData.append("studyUID", studyUID);
 
   imageFiles.forEach((f) => formData.append("images", f));
 
   try {
-    const { data } = await api.post("/api/reports/upload", formData);
+    const res = await fetch("/api/reports/upload", {
+      method: "POST",
+      body: formData,
+    });
+
+    const data = await res.json();
+
     if (data.success) {
       setKeyImages((prev) => [
         ...prev,
-       ...data.paths.map(p => `${process.env.REACT_APP_API_URL}${p}`)
-,
+        ...data.paths,
       ]);
        
     }
@@ -570,7 +615,6 @@ useEffect(() => {
     alert("Failed to upload images");
   }
 };
-
 
   /* ===========================
         Save report (Draft / Final)
@@ -764,13 +808,37 @@ useEffect(() => {
      Active editor handlers passed to RichEditor
      ================ */
  const handleEditorFocus = (domNode) => {
-  activeEditorRef.current = domNode.dataset.editor; 
+  activeEditorRef.current = domNode; // store actual DOM node
+  saveSelection();                   // save cursor
 };
+
 
   const handleEditorSelectionChange = () => {
     // whenever selection inside an editor changes, capture it
     saveSelection();
   };
+const insertTextAtCursor = (text) => {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return;
+
+  const range = sel.getRangeAt(0);
+
+  // Remove selected text (if any)
+  range.deleteContents();
+
+  // Insert text node
+  const textNode = document.createTextNode(text);
+  range.insertNode(textNode);
+
+  // Move cursor AFTER inserted text
+  range.setStartAfter(textNode);
+  range.setEndAfter(textNode);
+  sel.removeAllRanges();
+  sel.addRange(range);
+
+  // Save updated selection
+  saveSelection();
+};
 
   /* ====================
      Color picker apply handler
@@ -1244,7 +1312,7 @@ const getReportWidth = () => {
   onSelectionChange={handleEditorSelectionChange}
   placeholder="Enter history..."
   disabled={isAddendum && !addendumConfirmed}
-  data-editor="history"
+  editorKey="history"  
 />
 
         </section>
@@ -1259,7 +1327,7 @@ const getReportWidth = () => {
     onSelectionChange={handleEditorSelectionChange}
     placeholder="Enter findings..."
     disabled={isAddendum && !addendumConfirmed}
-    data-editor="findings"
+    editorKey="findings"
   />
 </section>
 
@@ -1366,7 +1434,7 @@ const getReportWidth = () => {
   onSelectionChange={handleEditorSelectionChange}
   placeholder="Enter conclusion..."
   disabled={isAddendum && !addendumConfirmed}
-  data-editor="conclusion"
+  editorKey="conclusion"
 />
         </section>
 
@@ -1415,7 +1483,7 @@ const getReportWidth = () => {
 
 
         <div className="buttons toolbar" style={{ marginTop: 12 }}>
-          <button onClick={savePDF} style={{ padding: "8px 12px" }}>Save PDF</button>
+          
           <button onClick={() => window.print()} style={{ padding: "8px 12px", marginLeft: 8 }}>Print</button>
         </div>
       </div>

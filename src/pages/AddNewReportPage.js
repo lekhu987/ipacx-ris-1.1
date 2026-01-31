@@ -13,7 +13,7 @@ export default function AddNewReportPage() {
   const [loading, setLoading] = useState(false);
 
   const [filters, setFilters] = useState(() => {
-    return JSON.parse(localStorage.getItem("pacsDateFilters")) || {
+    return JSON.parse(sessionStorage.getItem("pacsDateFilters")) || {
       startDate: "",
       endDate: "",
       patientId: "",
@@ -101,7 +101,7 @@ export default function AddNewReportPage() {
 
   const handleDateChange = (newFilters) => {
     setFilters(newFilters);
-    localStorage.setItem("pacsDateFilters", JSON.stringify(newFilters));
+    sessionStorage.setItem("pacsDateFilters", JSON.stringify(newFilters));
   };
 
   // ------------------ UI ------------------

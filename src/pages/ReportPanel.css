@@ -375,3 +375,16 @@
     display: block !important;
   }
 }
+/* Hide elements with this class when printing */
+@media print {
+  .status-print-hide,
+  .status-buttons {
+    display: none !important;
+  }
+
+  /* Optional: remove toolbar, buttons, etc. */
+  .top-row,
+  .buttons.toolbar {
+    display: none !important;
+  }
+}
