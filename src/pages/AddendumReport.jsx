@@ -5,7 +5,7 @@ import { useNavigate, useLocation } from "react-router-dom";
 function AddendumReport() {
   const navigate = useNavigate();
   const location = useLocation();
-  const parentReport = location.state?.parentReportData;
+  const parentReport = location.state?.parentReport;
   const studyUID = parentReport?.study_uid;
 
   const [noteInput, setNoteInput] = useState(""); // new reason input

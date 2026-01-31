@@ -226,17 +226,44 @@
   width: 100%;
   border-collapse: collapse;
   margin-bottom: 12px;
+  table-layout: auto; /* let the browser adjust column width */
 }
+
 .data-table td {
-  padding: 6px 8px;
+  padding: 4px 6px; /* reduce padding to fit long content */
   vertical-align: middle;
   font-size: 11.5px;
   text-align: left;
   border: 1px solid #000;
+  white-space: nowrap; /* prevent wrapping */
 }
+
 /* Equal 3 columns */
 .data-table td {
   width: 33.33% !important;
+}
+@media print {
+  /* Show header and footer only during print */
+  .print-header,
+  .print-footer {
+    display: block !important;
+  }
+
+  /* Optional: hide buttons, toolbar, etc. */
+  .toolbar,
+  .status-buttons,
+  .top-row,
+  .buttons {
+    display: none !important;
+  }
+
+  /* Ensure report panel uses full width for print */
+  #reportPanel {
+    width: 100% !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
 }
 
 
@@ -388,3 +415,4 @@
     display: none !important;
   }
 }
+  

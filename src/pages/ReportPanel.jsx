@@ -883,6 +883,7 @@ const insertTextAtCursor = (text) => {
     <div className="split-layout" style={{ display: "flex", height: "100vh", position: "relative", fontFamily: "'Times New Roman', Times, serif" }}>
     
 {/* Report Panel */}
+
 <div
   ref={reportRef}
   id="reportPanel"
@@ -894,7 +895,17 @@ const insertTextAtCursor = (text) => {
     overflowY: "auto",
     position: "relative", // needed for overlay
   }}
->{/* ====================== */}
+>
+  {/* ====================== */}
+  {/* PRINT HEADER */}
+  {/* ====================== */}
+  <div className="print-header" style={{ display: "none", textAlign: "center", fontWeight: "bold", fontSize: 18, marginBottom: 12 }}>
+    Hospital Name
+  </div>
+
+  
+
+  
 {/* Addendum Section */}
 {/* ====================== */}
 {isAddendum && (
@@ -1444,8 +1455,16 @@ const insertTextAtCursor = (text) => {
         <div className="buttons toolbar" style={{ marginTop: 12 }}>
          
           <button onClick={() => window.print()} style={{ padding: "8px 12px", marginLeft: 8 }}>Print</button>
+          
         </div>
       </div>
+      {/* ====================== */}
+  {/* PRINT FOOTER */}
+  {/* ====================== */}
+  <div className="print-footer" style={{ display: "none", textAlign: "center", fontSize: 12, marginTop: 20 }}>
+    123 Main Street, City, State, ZIP | Phone: 123-456-7890
+  </div>
     </div>
+    
   );
 }
