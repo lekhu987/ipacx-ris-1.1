@@ -464,3 +464,20 @@ input[type="date"]::-webkit-calendar-picker-indicator {
   background-color: #007bff !important;
 }
 
+.add-report-btn {
+  position: absolute;
+  right: 20px;   /* move slightly left from edge */
+  top: 10px;     /* move slightly down */
+  padding: 8px 16px;
+  background-color: #4f46e5; /* your theme color */
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  z-index: 10;
+}
+
+.add-report-btn:hover {
+  background-color: #4338ca;
+}

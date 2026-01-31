@@ -6,6 +6,7 @@ import { StudiesContext } from "../context/StudiesContext";
 import "./ReportingPage.css";
 import ReportPrintLayout from "../components/ReportPrintLayout.jsx";
 import api from "../api/axios";
+
 const rowsPerPage = 20;
 function dateInputToYYYYMMDD(v) {
   if (!v) return "";

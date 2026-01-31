@@ -18,6 +18,8 @@ import PatientList from "./pages/PatientList";
 import Billing from "./pages/Billing";
 import ProtectedRoute from "./components/ProtectedRoute";
 import MainLayout from "./layout/MainLayout";
+import AddNewReportPage from "./pages/AddNewReportPage";
+
 
 // Context
 import { StudiesProvider } from "./context/StudiesContext";
@@ -120,6 +122,14 @@ function App() {
                 </ProtectedRoute>
               }
             />
+<Route
+  path="/add-new-report"
+  element={
+    <ProtectedRoute>
+      <AddNewReportPage />
+    </ProtectedRoute>
+  }
+/>
 
             {/* Admin routes */}
             <Route
