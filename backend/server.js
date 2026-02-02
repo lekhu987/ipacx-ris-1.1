@@ -77,6 +77,75 @@ const uploadPatient = multer({
   },
 });
 
+// Ensure signature directory exists
+const signatureDir = path.join(__dirname, "uploads/signatures");
+if (!fs.existsSync(signatureDir)) fs.mkdirSync(signatureDir, { recursive: true });
+
+// Multer storage config for signatures
+const signatureStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, signatureDir); // save in uploads/signatures
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname) || ".jpg";
+
+    // Use title + username as filename
+    const title = req.body.title ? req.body.title.trim().replace(/\s+/g, "_") : "NoTitle";
+    const username = req.body.username ? req.body.username.trim().replace(/\s+/g, "_") : "NoUser";
+
+    const filename = `SIGN_${title}_${username}${ext}`;
+    cb(null, filename);
+  },
+});
+
+// Multer instance for signature uploads
+const uploadSignature = multer({
+  storage: signatureStorage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // optional: limit 5MB
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith("image/")) {
+      return cb(new Error("Only image files are allowed for signatures"));
+    }
+    cb(null, true);
+  },
+});
+/* ======================================================
+   REPORT IMAGE UPLOAD  (FIXED)
+====================================================== */
+const reportImagesDir = path.join(__dirname, "uploads/report_images");
+if (!fs.existsSync(reportImagesDir)) {
+  fs.mkdirSync(reportImagesDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, reportImagesDir);
+  },
+
+  filename: (req, file, cb) => {
+    const studyUID = req.body.studyUID;
+    if (!studyUID) {
+      return cb(new Error("studyUID is required"));
+    }
+
+    const ext = path.extname(file.originalname) || ".jpg";
+
+    // find existing images for same studyUID
+    const existingFiles = fs
+      .readdirSync(reportImagesDir)
+      .filter(f => f.startsWith(studyUID));
+
+    const suffix = existingFiles.length
+      ? `_${existingFiles.length + 1}`
+      : "";
+
+    cb(null, `${studyUID}${suffix}${ext}`);
+  },
+});
+
+const upload = multer({ storage });
+
+
 // login route
 app.post("/api/login", async (req, res) => {
   const { username, password } = req.body;
@@ -107,20 +176,24 @@ app.post("/api/login", async (req, res) => {
   });
 });
 
+
 // USERS: Create user (ADMIN only)
-app.post("/api/users", async (req, res) => {
-  const { username, password, role, email } = req.body;
+app.post("/api/users", uploadSignature.single("signature"), async (req, res) => {
+  const { title, username, password, role, email } = req.body;
+  const signature_path = req.file ? `/uploads/signatures/${req.file.filename}` : null;
+
   if (!username || !password || !role || !email) {
     return res.status(400).json({ error: "All fields required" });
   }
 
   try {
     const hash = await bcrypt.hash(password, 10);
+
     const result = await pool.query(
-      `INSERT INTO users (username, password_hash, role, email)
-       VALUES ($1,$2,$3,$4)
-       RETURNING id, username, email, role, is_active`,
-      [username, hash, role, email]
+      `INSERT INTO users (title, username, password_hash, role, email, signature_url)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING id, title, username, email, role, is_active, signature_url`,
+      [title || null, username, hash, role, email, signature_path]
     );
 
     res.json(result.rows[0]);
@@ -130,28 +203,11 @@ app.post("/api/users", async (req, res) => {
   }
 });
 
-
-// ======================================================
-// USERS: Toggle active/inactive (ADMIN only)
-// ======================================================
-app.put("/api/users/:id/toggle", async (req, res) => {
-  const result = await pool.query(
-    `UPDATE users
-     SET is_active = NOT is_active
-     WHERE id=$1
-     RETURNING id, is_active`,
-    [req.params.id]
-  );
-
-  res.json(result.rows[0]);
-});
-
-
-// GET all users (ADMIN only)
-app.get("/api/users",  async (req, res) => {
+//get users
+app.get("/api/users", async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, username, email, role, is_active, created_at
+      `SELECT id, title, username, email, role, is_active, signature_url, created_at
        FROM users
        ORDER BY id ASC`
     );
@@ -161,33 +217,54 @@ app.get("/api/users",  async (req, res) => {
     res.status(500).json({ error: "Failed to fetch users" });
   }
 });
+
 // Update user (ADMIN only)
-app.put("/api/users/:id", async (req, res) => {
-  const { username, password, role, email } = req.body;
+app.put("/api/users/:id", uploadSignature.single("signature"), async (req, res) => {
+  const { title, username, password, role, email } = req.body;
   const { id } = req.params;
 
   try {
-    let query = `UPDATE users SET username=$1, role=$2, email=$3`;
-    const values = [username, role, email, id];
+    // 1️⃣ Fetch existing user first
+    const userRes = await pool.query("SELECT * FROM users WHERE id=$1", [id]);
+    if (!userRes.rows.length) return res.status(404).json({ error: "User not found" });
+    const user = userRes.rows[0];
 
-    if (password) {
+    const signature_path = req.file ? `/uploads/signatures/${req.file.filename}` : null;
+
+    // 2️⃣ Delete old signature if new one uploaded
+    if (signature_path && user.signature_url) {
+      const oldPath = path.join(__dirname, user.signature_url);
+      if (fs.existsSync(oldPath)) {
+        fs.unlinkSync(oldPath); // remove old file
+      }
+    }
+
+    // 3️⃣ Build query dynamically
+    let query, values;
+    if (password?.trim() && signature_path) {
       const hash = await bcrypt.hash(password, 10);
-      query += `, password_hash=$4 WHERE id=$5 RETURNING id, username, email, role, is_active`;
-      values[3] = hash;
-      values[4] = id;
+      query = `UPDATE users SET title=$1, username=$2, role=$3, email=$4, password_hash=$5, signature_url=$6 WHERE id=$7 RETURNING id, title, username, email, role, is_active, signature_url`;
+      values = [title || null, username, role, email, hash, signature_path, id];
+    } else if (password?.trim()) {
+      const hash = await bcrypt.hash(password, 10);
+      query = `UPDATE users SET title=$1, username=$2, role=$3, email=$4, password_hash=$5 WHERE id=$6 RETURNING id, title, username, email, role, is_active, signature_url`;
+      values = [title || null, username, role, email, hash, id];
+    } else if (signature_path) {
+      query = `UPDATE users SET title=$1, username=$2, role=$3, email=$4, signature_url=$5 WHERE id=$6 RETURNING id, title, username, email, role, is_active, signature_url`;
+      values = [title || null, username, role, email, signature_path, id];
     } else {
-      query += ` WHERE id=$4 RETURNING id, username, email, role, is_active`;
+      query = `UPDATE users SET title=$1, username=$2, role=$3, email=$4 WHERE id=$5 RETURNING id, title, username, email, role, is_active, signature_url`;
+      values = [title || null, username, role, email, id];
     }
 
     const result = await pool.query(query, values);
-    if (!result.rows.length) return res.status(404).json({ error: "User not found" });
-
     res.json(result.rows[0]);
   } catch (err) {
     console.error("Update user error:", err);
     res.status(500).json({ error: "Failed to update user" });
   }
 });
+
 // Delete user (ADMIN only)
 app.delete("/api/users/:id",  async (req, res) => {
   const { id } = req.params;
@@ -805,42 +882,6 @@ app.get("/api/reports", async (req, res) => {
     res.status(500).json({ error: "Failed to load reports" });
   }
 });
-
-/* ======================================================
-   REPORT IMAGE UPLOAD  (FIXED)
-====================================================== */
-const reportImagesDir = path.join(__dirname, "uploads/report_images");
-if (!fs.existsSync(reportImagesDir)) {
-  fs.mkdirSync(reportImagesDir, { recursive: true });
-}
-
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, reportImagesDir);
-  },
-
-  filename: (req, file, cb) => {
-    const studyUID = req.body.studyUID;
-    if (!studyUID) {
-      return cb(new Error("studyUID is required"));
-    }
-
-    const ext = path.extname(file.originalname) || ".jpg";
-
-    // find existing images for same studyUID
-    const existingFiles = fs
-      .readdirSync(reportImagesDir)
-      .filter(f => f.startsWith(studyUID));
-
-    const suffix = existingFiles.length
-      ? `_${existingFiles.length + 1}`
-      : "";
-
-    cb(null, `${studyUID}${suffix}${ext}`);
-  },
-});
-
-const upload = multer({ storage });
 
 app.post("/api/reports/upload", upload.array("images", 10), (req, res) => {
   try {
