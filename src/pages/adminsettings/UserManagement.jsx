@@ -14,14 +14,19 @@ function UserManagement() {
 
   // Form state for Add/Edit
   const [form, setForm] = useState({
-    id: null,
-    username: "",
-    email: "",
-    password: "",
-    role: "TECHNICIAN",
-  });
+  id: null,
+  title: "",
+  username: "",
+  email: "",
+  password: "",
+  role: "",
+  signature: null,         
+  signature_url: "",        
+});
+
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
+  const TITLES = ["Dr", "Mr", "Miss", "Mrs"];
 
   // Roles list
  const ROLES = [
@@ -35,22 +40,26 @@ function UserManagement() {
 
 
   // Fetch users
-  const fetchUsers = async () => {
-    try {
-      setLoading(true);
-      setError("");
+ const fetchUsers = async () => {
+  try {
+    setLoading(true);
+    setError("");
 
-      const res = await api.get("/api/users");
-      if (!Array.isArray(res.data)) throw new Error("Unexpected response from server");
+    const res = await api.get("/api/users");
 
-      setUsers(res.data);
-    } catch (err) {
-      console.error("Fetch users error:", err);
-      setError(err.response?.data?.error || "Failed to fetch users");
-    } finally {
-      setLoading(false);
+    if (!Array.isArray(res.data)) {
+      throw new Error("Unexpected response from server");
     }
-  };
+
+    setUsers(res.data);
+  } catch (err) {
+    console.error("Fetch users error:", err);
+    setError(err.response?.data?.error || "Failed to fetch users");
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   useEffect(() => {
     fetchUsers();
@@ -82,68 +91,96 @@ function UserManagement() {
   };
 
   // Open form for edit
-  const editUser = (u) => {
+ const editUser = (u) => {
+  setForm({
+    id: u.id,
+    title: u.title || "",
+    username: u.username,
+    email: u.email || "",
+    password: "",
+    role: u.role,
+    signature: null,              // reset file input
+    signature_url: u.signature_url || "",
+  });
+  setShowForm(true);
+};
+
+// Add or update user
+const saveUser = async (e) => {
+  e.preventDefault();
+
+  // Basic validation
+  if (!form.username || (!form.password && !form.id) || !form.role || !form.email) {
+    alert("Username, email, password (for new users), and role are required");
+    return;
+  }
+
+  // Optional: validate email format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(form.email)) {
+    alert("Invalid email format");
+    return;
+  }
+
+  try {
+    setSaving(true);
+    let res;
+
+    const fd = new FormData();
+    fd.append("title", form.title);
+    fd.append("username", form.username);
+    fd.append("email", form.email);
+    fd.append("role", form.role);
+
+    // Only append password if provided
+    if (form.password) fd.append("password", form.password);
+
+    // Handle signature upload:
+    // - If user selected a new file, append it
+    // - If editing and no new file, we skip it (backend keeps old signature)
+    if (form.signature) {
+      fd.append("signature", form.signature);
+    }
+
+    if (form.id) {
+      // UPDATE
+      res = await api.put(`/api/users/${form.id}`, fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      // Update local state
+      setUsers((prev) =>
+        prev.map((u) => (u.id === form.id ? { ...u, ...res.data } : u))
+      );
+    } else {
+      // CREATE
+      res = await api.post("/api/users", fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      setUsers((prev) => [...prev, res.data]);
+    }
+
+    // Reset form
     setForm({
-      id: u.id,
-      username: u.username,
-      email: u.email || "",
+      id: null,
+      title: "",
+      username: "",
+      email: "",
       password: "",
-      role: u.role,
+      role: "TECHNICIAN",
+      signature: null,
+      signature_url: "",
     });
-    setShowForm(true);
-  };
 
-  // Add or update user
-  const saveUser = async (e) => {
-    e.preventDefault();
-
-    // Basic validation
-    if (!form.username || (!form.password && !form.id) || !form.role || !form.email) {
-      alert("Username, email, password (for new users), and role are required");
-      return;
-    }
-
-    // Optional: validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(form.email)) {
-      alert("Invalid email format");
-      return;
-    }
-
-    try {
-      setSaving(true);
-      let res;
-
-      if (form.id) {
-        // EDIT user (password optional)
-        const body = {
-          username: form.username,
-          role: form.role,
-          email: form.email,
-        };
-        if (form.password) body.password = form.password;
-
-        res = await api.put(`/api/users/${form.id}`, body);
-
-        setUsers((prev) =>
-          prev.map((u) => (u.id === form.id ? { ...u, ...res.data } : u))
-        );
-      } else {
-        // ADD new user
-        res = await api.post("/api/users", form);
-        setUsers((prev) => [...prev, res.data]);
-      }
-
-      // Reset form
-      setForm({ id: null, username: "", email: "", password: "", role: "TECHNICIAN" });
-      setShowForm(false);
-    } catch (err) {
-      console.error("Save user failed:", err);
-      alert(err.response?.data?.error || "Failed to save user");
-    } finally {
-      setSaving(false);
-    }
-  };
+    setShowForm(false);
+  } catch (err) {
+    console.error("Save user failed:", err);
+    alert(err.response?.data?.error || "Failed to save user");
+  } finally {
+    setSaving(false);
+  }
+};
 
   return (
     <MainLayout>
@@ -153,12 +190,16 @@ function UserManagement() {
   onClick={() => {
     setFormKey((k) => k + 1);   // 🔥 force remount
     setForm({
-      id: null,
-      username: "",
-      email: "",
-      password: "",
-      role: "",
-    });
+  id: null,
+  title: "",
+  username: "",
+  email: "",
+  password: "",
+  role: "",
+  signature: null,
+  signature_url: "",
+});
+
     setShowForm(true);
   }}
 >
@@ -176,6 +217,16 @@ function UserManagement() {
       borderRadius: "6px",
     }}
   >
+<select
+  value={form.title}
+  onChange={(e) => setForm({ ...form, title: e.target.value })}
+  style={{ marginRight: "10px", padding: "4px", height: "28px" }}
+>
+  <option value="">Title</option>
+  {TITLES.map((t) => (
+    <option key={t} value={t}>{t}</option>
+  ))}
+</select>
 
             <input
               type="text"
@@ -198,6 +249,23 @@ function UserManagement() {
               onChange={(e) => setForm({ ...form, password: e.target.value })}
               style={{ marginRight: "10px", padding: "4px" }}
             />
+            <input
+            key={formKey + "-signature"}
+  type="file"
+  accept="image/*"
+  onChange={(e) =>
+    setForm({ ...form, signature: e.target.files[0] })
+  }
+  style={{ marginRight: "10px" }}
+/>
+
+{/* show existing signature while editing */}
+{form.signature_url && (
+  <span style={{ fontSize: "12px", color: "green" }}>
+    Signature uploaded
+  </span>
+)}
+
             <select
   value={form.role}
   onChange={(e) => setForm({ ...form, role: e.target.value })}
@@ -226,7 +294,17 @@ function UserManagement() {
               type="button"
               onClick={() => {
                 setShowForm(false);
-                setForm({ id: null, username: "", email: "", password: "", role: "TECHNICIAN" });
+               setForm({
+  id: null,
+  title: "",
+  username: "",
+  email: "",
+  password: "",
+  role: "",
+  signature: null,
+  signature_url: "",
+});
+
               }}
               style={{ padding: "4px 8px" }}
             >
@@ -244,6 +322,7 @@ function UserManagement() {
             <thead>
               <tr style={{ backgroundColor: "#f0f0f0" }}>
                 <th style={thStyle}>ID</th>
+                <th style={thStyle}>Title</th>
                 <th style={thStyle}>Username</th>
                 <th style={thStyle}>Email</th>
                 <th style={thStyle}>Role</th>
@@ -252,9 +331,10 @@ function UserManagement() {
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => (
+             {users.map((u, index) => (
                 <tr key={u.id}>
-                  <td style={tdStyle}>{u.id}</td>
+                  <td style={tdStyle}>{index + 1}</td>
+                  <td style={tdStyle}>{u.title || "-"}</td>
                   <td style={tdStyle}>{u.username}</td>
                   <td style={tdStyle}>{u.email || "-"}</td>
                   <td style={tdStyle}>{u.role}</td>
@@ -310,6 +390,21 @@ function UserManagement() {
                     >
                       Delete
                     </button>
+                    {u.signature_url && (
+  <img
+    src={u.signature_url}
+    alt="signature"
+    title="View signature"
+    style={{
+      height: "22px",
+      marginRight: "6px",
+      cursor: "pointer",
+      verticalAlign: "middle",
+    }}
+    onClick={() => window.open(u.signature_url, "_blank")}
+  />
+)}
+
                   </td>
                 </tr>
               ))}
