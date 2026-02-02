@@ -25,7 +25,7 @@ export default function AddNewReportPage() {
   });
 
   const [activePacs, setActivePacs] = useState(() => {
-    return JSON.parse(localStorage.getItem("activePacs"));
+    return JSON.parse(sessionStorage.getItem("activePacs"));
   });
 
   const rowsPerPage = 20;
