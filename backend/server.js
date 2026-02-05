@@ -10,6 +10,8 @@ const bcrypt = require("bcryptjs");
 const app = express();
 const PORT = process.env.PORT || 5000;
 const generateFinalReportPDF = require("./utils/generateFinalReportPDF");
+const uploadSignature = require("./middleware/uploadSignature"); // adjust path if needed
+
 
 app.use(cors({
   origin: true,   // 👈 allow all origins
@@ -19,6 +21,10 @@ app.use(express.json());
 app.use(
   "/uploads/report_images",
   express.static(path.join(__dirname, "uploads/report_images"))
+);
+app.use(
+  "/uploads/signatures",
+  express.static(path.join(__dirname, "uploads/signatures"))
 );
 app.disable("etag");
 // ======================================================
@@ -77,38 +83,6 @@ const uploadPatient = multer({
   },
 });
 
-// Ensure signature directory exists
-const signatureDir = path.join(__dirname, "uploads/signatures");
-if (!fs.existsSync(signatureDir)) fs.mkdirSync(signatureDir, { recursive: true });
-
-// Multer storage config for signatures
-const signatureStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    cb(null, signatureDir); // save in uploads/signatures
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname) || ".jpg";
-
-    // Use title + username as filename
-    const title = req.body.title ? req.body.title.trim().replace(/\s+/g, "_") : "NoTitle";
-    const username = req.body.username ? req.body.username.trim().replace(/\s+/g, "_") : "NoUser";
-
-    const filename = `SIGN_${title}_${username}${ext}`;
-    cb(null, filename);
-  },
-});
-
-// Multer instance for signature uploads
-const uploadSignature = multer({
-  storage: signatureStorage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // optional: limit 5MB
-  fileFilter: (req, file, cb) => {
-    if (!file.mimetype.startsWith("image/")) {
-      return cb(new Error("Only image files are allowed for signatures"));
-    }
-    cb(null, true);
-  },
-});
 /* ======================================================
    REPORT IMAGE UPLOAD  (FIXED)
 ====================================================== */
@@ -176,116 +150,33 @@ app.post("/api/login", async (req, res) => {
   });
 });
 
+const usersRoutes = require("./routes/users");
+app.use("/api/users", usersRoutes);
+const reportedByRouter = require("./routes/reportedBy");
+app.use("/api/reported-by", reportedByRouter);
 
-// USERS: Create user (ADMIN only)
-app.post("/api/users", uploadSignature.single("signature"), async (req, res) => {
-  const { title, username, password, role, email } = req.body;
-  const signature_path = req.file ? `/uploads/signatures/${req.file.filename}` : null;
-
-  if (!username || !password || !role || !email) {
-    return res.status(400).json({ error: "All fields required" });
-  }
-
-  try {
-    const hash = await bcrypt.hash(password, 10);
-
-    const result = await pool.query(
-      `INSERT INTO users (title, username, password_hash, role, email, signature_url)
-       VALUES ($1,$2,$3,$4,$5,$6)
-       RETURNING id, title, username, email, role, is_active, signature_url`,
-      [title || null, username, hash, role, email, signature_path]
-    );
-
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error("Create user error:", err);
-    res.status(500).json({ error: "Failed to create user" });
-  }
-});
-
-//get users
-app.get("/api/users", async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT id, title, username, email, role, is_active, signature_url, created_at
-       FROM users
-       ORDER BY id ASC`
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error("Fetch users error:", err.message);
-    res.status(500).json({ error: "Failed to fetch users" });
-  }
-});
-
-// Update user (ADMIN only)
-app.put("/api/users/:id", uploadSignature.single("signature"), async (req, res) => {
-  const { title, username, password, role, email } = req.body;
-  const { id } = req.params;
-
-  try {
-    // 1️⃣ Fetch existing user first
-    const userRes = await pool.query("SELECT * FROM users WHERE id=$1", [id]);
-    if (!userRes.rows.length) return res.status(404).json({ error: "User not found" });
-    const user = userRes.rows[0];
-
-    const signature_path = req.file ? `/uploads/signatures/${req.file.filename}` : null;
-
-    // 2️⃣ Delete old signature if new one uploaded
-    if (signature_path && user.signature_url) {
-      const oldPath = path.join(__dirname, user.signature_url);
-      if (fs.existsSync(oldPath)) {
-        fs.unlinkSync(oldPath); // remove old file
-      }
+app.post("/api/signatures", (req, res) => {
+  uploadSignature.single("file")(req, res, (err) => {
+    if (err) {
+      // Handle multer errors
+      return res.status(400).json({ success: false, error: err.message });
     }
 
-    // 3️⃣ Build query dynamically
-    let query, values;
-    if (password?.trim() && signature_path) {
-      const hash = await bcrypt.hash(password, 10);
-      query = `UPDATE users SET title=$1, username=$2, role=$3, email=$4, password_hash=$5, signature_url=$6 WHERE id=$7 RETURNING id, title, username, email, role, is_active, signature_url`;
-      values = [title || null, username, role, email, hash, signature_path, id];
-    } else if (password?.trim()) {
-      const hash = await bcrypt.hash(password, 10);
-      query = `UPDATE users SET title=$1, username=$2, role=$3, email=$4, password_hash=$5 WHERE id=$6 RETURNING id, title, username, email, role, is_active, signature_url`;
-      values = [title || null, username, role, email, hash, id];
-    } else if (signature_path) {
-      query = `UPDATE users SET title=$1, username=$2, role=$3, email=$4, signature_url=$5 WHERE id=$6 RETURNING id, title, username, email, role, is_active, signature_url`;
-      values = [title || null, username, role, email, signature_path, id];
-    } else {
-      query = `UPDATE users SET title=$1, username=$2, role=$3, email=$4 WHERE id=$5 RETURNING id, title, username, email, role, is_active, signature_url`;
-      values = [title || null, username, role, email, id];
-    }
-
-    const result = await pool.query(query, values);
-    res.json(result.rows[0]);
-  } catch (err) {
-    console.error("Update user error:", err);
-    res.status(500).json({ error: "Failed to update user" });
-  }
+    // File uploaded successfully
+    res.json({
+      success: true,
+      filename: req.file.filename,
+      path: `/uploads/signatures/${req.file.filename}`
+    });
+  });
 });
 
-// Delete user (ADMIN only)
-app.delete("/api/users/:id",  async (req, res) => {
-  const { id } = req.params;
-  try {
-    const result = await pool.query(
-      "DELETE FROM users WHERE id=$1 RETURNING id, username",
-      [id]
-    );
-    if (!result.rows.length) return res.status(404).json({ error: "User not found" });
-    res.json({ success: true, deleted: result.rows[0] });
-  } catch (err) {
-    console.error("Delete user error:", err);
-    res.status(500).json({ error: "Failed to delete user" });
-  }
-});
+
 
 // Auto-generate unique patient ID
 function generatePatientId() {
   return `HIS${Date.now()}${Math.floor(Math.random() * 1000)}`;
 }
-
 
 // ===== Create Patient Route =====
 app.post("/api/patients", uploadPatient.single("id_proof_path"), async (req, res) => {
@@ -895,6 +786,7 @@ app.post("/api/reports/upload", upload.array("images", 10), (req, res) => {
   }
 });
 
+
 //save and update
 app.post("/api/reports/save", async (req, res) => {
   try {
@@ -904,8 +796,8 @@ app.post("/api/reports/save", async (req, res) => {
       patient_id,
       patient_name,
       modality,
-      reported_by,
-      approved_by,
+      reported_by_signature,
+      approved_by_signature,
       status,
       history,
       findings,
@@ -916,6 +808,7 @@ app.post("/api/reports/save", async (req, res) => {
       image_paths,
       isAddendum,
     } = req.body;
+  
 
     const reportContent = { history, findings, conclusion };
     let reportId;
@@ -927,14 +820,16 @@ app.post("/api/reports/save", async (req, res) => {
       const result = await pool.query(
         `INSERT INTO reports (
           study_uid, accession_number, patient_id, patient_name,
-          modality, report_content, reported_by, approved_by,
+          modality, report_content,  reported_by_signature,
+      approved_by_signature,
           status, report_title, body_part, referring_doctor
         )
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Addendum',$9,$10,$11)
         RETURNING id`,
         [
           study_uid, accession_number, patient_id, patient_name,
-          modality, reportContent, reported_by, approved_by,
+          modality, reportContent, reported_by_signature,
+      approved_by_signature,
           reportTitle, body_part, referring_doctor
         ]
       );
@@ -958,8 +853,8 @@ app.post("/api/reports/save", async (req, res) => {
         const result = await pool.query(
           `UPDATE reports
            SET report_content=$1,
-               reported_by=$2,
-               approved_by=$3,
+               reported_by_signature=$2,
+               approved_by_signature=$3,
                status='Final',
                report_title=$4,
                body_part=$5,
@@ -969,8 +864,8 @@ app.post("/api/reports/save", async (req, res) => {
            RETURNING id`,
           [
             reportContent,
-            reported_by,
-            approved_by,
+             reported_by_signature,
+      approved_by_signature,
             reportTitle,
             body_part,
             referring_doctor,
@@ -991,8 +886,8 @@ app.post("/api/reports/save", async (req, res) => {
           const result = await pool.query(
             `UPDATE reports
              SET report_content=$1,
-                 reported_by=$2,
-                 approved_by=$3,
+                 reported_by_signature=$2,
+                 approved_by_signature=$3,
                  report_title=$4,
                  body_part=$5,
                  referring_doctor=$6,
@@ -1001,8 +896,8 @@ app.post("/api/reports/save", async (req, res) => {
              RETURNING id`,
             [
               reportContent,
-              reported_by,
-              approved_by,
+              reported_by_signature,
+              approved_by_signature,
               reportTitle,
               body_part,
               referring_doctor,
@@ -1015,7 +910,7 @@ app.post("/api/reports/save", async (req, res) => {
           const result = await pool.query(
             `INSERT INTO reports (
               study_uid, accession_number, patient_id, patient_name,
-              modality, report_content, reported_by, approved_by,
+              modality, report_content, reported_by_signature, approved_by_signature,
               status, report_title, body_part, referring_doctor
 
             )
@@ -1023,7 +918,7 @@ app.post("/api/reports/save", async (req, res) => {
             RETURNING id`,
             [
               study_uid, accession_number, patient_id, patient_name,
-              modality, reportContent, reported_by, approved_by,
+              modality, reportContent, reported_by_signature, approved_by_signature,
               reportTitle, body_part, referring_doctor
             ]
           );
@@ -1048,8 +943,8 @@ app.post("/api/reports/save", async (req, res) => {
         const result = await pool.query(
           `UPDATE reports
            SET report_content=$1,
-               reported_by=$2,
-               approved_by=$3,
+               reported_by_signature=$2,
+               approved_by_signature=$3,
                report_title=$4,
                body_part=$5,
                referring_doctor=$6,
@@ -1058,8 +953,8 @@ app.post("/api/reports/save", async (req, res) => {
            RETURNING id`,
           [
             reportContent,
-            reported_by,
-            approved_by,
+            reported_by_signature,
+            approved_by_signature,
             reportTitle,
             body_part,
             referring_doctor,
@@ -1072,14 +967,14 @@ app.post("/api/reports/save", async (req, res) => {
         const result = await pool.query(
           `INSERT INTO reports (
             study_uid, accession_number, patient_id, patient_name,
-            modality, report_content, reported_by, approved_by,
+            modality, report_content, reported_by_signature, approved_by_signature,
             status, report_title, body_part, referring_doctor
           )
           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Draft',$9,$10,$11)
           RETURNING id`,
           [
             study_uid, accession_number, patient_id, patient_name,
-            modality, reportContent, reported_by, approved_by,
+            modality, reportContent, reported_by_signature, approved_by_signature,
             reportTitle, body_part, referring_doctor
           ]
         );

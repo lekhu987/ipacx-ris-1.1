@@ -1,5 +1,7 @@
 // src/pages/adminsettings/UserManagement.jsx
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+
 import ProtectedRoute from "../../components/ProtectedRoute";
 import MainLayout from "../../layout/MainLayout";
 import api from "../../api/axios";
@@ -10,18 +12,22 @@ function UserManagement() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [formKey, setFormKey] = useState(0);
+const navigate = useNavigate();
 
 
   // Form state for Add/Edit
   const [form, setForm] = useState({
   id: null,
   title: "",
+  full_name: "",
   username: "",
   email: "",
   password: "",
   role: "",
-  signature: null,         
-  signature_url: "",        
+  qualification: "",
+  designation: "",
+  signature: null,
+  signature_url: "",
 });
 
   const [showForm, setShowForm] = useState(false);
@@ -36,6 +42,20 @@ function UserManagement() {
   "RECEPTIONIST",
   "NURSE",
   "SUPERVISOR",
+];
+
+const QUALIFICATIONS = [
+  "MBBS",
+  "MBBS, DMRD",
+  "MBBS, MD (Radiology)",
+  "MBBS, DNB (Radiology)",
+];
+
+const DESIGNATIONS = [
+  "PG Resident",
+  "Senior Resident",
+  "Consultant Radiologist",
+  "Senior Consultant",
 ];
 
 
@@ -95,15 +115,19 @@ function UserManagement() {
   setForm({
     id: u.id,
     title: u.title || "",
+    full_name: u.full_name || "",
     username: u.username,
     email: u.email || "",
     password: "",
     role: u.role,
-    signature: null,              // reset file input
+    qualification: u.qualification || "",
+    designation: u.designation || "",
+    signature: null,
     signature_url: u.signature_url || "",
   });
   setShowForm(true);
 };
+
 
 // Add or update user
 const saveUser = async (e) => {
@@ -131,6 +155,9 @@ const saveUser = async (e) => {
     fd.append("username", form.username);
     fd.append("email", form.email);
     fd.append("role", form.role);
+fd.append("full_name", form.full_name);
+fd.append("qualification", form.qualification);
+fd.append("designation", form.designation);
 
     // Only append password if provided
     if (form.password) fd.append("password", form.password);
@@ -163,15 +190,18 @@ const saveUser = async (e) => {
 
     // Reset form
     setForm({
-      id: null,
-      title: "",
-      username: "",
-      email: "",
-      password: "",
-      role: "TECHNICIAN",
-      signature: null,
-      signature_url: "",
-    });
+     id: null,
+  title: "",
+  full_name: "",
+  username: "",
+  email: "",
+  password: "",
+  role: "",
+  qualification: "",
+  designation: "",
+  signature: null,
+  signature_url: "",
+});
 
     setShowForm(false);
   } catch (err) {
@@ -196,6 +226,9 @@ const saveUser = async (e) => {
   email: "",
   password: "",
   role: "",
+  full_name: "",
+  qualification: "",
+  designation: "",
   signature: null,
   signature_url: "",
 });
@@ -204,6 +237,12 @@ const saveUser = async (e) => {
   }}
 >
   + Add User
+</button>
+<button
+  style={{ float: "right", marginBottom: "10px" }}
+  onClick={() => navigate("/admin/reportedby")}
+>
+  + Add Reported By
 </button>
 
 {showForm && (
@@ -227,6 +266,13 @@ const saveUser = async (e) => {
     <option key={t} value={t}>{t}</option>
   ))}
 </select>
+<input
+  type="text"
+  placeholder="Full Name"
+  value={form.full_name}
+  onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+  style={{ marginRight: "10px", padding: "4px" }}
+/>
 
             <input
               type="text"
@@ -242,6 +288,31 @@ const saveUser = async (e) => {
               onChange={(e) => setForm({ ...form, email: e.target.value })}
               style={{ marginRight: "10px", padding: "4px" }}
             />
+            {["RADIOLOGIST", "SUPERVISOR"].includes(form.role) && (
+  <select
+    value={form.qualification}
+    onChange={(e) => setForm({ ...form, qualification: e.target.value })}
+    style={{ marginRight: "10px", padding: "4px", height: "28px" }}
+  >
+    <option value="">Qualification</option>
+    {QUALIFICATIONS.map((q) => (
+      <option key={q} value={q}>{q}</option>
+    ))}
+  </select>
+)}
+{["RADIOLOGIST", "SUPERVISOR"].includes(form.role) && (
+  <select
+    value={form.designation}
+    onChange={(e) => setForm({ ...form, designation: e.target.value })}
+    style={{ marginRight: "10px", padding: "4px", height: "28px" }}
+  >
+    <option value="">Designation</option>
+    {DESIGNATIONS.map((d) => (
+      <option key={d} value={d}>{d}</option>
+    ))}
+  </select>
+)}
+
             <input
               type="password"
               placeholder="Password"
@@ -323,9 +394,13 @@ const saveUser = async (e) => {
               <tr style={{ backgroundColor: "#f0f0f0" }}>
                 <th style={thStyle}>ID</th>
                 <th style={thStyle}>Title</th>
+                <th style={thStyle}>Full Name</th>
                 <th style={thStyle}>Username</th>
                 <th style={thStyle}>Email</th>
-                <th style={thStyle}>Role</th>
+                  <th style={thStyle}>Role</th>
+                <th style={thStyle}>Qualification</th>
+<th style={thStyle}>Designation</th>
+           
                 <th style={thStyle}>Status</th>
                 <th style={thStyle}>Actions</th>
               </tr>
@@ -335,8 +410,11 @@ const saveUser = async (e) => {
                 <tr key={u.id}>
                   <td style={tdStyle}>{index + 1}</td>
                   <td style={tdStyle}>{u.title || "-"}</td>
+                  <td style={tdStyle}>{u.full_name || "-"}</td>
                   <td style={tdStyle}>{u.username}</td>
                   <td style={tdStyle}>{u.email || "-"}</td>
+                  <td style={tdStyle}>{u.qualification || "-"}</td>
+<td style={tdStyle}>{u.designation || "-"}</td>
                   <td style={tdStyle}>{u.role}</td>
                   <td style={tdStyle}>
                     <span
@@ -354,7 +432,7 @@ const saveUser = async (e) => {
                     <button
                       onClick={() => toggleUser(u.id)}
                       style={{
-                        padding: "4px 8px",
+                        padding: "4px 4px",
                         marginRight: "4px",
                         backgroundColor: u.is_active ? "#e74c3c" : "#27ae60",
                         color: "#fff",

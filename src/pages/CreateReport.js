@@ -6,6 +6,7 @@ import { jsPDF } from "jspdf";
 import "./CreateReport.css";
 import api from "../api/axios";
 const ORTHANC_URL = process.env.REACT_APP_ORTHANC_URL || "http://192.168.1.34:8042";
+import DigitalSignatureField from "../components/DigitalSignatureField";
 
 /* ===========================
       RichEditor component
@@ -292,8 +293,8 @@ export default function CreateReport() {
     History: "",
     Findings: "",
     Conclusion: "",
-    ReportedBy: "",
-    ApprovedBy: "",
+    ReportedBy: null,
+    ApprovedBy: null,
     ReportStatus: "",
   };
   const [isLoadingReport, setIsLoadingReport] = useState(true);
@@ -321,6 +322,8 @@ export default function CreateReport() {
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef(null);
+  const recognitionRunningRef = useRef(false);
+
   const location = useLocation(); // import from react-router-dom
 const [isAddendum, setIsAddendum] = useState(false);
 const [noteInput, setNoteInput] = useState("");
@@ -358,14 +361,29 @@ useEffect(() => {
     window.SpeechRecognition || window.webkitSpeechRecognition;
 
   if (!SpeechRecognition) {
-    alert("Speech recognition is not supported in this browser.");
+    console.warn("Speech recognition not supported");
     return;
   }
 
   const recognition = new SpeechRecognition();
   recognition.continuous = true;
-  recognition.interimResults = false; // ✅ IMPORTANT: avoid duplicate inserts
+  recognition.interimResults = false;
   recognition.lang = "en-US";
+
+  recognition.onstart = () => {
+    recognitionRunningRef.current = true;
+  };
+
+  recognition.onend = () => {
+    recognitionRunningRef.current = false;
+    setListening(false);
+  };
+
+  recognition.onerror = (e) => {
+    console.error("Speech recognition error:", e);
+    recognitionRunningRef.current = false;
+    setListening(false);
+  };
 
   recognition.onresult = (event) => {
     let transcript = "";
@@ -379,53 +397,40 @@ useEffect(() => {
     if (!transcript.trim()) return;
     if (!activeEditorRef.current) return;
 
-    // 🔁 Restore cursor position
     restoreSelection();
 
     const sel = window.getSelection();
     if (!sel || !sel.rangeCount) return;
 
     const range = sel.getRangeAt(0);
-
-    // Remove any selected text
     range.deleteContents();
 
-    // Insert dictated text
     const textNode = document.createTextNode(" " + transcript);
     range.insertNode(textNode);
 
-    // Move cursor after inserted text
     range.setStartAfter(textNode);
     range.setEndAfter(textNode);
     sel.removeAllRanges();
     sel.addRange(range);
 
-    // Save cursor for next dictation
     saveSelection();
 
-    // 🔄 Sync DOM → React state
     const editorType = activeEditorRef.current.dataset.editor;
-
-    if (editorType === "history") {
-      setHistory(activeEditorRef.current.innerHTML);
-    } else if (editorType === "findings") {
-      setFindings(activeEditorRef.current.innerHTML);
-    } else if (editorType === "conclusion") {
-      setConclusion(activeEditorRef.current.innerHTML);
-    }
-  };
-
-  recognition.onerror = (e) => {
-    console.error("Speech recognition error:", e);
+    if (editorType === "history") setHistory(activeEditorRef.current.innerHTML);
+    if (editorType === "findings") setFindings(activeEditorRef.current.innerHTML);
+    if (editorType === "conclusion") setConclusion(activeEditorRef.current.innerHTML);
   };
 
   recognitionRef.current = recognition;
 
   return () => {
-    recognition.stop();
+    if (recognitionRunningRef.current) {
+      recognition.stop();
+    }
   };
 }, []);
 
+//template
 useEffect(() => {
   if (!study.Modality || !study.BodyPartExamined) return;
 
@@ -548,8 +553,8 @@ useEffect(() => {
             "",
           BodyPartExamined:
             reportData?.body_part || studyData.BodyPartExamined || "",
-          ReportedBy: reportData?.reported_by || "",
-          ApprovedBy: reportData?.approved_by || "",
+          ReportedBy: reportData?.reported_by_signature || "",
+          ApprovedBy: reportData?.approved_by_signature || "",
           ReportStatus: reportData?.status || "Draft",
         });
 
@@ -628,8 +633,8 @@ const handleSaveReport = async (status) => {
     patient_id: study.PatientID,
     patient_name: study.PatientName,
     modality: study.Modality,
-    reported_by: study.ReportedBy,
-    approved_by: study.ApprovedBy,
+    reported_by_signature: study.ReportedBy || null,
+    approved_by_signature: study.ApprovedBy || null,
     status, // <- send current status to backend
     history,
     findings,
@@ -1136,15 +1141,21 @@ const getReportWidth = () => {
             </button>
           </div>
 
-          <button
+         <button
   type="button"
   onClick={() => {
-    if (!listening) {
-      recognitionRef.current.start();
-      setListening(true);
+    const recognition = recognitionRef.current;
+    if (!recognition) return;
+
+    if (!recognitionRunningRef.current) {
+      try {
+        recognition.start();
+        setListening(true);
+      } catch (e) {
+        console.warn("Recognition already started");
+      }
     } else {
-      recognitionRef.current.stop();
-      setListening(false);
+      recognition.stop();
     }
   }}
   style={{
@@ -1158,6 +1169,7 @@ const getReportWidth = () => {
 >
   {listening ? "Stop Dictation" : "🎙️ Start Dictation"}
 </button>
+
 
  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
     <div style={{ fontWeight: "bold" }}>Status = {study.ReportStatus || ""}</div>
@@ -1437,47 +1449,33 @@ const getReportWidth = () => {
   editorKey="conclusion"
 />
         </section>
-
-      {/* ====================== */}
+{/* ====================== */}
 {/* Footer */}
 {/* ====================== */}
-<footer className="footer-row" style={{ display: "flex", justifyContent: "space-between", marginTop: 30 }}>
+<footer
+  className="footer-row"
+  style={{ display: "flex", justifyContent: "space-between", marginTop: 30 }}
+>
   <div style={{ fontWeight: "bold", fontSize: 11 }}>
     Reported By:
-    <span
-      contentEditable={!(isAddendum && !addendumConfirmed)}
-      suppressContentEditableWarning
-      onInput={(e) => setStudy(prev => ({ ...prev, ReportedBy: e.target.textContent || "" }))}
-      style={{
-        borderBottom: "1px solid #000",
-        minWidth: 200,
-        display: "inline-block",
-        padding: "2px 5px",
-        backgroundColor: isAddendum && !addendumConfirmed ? "#f1f3f5" : "transparent",
-        cursor: isAddendum && !addendumConfirmed ? "not-allowed" : "text",
-      }}
-    >
-      {study.ReportedBy}
-    </span>
+    <DigitalSignatureField
+  type="reported"
+  value={study.ReportedBy}
+  onSelect={(data) =>
+    setStudy((prev) => ({ ...prev, ReportedBy: data }))
+  }
+/>
   </div>
 
   <div style={{ fontWeight: "bold", fontSize: 11 }}>
     Approved By:
-    <span
-      contentEditable={!(isAddendum && !addendumConfirmed)}
-      suppressContentEditableWarning
-      onInput={(e) => setStudy(prev => ({ ...prev, ApprovedBy: e.target.textContent || "" }))}
-      style={{
-        borderBottom: "1px solid #000",
-        minWidth: 200,
-        display: "inline-block",
-        padding: "2px 5px",
-        backgroundColor: isAddendum && !addendumConfirmed ? "#f1f3f5" : "transparent",
-        cursor: isAddendum && !addendumConfirmed ? "not-allowed" : "text",
-      }}
-    >
-      {study.ApprovedBy}
-    </span>
+    <DigitalSignatureField
+  type="approved"
+  value={study.ApprovedBy}
+  onSelect={(data) =>
+    setStudy((prev) => ({ ...prev, ApprovedBy: data }))
+  }
+/>
   </div>
 </footer>
 
@@ -1489,4 +1487,4 @@ const getReportWidth = () => {
       </div>
     </div>
   );
-}
+} 

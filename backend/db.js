@@ -1,13 +1,21 @@
+// backend/db.js
 const { Pool } = require("pg");
-
-console.log("DB PASSWORD TYPE:", typeof process.env.POSTGRES_PASSWORD);
+require("dotenv").config(); // load .env variables
 
 const pool = new Pool({
-  host: process.env.POSTGRES_HOST,
-  port: Number(process.env.POSTGRES_PORT),
-  user: process.env.POSTGRES_USER,
-  password: String(process.env.POSTGRES_PASSWORD),
-  database: process.env.POSTGRES_DB,
+  host: process.env.POSTGRES_HOST || "localhost",
+  port: process.env.POSTGRES_PORT || 5432,
+  user: process.env.POSTGRES_USER || "postgres",
+  password: process.env.POSTGRES_PASSWORD || "",
+  database: process.env.POSTGRES_DB || "RIS",
+});
+
+pool.on("connect", () => {
+  console.log("PostgreSQL connected");
+});
+
+pool.on("error", (err) => {
+  console.error("Unexpected DB error:", err);
 });
 
 module.exports = pool;

@@ -1,0 +1,101 @@
+import { useState, useEffect } from "react";
+import api from "../api/axios";
+import { getSignatureUrl } from "../api/urls";
+
+
+function DigitalSignatureField({ type, value, onSelect = () => {} }) {
+  const [inputText, setInputText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState(value || null);
+
+  useEffect(() => {
+    if (value) setData(value);
+  }, [value]);
+
+  const handleKeyDown = async (e) => {
+    if (e.key !== "Enter" || loading || !inputText.trim()) return;
+
+    setLoading(true);
+    try {
+      const apiurl =
+  type === "approved"
+    ? `/api/users/approved-by/${encodeURIComponent(inputText.trim())}`
+    : `/api/reported-by/by-name/${encodeURIComponent(inputText.trim())}`;
+
+
+      const res = await api.get(apiurl);
+
+      const {
+        full_name,
+        qualification,
+        designation,
+        signature_url,
+        dateTime
+      } = res.data;
+
+      if (!full_name) throw new Error("Invalid user");
+
+      const payload = {
+        full_name,
+        qualification,
+        designation,
+        signature_url,
+        dateTime
+      };
+
+      setData(payload);
+      onSelect(payload);
+      setInputText("");
+    } catch (err) {
+      alert("User not found or inactive");
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ marginTop: 4 }}>
+      {!data && (
+        <input
+          type="text"
+          placeholder={
+            type === "approved"
+              ? "Type USERNAME & press Enter"
+              : "Type FULL NAME & press Enter"
+          }
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          disabled={loading}
+          style={{ width: 180, padding: "4px", fontSize: 11 }}
+        />
+      )}
+
+      {data && (
+        <div style={{ fontSize: 11, marginTop: 4 }}>
+          {data.signature_url && (
+  <img
+    src={getSignatureUrl(data.signature_url)}
+    alt=""   // IMPORTANT: no alt text
+    style={{ maxWidth: 160, marginBottom: 4 }}
+  />
+)}
+
+
+          <div>{data.full_name}</div>
+          {data.qualification && <div>{data.qualification}</div>}
+          {type === "approved" && data.designation && (
+            <div>{data.designation}</div>
+          )}
+
+          <div>
+            Signed on {new Date(data.dateTime).toLocaleString()}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default DigitalSignatureField;

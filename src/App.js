@@ -19,6 +19,7 @@ import Billing from "./pages/Billing";
 import ProtectedRoute from "./components/ProtectedRoute";
 import MainLayout from "./layout/MainLayout";
 import AddNewReportPage from "./pages/AddNewReportPage";
+import ReportedBy from "./pages/adminsettings/ReportedBy";
 
 
 // Context
@@ -130,7 +131,6 @@ function App() {
     </ProtectedRoute>
   }
 />
-
             {/* Admin routes */}
             <Route
               path="/admin/templates"
@@ -148,6 +148,15 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+  path="/admin/reportedby"
+  element={
+    <ProtectedRoute roles={["ADMIN"]}>
+      <ReportedBy />
+    </ProtectedRoute>
+  }
+/>
+
             <Route
               path="/admin/pacs-management"
               element={
