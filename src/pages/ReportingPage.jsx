@@ -6,6 +6,7 @@ import { StudiesContext } from "../context/StudiesContext";
 import "./ReportingPage.css";
 import ReportPrintLayout from "../components/ReportPrintLayout.jsx";
 import api from "../api/axios";
+const API_BASE = process.env.REACT_APP_API_URL;
 
 const rowsPerPage = 20;
 function dateInputToYYYYMMDD(v) {
@@ -51,11 +52,11 @@ export default function ReportingPage() {
   const toggleSelectReport = (report) => {
     setSelectedReports([report.id]); // always replace with the clicked report
   };
-  const handlePrintReport = () => {
-    if (selectedReports.length === 0) return;
-    const reportId = selectedReports[0]; // only one allowed
-    window.open(`/api/reports/${reportId}/pdf/print`, "_blank");
-  };
+ const handlePrintReport = () => {
+  if (!selectedReports.length) return;
+  const reportId = selectedReports[0];
+  window.open(`${api.defaults.baseURL}/api/reports/${reportId}/pdf/print`, "_blank");
+};
 
   useEffect(() => {
     setFilterFromDate(getPastDateInput(7));
@@ -107,6 +108,8 @@ export default function ReportingPage() {
         modality: r.modality || study?.Modality || "",
         study_date: study?.StudyDate || r.created_at,
         status: displayStatus,
+         reported_by: r.reported_by_signature || "",       // add this
+    approved_by: r.approved_by_signature || "", 
       };
     });
 
@@ -277,19 +280,18 @@ export default function ReportingPage() {
         ✏️
       </button>
     ) : (
-     <button
-  type="button"
+   <button
   className="icon-btn"
-  onClick={(e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    console.log("CLICKED");
-    debugger;
+  title="Preview Report"
+  onClick={() => {
+    const reportId = r.id;
+    window.open(`${api.defaults.baseURL}/api/reports/${reportId}/pdf`, "_blank");
   }}
 >
-
   📄
 </button>
+
+
 
     )}
   </div>

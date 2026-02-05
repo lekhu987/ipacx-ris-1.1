@@ -213,10 +213,10 @@ export default function ReportPrintLayout({ report }) {
           }}
         >
           <div>
-            <b>Reported By:</b> {report.reported_by || ""}
+            <b>Reported By:</b> {report.reported_by || "N/A"}
           </div>
           <div>
-            <b>Approved By:</b> {report.approved_by || ""}
+            <b>Approved By:</b> {report.approved_by || "N/A"}
           </div>
         </div>
       </div>

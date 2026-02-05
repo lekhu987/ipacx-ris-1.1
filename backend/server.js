@@ -688,19 +688,26 @@ app.get("/api/study-report/:uid",  async (req, res) => {
     }
 
     // 4️⃣ Return combined data
-    res.json({
-      study,
-      report: report
-        ? {
-            ...report,
-            report_content: report.report_content,
-            report_title: report.report_title,
-            body_part: report.body_part,
-            referring_doctor: report.referring_doctor,
-            images
-          }
-        : null
-    });
+   res.json({
+  study,
+  report: report
+    ? {
+        ...report,
+        patient_name: report.patient_name,
+        patient_age: report.patient_age,
+        patient_sex: report.patient_sex,
+        report_content: report.report_content,
+        report_title: report.report_title,
+        body_part: report.body_part,
+        referring_doctor: report.referring_doctor,
+        images,
+        reported_by_signature: report.reported_by_signature,
+        approved_by_signature: report.approved_by_signature,
+        addendum_reason: report.addendum_reason
+      }
+    : null
+});
+
 
   } catch (err) {
     console.error("Study-Report fetch error:", err);
@@ -762,6 +769,8 @@ app.get("/api/reports", async (req, res) => {
         r.patient_name,
         r.modality,
         r.status,
+         r.reported_by_signature,
+  r.approved_by_signature,
         r.created_at
       FROM reports r
       ORDER BY r.created_at DESC
@@ -808,39 +817,57 @@ app.post("/api/reports/save", async (req, res) => {
       image_paths,
       isAddendum,
     } = req.body;
-  
 
     const reportContent = { history, findings, conclusion };
     let reportId;
 
-    /* =========================
-       ADDENDUM → ALWAYS INSERT
-    ========================== */
+    // =========================
+    // Fetch existing signatures if any
+    // =========================
+    let existingSignatures = { reported_by_signature: null, approved_by_signature: null };
+    if (status === "Final" || status === "Addendum" || isAddendum) {
+      const prevReport = await pool.query(
+        `SELECT reported_by_signature, approved_by_signature
+         FROM reports
+         WHERE study_uid=$1
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+        [study_uid]
+      );
+      if (prevReport.rows.length) {
+        existingSignatures = prevReport.rows[0];
+      }
+    }
+
+    // Use new signature if provided, otherwise fallback to existing
+    const finalReportedSignature = reported_by_signature || existingSignatures.reported_by_signature;
+    const finalApprovedSignature = approved_by_signature || existingSignatures.approved_by_signature;
+
+    // =========================
+    // ADDENDUM → ALWAYS INSERT
+    // =========================
     if (status === "Addendum" || isAddendum) {
       const result = await pool.query(
         `INSERT INTO reports (
           study_uid, accession_number, patient_id, patient_name,
-          modality, report_content,  reported_by_signature,
-      approved_by_signature,
+          modality, report_content, reported_by_signature, approved_by_signature,
           status, report_title, body_part, referring_doctor
         )
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Addendum',$9,$10,$11)
         RETURNING id`,
         [
           study_uid, accession_number, patient_id, patient_name,
-          modality, reportContent, reported_by_signature,
-      approved_by_signature,
+          modality, reportContent, finalReportedSignature, finalApprovedSignature,
           reportTitle, body_part, referring_doctor
         ]
       );
       reportId = result.rows[0].id;
     }
-
-    /* =========================
-       FINAL → UPDATE DRAFT / FINAL
-    ========================== */
+    // =========================
+    // FINAL → UPDATE DRAFT / FINAL
+    // =========================
     else if (status === "Final") {
-      // 1️⃣ Try Draft first
+      // Try Draft first
       const draft = await pool.query(
         `SELECT id FROM reports
          WHERE study_uid=$1 AND status='Draft'
@@ -864,8 +891,8 @@ app.post("/api/reports/save", async (req, res) => {
            RETURNING id`,
           [
             reportContent,
-             reported_by_signature,
-      approved_by_signature,
+            finalReportedSignature,
+            finalApprovedSignature,
             reportTitle,
             body_part,
             referring_doctor,
@@ -874,7 +901,7 @@ app.post("/api/reports/save", async (req, res) => {
         );
         reportId = result.rows[0].id;
       } else {
-        // 2️⃣ Update existing Final (no duplicate Final)
+        // Update existing Final if exists
         const final = await pool.query(
           `SELECT id FROM reports
            WHERE study_uid=$1 AND status='Final'
@@ -896,8 +923,8 @@ app.post("/api/reports/save", async (req, res) => {
              RETURNING id`,
             [
               reportContent,
-              reported_by_signature,
-              approved_by_signature,
+              finalReportedSignature,
+              finalApprovedSignature,
               reportTitle,
               body_part,
               referring_doctor,
@@ -906,19 +933,18 @@ app.post("/api/reports/save", async (req, res) => {
           );
           reportId = result.rows[0].id;
         } else {
-          // 3️⃣ No Draft & no Final → create Final
+          // No Draft & no Final → create Final
           const result = await pool.query(
             `INSERT INTO reports (
               study_uid, accession_number, patient_id, patient_name,
               modality, report_content, reported_by_signature, approved_by_signature,
               status, report_title, body_part, referring_doctor
-
             )
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Final',$9,$10,$11)
             RETURNING id`,
             [
               study_uid, accession_number, patient_id, patient_name,
-              modality, reportContent, reported_by_signature, approved_by_signature,
+              modality, reportContent, finalReportedSignature, finalApprovedSignature,
               reportTitle, body_part, referring_doctor
             ]
           );
@@ -926,19 +952,22 @@ app.post("/api/reports/save", async (req, res) => {
         }
       }
     }
-
-    /* =========================
-       DRAFT → UPDATE OR INSERT
-    ========================== */
+    // =========================
+    // DRAFT → UPDATE OR INSERT
+    // =========================
     else {
       const existingDraft = await pool.query(
-        `SELECT id FROM reports
+        `SELECT id, reported_by_signature, approved_by_signature FROM reports
          WHERE study_uid=$1 AND status='Draft'
          ORDER BY updated_at DESC LIMIT 1`,
         [study_uid]
       );
 
       if (existingDraft.rows.length) {
+        const draftSig = existingDraft.rows[0];
+        const draftReportedSignature = reported_by_signature || draftSig.reported_by_signature;
+        const draftApprovedSignature = approved_by_signature || draftSig.approved_by_signature;
+
         // UPDATE Draft
         const result = await pool.query(
           `UPDATE reports
@@ -953,8 +982,8 @@ app.post("/api/reports/save", async (req, res) => {
            RETURNING id`,
           [
             reportContent,
-            reported_by_signature,
-            approved_by_signature,
+            draftReportedSignature,
+            draftApprovedSignature,
             reportTitle,
             body_part,
             referring_doctor,
@@ -982,9 +1011,9 @@ app.post("/api/reports/save", async (req, res) => {
       }
     }
 
-    /* =========================
-       IMAGES (replace for that row)
-    ========================== */
+    // =========================
+    // IMAGES (replace for that row)
+    // =========================
     if (Array.isArray(image_paths)) {
       await pool.query(`DELETE FROM report_images WHERE report_id=$1`, [reportId]);
       for (let i = 0; i < image_paths.length; i++) {
@@ -1003,64 +1032,79 @@ app.post("/api/reports/save", async (req, res) => {
   }
 });
 
+
 /* ======================================================
    GET REPORT BY STUDY UID (PREFETCH LOGIC)
 ====================================================== */
 app.get("/api/reports/by-study/:uid", async (req, res) => {
   try {
     const { uid } = req.params;
-    const reportRes = await pool.query("SELECT * FROM reports WHERE study_uid=$1", [uid]);
+
+    // 1️⃣ Fetch the latest report (Final or Addendum)
+    const reportRes = await pool.query(
+      `
+      SELECT r.*, 
+        (SELECT reason FROM report_addendums 
+         WHERE report_id = r.id 
+         ORDER BY created_at DESC LIMIT 1) AS addendum_reason
+      FROM reports r
+      WHERE r.study_uid = $1
+      ORDER BY (r.status = 'Addendum') DESC, r.created_at DESC
+      LIMIT 1
+      `,
+      [uid]
+    );
+
     if (!reportRes.rows.length) return res.json(null);
 
-    const report = reportRes.rows[0];
+    let report = reportRes.rows[0];
+
+    // 2️⃣ If signature missing, fallback to previous Final report
+    if (!report.reported_by_signature || !report.approved_by_signature) {
+      const prevFinalRes = await pool.query(
+        `SELECT reported_by_signature, approved_by_signature
+         FROM reports
+         WHERE study_uid = $1 AND status='Final'
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [uid]
+      );
+      if (prevFinalRes.rows.length) {
+        report.reported_by_signature = report.reported_by_signature || prevFinalRes.rows[0].reported_by_signature;
+        report.approved_by_signature = report.approved_by_signature || prevFinalRes.rows[0].approved_by_signature;
+      }
+    }
+
+    // 3️⃣ Fetch report images
     const imagesRes = await pool.query(
       `SELECT image_path, image_type, sort_order
        FROM report_images
-       WHERE report_id=$1
+       WHERE report_id = $1
        ORDER BY sort_order`,
       [report.id]
     );
 
-    res.json({ 
-      ...report,
+    // 4️⃣ Return everything explicitly
+    res.json({
+      id: report.id,
+      study_uid: report.study_uid,
+      status: report.status,
       report_content: report.report_content,
       report_title: report.report_title,
       body_part: report.body_part,
       referring_doctor: report.referring_doctor,
-      images: imagesRes.rows 
+      reported_by_signature: report.reported_by_signature,
+      approved_by_signature: report.approved_by_signature,
+      addendum_reason: report.addendum_reason,
+      images: imagesRes.rows
     });
+
   } catch (err) {
     console.error("Fetch report error:", err.message);
     res.status(500).json({ error: "Failed to load report" });
   }
 });
 
-// POST /api/report-addendums
-app.post("/api/report-addendums", async (req, res) => {
-  const { report_id, study_uid, reason, created_by } = req.body;
-
-  // 1️⃣ Validate request
-  if (!report_id || !study_uid || !reason) {
-    return res.status(400).json({ success: false, error: "Missing required fields" });
-  }
-
-  try {
-    // 2️⃣ Insert addendum into DB
-    const result = await pool.query(
-      `INSERT INTO report_addendums (report_id, study_uid, reason, created_by, created_at)
-       VALUES ($1, $2, $3, $4, NOW())
-       RETURNING *`,
-      [report_id, study_uid, reason, created_by || "system"]
-    );
-
-    // 3️⃣ Return the saved addendum
-    res.json({ success: true, addendum: result.rows[0] });
-
-  } catch (err) {
-    console.error("Addendum save error:", err.message);
-    res.status(500).json({ success: false, error: "Failed to save addendum" });
-  }
-});
 
 // Get all active modalities
 app.get("/api/modalities", async (req, res) => {
