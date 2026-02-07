@@ -1,12 +1,12 @@
 const express = require("express");
 const router = express.Router();
-const axios = require("axios");
 const pool = require("../db"); // use a separate db.js
 const ORTHANC_URL = process.env.ORTHANC_URL;
 const ORTHANC_AUTH = {
   username: process.env.ORTHANC_USER,
   password: process.env.ORTHANC_PASS,
 };
+const axios = require("axios");
 
 // Add MWL
 router.post("/", async (req, res) => {

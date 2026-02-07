@@ -1,0 +1,714 @@
+const express = require("express");
+const router = express.Router();
+const path = require("path");
+const { Pool } = require("pg");
+const multer = require("multer");
+const fs = require("fs");
+const axios = require("axios");
+
+const generateFinalReportPDF = require("../utils/generateFinalReportPDF");
+
+
+// ======================================================
+// ORTHANC CONNECTION CONFIG
+// ======================================================
+const ORTHANC_URL = (process.env.ORTHANC_URL || "http://192.168.1.34:8042/").replace(/\/?$/, "/");
+const ORTHANC_AUTH = {
+  username: process.env.ORTHANC_USER || "lekhana",
+  password: process.env.ORTHANC_PASS || "lekhana",
+};
+
+// 🔹 IMPORTANT: reuse SAME DB config
+const pool = new Pool({
+  host: process.env.POSTGRES_HOST || "localhost",
+  port: process.env.POSTGRES_PORT || 5432,
+  user: process.env.POSTGRES_USER || "postgres",
+  password: process.env.POSTGRES_PASSWORD || "",
+  database: process.env.POSTGRES_DB || "RIS",
+});
+/* ======================================================
+   REPORT IMAGE UPLOAD  (FIXED)
+====================================================== */
+const reportImagesDir = path.join(__dirname, "uploads/report_images");
+if (!fs.existsSync(reportImagesDir)) {
+  fs.mkdirSync(reportImagesDir, { recursive: true });
+}
+
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, reportImagesDir);
+  },
+
+  filename: (req, file, cb) => {
+    const studyUID = req.body.studyUID;
+    if (!studyUID) {
+      return cb(new Error("studyUID is required"));
+    }
+
+    const ext = path.extname(file.originalname) || ".jpg";
+
+    // find existing images for same studyUID
+    const existingFiles = fs
+      .readdirSync(reportImagesDir)
+      .filter(f => f.startsWith(studyUID));
+
+    const suffix = existingFiles.length
+      ? `_${existingFiles.length + 1}`
+      : "";
+
+    cb(null, `${studyUID}${suffix}${ext}`);
+  },
+});
+
+const upload = multer({ storage });
+
+
+// ======================================================
+// Helper: Extract age from patient name
+// ======================================================
+function extractAgeFromName(name) {
+  if (!name) return "N/A";
+  const ageMatch = name.match(/(\d{1,3})\s*Y/i);
+  if (ageMatch) return ageMatch[1];
+  const monthMatch = name.match(/(\d{1,2})\s*MONTH/i);
+  if (monthMatch) return monthMatch[1] + " Months";
+  return "N/A";
+}
+
+/* =========================
+   UPLOAD REPORT IMAGES
+========================= */
+router.post("/upload", upload.array("images", 10), (req, res) => {
+  try {
+    const paths = req.files.map(
+      f => `/uploads/report_images/${f.filename}`
+    );
+    res.json({ success: true, paths });
+  } catch (err) {
+    res.status(500).json({ success: false });
+  }
+});
+
+
+/* ======================================================
+   GET STUDY + REPORT BY STUDY UID (FOR PREFILL)
+====================================================== */
+router.get("/api/study-report/:uid",  async (req, res) => {
+  try {
+    const { uid } = req.params;
+
+    // 1️⃣ Fetch study info
+    const studyRes = await pool.query(
+      `SELECT * FROM studies WHERE study_uid=$1`,
+      [uid]
+    );
+
+    if (!studyRes.rows.length) {
+      return res.status(404).json({ error: "Study not found" });
+    }
+    const study = studyRes.rows[0];
+
+    // 2️⃣ Fetch latest report (Draft / Final / Addendum)
+    const reportRes = await pool.query(
+      `
+      SELECT r.*, 
+        (SELECT reason FROM report_addendums 
+         WHERE report_id = r.id 
+         ORDER BY created_at DESC LIMIT 1) AS addendum_reason
+      FROM reports r
+      WHERE r.study_uid = $1
+      ORDER BY 
+        (r.status = 'Addendum') DESC,
+        r.created_at DESC
+      LIMIT 1
+      `,
+      [uid]
+    );
+
+    const report = reportRes.rows.length ? reportRes.rows[0] : null;
+
+    // 3️⃣ Fetch report images if report exists
+    let images = [];
+    if (report) {
+      const imagesRes = await pool.query(
+        `SELECT image_path, image_type, sort_order 
+         FROM report_images 
+         WHERE report_id=$1 
+         ORDER BY sort_order`,
+        [report.id]
+      );
+      images = imagesRes.rows;
+    }
+
+    // 4️⃣ Return combined data
+   res.json({
+  study,
+  report: report
+    ? {
+        ...report,
+        patient_name: report.patient_name,
+        patient_age: report.patient_age,
+        patient_sex: report.patient_sex,
+        report_content: report.report_content,
+        report_title: report.report_title,
+        body_part: report.body_part,
+        referring_doctor: report.referring_doctor,
+        images,
+        reported_by_signature: report.reported_by_signature,
+        approved_by_signature: report.approved_by_signature,
+        addendum_reason: report.addendum_reason
+      }
+    : null
+});
+
+
+  } catch (err) {
+    console.error("Study-Report fetch error:", err);
+    res.status(500).json({ error: "Failed to fetch study and report data" });
+  }
+});
+
+/* ======================================================
+   GET STUDY DETAILS BY UID
+====================================================== */
+router.get("/api/studies/:uid", async (req, res) => {
+  try {
+    const uid = req.params.uid;
+    const find = await axios.post(`${ORTHANC_URL}tools/find`, { Level: "Study", Query: { StudyInstanceUID: uid } }, { auth: ORTHANC_AUTH });
+    if (!find.data?.length) return res.json({ message: "No study found" });
+
+    const studyId = find.data[0];
+    const study = await axios.get(`${ORTHANC_URL}studies/${studyId}`, { auth: ORTHANC_AUTH });
+    const s = study.data;
+
+    let modality = "", bodyPart = "";
+    if (s.Series?.length) {
+      const series = await axios.get(`${ORTHANC_URL}series/${s.Series[0]}`, { auth: ORTHANC_AUTH });
+      modality = series.data.MainDicomTags.Modality || "";
+      bodyPart = series.data.MainDicomTags.BodyPartExamined || "";
+    }
+
+    res.json({
+      PatientID: s.PatientMainDicomTags.PatientID,
+      PatientName: s.PatientMainDicomTags.PatientName,
+      PatientSex: s.PatientMainDicomTags.PatientSex,
+      PatientAge: s.PatientMainDicomTags.PatientAge,
+      StudyInstanceUID: uid,
+      StudyDate: s.MainDicomTags.StudyDate,
+      StudyTime: s.MainDicomTags.StudyTime,
+      AccessionNumber: s.MainDicomTags.AccessionNumber,
+      StudyDescription: s.MainDicomTags.StudyDescription,
+      Modality: modality,
+      BodyPartExamined: bodyPart,
+      History: "", Findings: "", Conclusion: "",
+    });
+  } catch (err) {
+    console.error("Fetch study error:", err.message);
+    res.status(500).json({ error: "Failed to load study" });
+  }
+});
+
+/* ======================================================
+   GET ALL REPORTS (FOR DASHBOARD / TABLE)
+====================================================== */
+router.get("/api/reports", async (req, res) => {
+  try {
+    const result = await pool.query(`
+      SELECT
+        r.id,
+        r.study_uid,
+        r.accession_number,
+        r.patient_id,
+        r.patient_name,
+        r.modality,
+        r.status,
+         r.reported_by_signature,
+  r.approved_by_signature,
+        r.created_at
+      FROM reports r
+      ORDER BY r.created_at DESC
+    `);
+
+    res.json(result.rows);
+  } catch (err) {
+    console.error("Fetch reports error:", err.message);
+    res.status(500).json({ error: "Failed to load reports" });
+  }
+});
+
+router.post("/api/reports/upload", upload.array("images", 10), (req, res) => {
+  try {
+    const paths = req.files.map(
+      f => `/uploads/report_images/${f.filename}`
+    );
+    res.json({ success: true, paths });
+  } catch (err) {
+    console.error("Upload error:", err.message);
+    res.status(500).json({ success: false });
+  }
+});
+
+
+//save and update
+router.post("/api/reports/save", async (req, res) => {
+  try {
+    const {
+      study_uid,
+      accession_number,
+      patient_id,
+      patient_name,
+      modality,
+      reported_by_signature,
+      approved_by_signature,
+      status,
+      history,
+      findings,
+      conclusion,
+      reportTitle,
+      body_part,
+      referring_doctor,
+      image_paths,
+      isAddendum,
+    } = req.body;
+
+    const reportContent = { history, findings, conclusion };
+    let reportId;
+
+    // =========================
+    // Fetch existing signatures if any
+    // =========================
+    let existingSignatures = { reported_by_signature: null, approved_by_signature: null };
+    if (status === "Final" || status === "Addendum" || isAddendum) {
+      const prevReport = await pool.query(
+        `SELECT reported_by_signature, approved_by_signature
+         FROM reports
+         WHERE study_uid=$1
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+        [study_uid]
+      );
+      if (prevReport.rows.length) {
+        existingSignatures = prevReport.rows[0];
+      }
+    }
+
+    // Use new signature if provided, otherwise fallback to existing
+    const finalReportedSignature = reported_by_signature || existingSignatures.reported_by_signature;
+    const finalApprovedSignature = approved_by_signature || existingSignatures.approved_by_signature;
+
+    // =========================
+    // ADDENDUM → ALWAYS INSERT
+    // =========================
+    if (status === "Addendum" || isAddendum) {
+      const result = await pool.query(
+        `INSERT INTO reports (
+          study_uid, accession_number, patient_id, patient_name,
+          modality, report_content, reported_by_signature, approved_by_signature,
+          status, report_title, body_part, referring_doctor
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Addendum',$9,$10,$11)
+        RETURNING id`,
+        [
+          study_uid, accession_number, patient_id, patient_name,
+          modality, reportContent, finalReportedSignature, finalApprovedSignature,
+          reportTitle, body_part, referring_doctor
+        ]
+      );
+      reportId = result.rows[0].id;
+    }
+    // =========================
+    // FINAL → UPDATE DRAFT / FINAL
+    // =========================
+    else if (status === "Final") {
+      // Try Draft first
+      const draft = await pool.query(
+        `SELECT id FROM reports
+         WHERE study_uid=$1 AND status='Draft'
+         ORDER BY updated_at DESC LIMIT 1`,
+        [study_uid]
+      );
+
+      if (draft.rows.length) {
+        // Draft → Final
+        const result = await pool.query(
+          `UPDATE reports
+           SET report_content=$1,
+               reported_by_signature=$2,
+               approved_by_signature=$3,
+               status='Final',
+               report_title=$4,
+               body_part=$5,
+               referring_doctor=$6,
+               updated_at=NOW()
+           WHERE id=$7
+           RETURNING id`,
+          [
+            reportContent,
+            finalReportedSignature,
+            finalApprovedSignature,
+            reportTitle,
+            body_part,
+            referring_doctor,
+            draft.rows[0].id
+          ]
+        );
+        reportId = result.rows[0].id;
+      } else {
+        // Update existing Final if exists
+        const final = await pool.query(
+          `SELECT id FROM reports
+           WHERE study_uid=$1 AND status='Final'
+           ORDER BY updated_at DESC LIMIT 1`,
+          [study_uid]
+        );
+
+        if (final.rows.length) {
+          const result = await pool.query(
+            `UPDATE reports
+             SET report_content=$1,
+                 reported_by_signature=$2,
+                 approved_by_signature=$3,
+                 report_title=$4,
+                 body_part=$5,
+                 referring_doctor=$6,
+                 updated_at=NOW()
+             WHERE id=$7
+             RETURNING id`,
+            [
+              reportContent,
+              finalReportedSignature,
+              finalApprovedSignature,
+              reportTitle,
+              body_part,
+              referring_doctor,
+              final.rows[0].id
+            ]
+          );
+          reportId = result.rows[0].id;
+        } else {
+          // No Draft & no Final → create Final
+          const result = await pool.query(
+            `INSERT INTO reports (
+              study_uid, accession_number, patient_id, patient_name,
+              modality, report_content, reported_by_signature, approved_by_signature,
+              status, report_title, body_part, referring_doctor
+            )
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Final',$9,$10,$11)
+            RETURNING id`,
+            [
+              study_uid, accession_number, patient_id, patient_name,
+              modality, reportContent, finalReportedSignature, finalApprovedSignature,
+              reportTitle, body_part, referring_doctor
+            ]
+          );
+          reportId = result.rows[0].id;
+        }
+      }
+    }
+    // =========================
+    // DRAFT → UPDATE OR INSERT
+    // =========================
+    else {
+      const existingDraft = await pool.query(
+        `SELECT id, reported_by_signature, approved_by_signature FROM reports
+         WHERE study_uid=$1 AND status='Draft'
+         ORDER BY updated_at DESC LIMIT 1`,
+        [study_uid]
+      );
+
+      if (existingDraft.rows.length) {
+        const draftSig = existingDraft.rows[0];
+        const draftReportedSignature = reported_by_signature || draftSig.reported_by_signature;
+        const draftApprovedSignature = approved_by_signature || draftSig.approved_by_signature;
+
+        // UPDATE Draft
+        const result = await pool.query(
+          `UPDATE reports
+           SET report_content=$1,
+               reported_by_signature=$2,
+               approved_by_signature=$3,
+               report_title=$4,
+               body_part=$5,
+               referring_doctor=$6,
+               updated_at=NOW()
+           WHERE id=$7
+           RETURNING id`,
+          [
+            reportContent,
+            draftReportedSignature,
+            draftApprovedSignature,
+            reportTitle,
+            body_part,
+            referring_doctor,
+            existingDraft.rows[0].id
+          ]
+        );
+        reportId = result.rows[0].id;
+      } else {
+        // INSERT Draft
+        const result = await pool.query(
+          `INSERT INTO reports (
+            study_uid, accession_number, patient_id, patient_name,
+            modality, report_content, reported_by_signature, approved_by_signature,
+            status, report_title, body_part, referring_doctor
+          )
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Draft',$9,$10,$11)
+          RETURNING id`,
+          [
+            study_uid, accession_number, patient_id, patient_name,
+            modality, reportContent, reported_by_signature, approved_by_signature,
+            reportTitle, body_part, referring_doctor
+          ]
+        );
+        reportId = result.rows[0].id;
+      }
+    }
+
+    // =========================
+    // IMAGES (replace for that row)
+    // =========================
+    if (Array.isArray(image_paths)) {
+      await pool.query(`DELETE FROM report_images WHERE report_id=$1`, [reportId]);
+      for (let i = 0; i < image_paths.length; i++) {
+        await pool.query(
+          `INSERT INTO report_images (report_id, image_path, sort_order)
+           VALUES ($1,$2,$3)`,
+          [reportId, image_paths[i], i + 1]
+        );
+      }
+    }
+
+    res.json({ success: true, reportId });
+  } catch (err) {
+    console.error("Save report error:", err);
+    res.status(500).json({ error: "Failed to save report" });
+  }
+});
+
+
+/* ======================================================
+   GET REPORT BY STUDY UID (PREFETCH LOGIC)
+====================================================== */
+router.get("/api/reports/by-study/:uid", async (req, res) => {
+  try {
+    const { uid } = req.params;
+
+    // 1️⃣ Fetch the latest report (Final or Addendum)
+    const reportRes = await pool.query(
+      `
+      SELECT r.*, 
+        (SELECT reason FROM report_addendums 
+         WHERE report_id = r.id 
+         ORDER BY created_at DESC LIMIT 1) AS addendum_reason
+      FROM reports r
+      WHERE r.study_uid = $1
+      ORDER BY (r.status = 'Addendum') DESC, r.created_at DESC
+      LIMIT 1
+      `,
+      [uid]
+    );
+
+    if (!reportRes.rows.length) return res.json(null);
+
+    let report = reportRes.rows[0];
+
+    // 2️⃣ If signature missing, fallback to previous Final report
+    if (!report.reported_by_signature || !report.approved_by_signature) {
+      const prevFinalRes = await pool.query(
+        `SELECT reported_by_signature, approved_by_signature
+         FROM reports
+         WHERE study_uid = $1 AND status='Final'
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [uid]
+      );
+      if (prevFinalRes.rows.length) {
+        report.reported_by_signature = report.reported_by_signature || prevFinalRes.rows[0].reported_by_signature;
+        report.approved_by_signature = report.approved_by_signature || prevFinalRes.rows[0].approved_by_signature;
+      }
+    }
+
+    // 3️⃣ Fetch report images
+    const imagesRes = await pool.query(
+      `SELECT image_path, image_type, sort_order
+       FROM report_images
+       WHERE report_id = $1
+       ORDER BY sort_order`,
+      [report.id]
+    );
+
+    // 4️⃣ Return everything explicitly
+    res.json({
+      id: report.id,
+      study_uid: report.study_uid,
+      status: report.status,
+      report_content: report.report_content,
+      report_title: report.report_title,
+      body_part: report.body_part,
+      referring_doctor: report.referring_doctor,
+      reported_by_signature: report.reported_by_signature,
+      approved_by_signature: report.approved_by_signature,
+      addendum_reason: report.addendum_reason,
+      images: imagesRes.rows
+    });
+
+  } catch (err) {
+    console.error("Fetch report error:", err.message);
+    res.status(500).json({ error: "Failed to load report" });
+  }
+});
+
+
+/* =========================
+   GET PDF BY REPORT ID
+========================= */
+router.get("/api/reports/:id/pdf", async (req, res) => {
+  try {
+    const reportId = req.params.id;
+
+    // We use a Subquery for addendum_reason to get the LATEST entry
+    const reportRes = await pool.query(
+      `SELECT r.*, 
+        (SELECT reason FROM report_addendums 
+         WHERE report_id = r.id 
+         ORDER BY created_at DESC LIMIT 1) AS addendum_reason 
+       FROM reports r 
+       WHERE r.id = $1`,
+      [reportId]
+    );
+
+    if (reportRes.rows.length === 0) {
+      return res.status(404).json({ error: "Report not found" });
+    }
+
+    const report = reportRes.rows[0];
+
+    // Fetch associated images
+    const imagesRes = await pool.query(
+      `SELECT image_path FROM report_images WHERE report_id = $1 ORDER BY sort_order`,
+      [reportId]
+    );
+
+    // Generate the PDF and wait for the file to be ready
+   const pdfPath = await generateFinalReportPDF(
+  report,
+  imagesRes.rows,
+  { printMode: false }   // 👈 VIEW MODE
+);
+
+    const absolutePdfPath = path.resolve(pdfPath);
+
+    // Serve the file
+    res.contentType("application/pdf");
+    res.sendFile(absolutePdfPath, (err) => {
+      if (err) {
+        console.error("Error sending file:", err);
+        if (!res.headersSent) res.status(500).send("Error downloading PDF");
+      }
+    });
+
+  } catch (err) {
+    console.error("PDF Route Error:", err);
+    if (!res.headersSent) res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
+/* =========================
+   GET PDF BY STUDY UID (UPDATED)
+========================= */
+router.get("/api/reports/study/:studyUid/pdf", async (req, res) => {
+  try {
+    const { studyUid } = req.params;
+    const requestedType = req.query.type; 
+
+    // The subquery looks into report_addendums for the specific report_id
+    // and grabs the single most recent reason string.
+    let query = `
+      SELECT r.*, 
+        (SELECT reason 
+         FROM report_addendums 
+         WHERE report_id = r.id 
+         ORDER BY created_at DESC 
+         LIMIT 1) AS addendum_reason
+      FROM reports r
+      WHERE r.study_uid = $1
+    `;
+    const params = [studyUid];
+
+    if (requestedType) {
+      query += ` AND r.status = $2 ORDER BY r.created_at DESC LIMIT 1`;
+      params.push(requestedType);
+    } else {
+      query += ` ORDER BY (r.status = 'Addendum') DESC, r.created_at DESC LIMIT 1`;
+    }
+
+    const reportRes = await pool.query(query, params);
+    
+    if (reportRes.rows.length === 0) {
+      return res.status(404).json({ error: "No report found for this study" });
+    }
+
+    const report = reportRes.rows[0];
+    
+    // Fetch associated images
+    const imagesRes = await pool.query(
+      `SELECT image_path FROM report_images WHERE report_id = $1 ORDER BY sort_order`,
+      [report.id]
+    );
+
+    const pdfPath = await generateFinalReportPDF(
+  report,
+  imagesRes.rows,
+  { printMode: false }   // explicitly VIEW MODE
+);
+
+    res.contentType("application/pdf").sendFile(path.resolve(pdfPath));
+
+  } catch (err) {
+    console.error("Study PDF Route Error:", err);
+    res.status(500).send("Error generating PDF");
+  }
+});
+
+/* =========================
+   PRINT PDF (STATUS HIDDEN)
+========================= */
+router.get("/api/reports/:id/pdf/print", async (req, res) => {
+  try {
+    const reportId = req.params.id;
+
+    const reportRes = await pool.query(
+      `SELECT r.*, 
+        (SELECT reason FROM report_addendums 
+         WHERE report_id = r.id 
+         ORDER BY created_at DESC LIMIT 1) AS addendum_reason 
+       FROM reports r 
+       WHERE r.id = $1`,
+      [reportId]
+    );
+
+    if (!reportRes.rows.length) {
+      return res.status(404).json({ error: "Report not found" });
+    }
+
+    const imagesRes = await pool.query(
+      `SELECT image_path FROM report_images 
+       WHERE report_id = $1 ORDER BY sort_order`,
+      [reportId]
+    );
+
+    const pdfPath = await generateFinalReportPDF(
+      reportRes.rows[0],
+      imagesRes.rows,
+      { printMode: true }
+    );
+
+    res.contentType("application/pdf");
+    res.sendFile(path.resolve(pdfPath));
+  } catch (err) {
+    console.error("Print PDF error:", err);
+    res.status(500).send("Error generating print PDF");
+  }
+});
+
+module.exports = router;

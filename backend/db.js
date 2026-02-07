@@ -10,12 +10,4 @@ const pool = new Pool({
   database: process.env.POSTGRES_DB || "RIS",
 });
 
-pool.on("connect", () => {
-  console.log("PostgreSQL connected");
-});
-
-pool.on("error", (err) => {
-  console.error("Unexpected DB error:", err);
-});
-
 module.exports = pool;

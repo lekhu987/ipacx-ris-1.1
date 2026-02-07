@@ -5,6 +5,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const { Pool } = require("pg");
+const axios = require("axios");
 
 // PostgreSQL pool (make sure to import the same config or pass pool from server.js)
 const pool = new Pool({
@@ -54,16 +55,13 @@ const uploadPatient = multer({
   },
 });
 
-// ======================================================
-// Generate unique patient ID
-// ======================================================
+
+// Auto-generate unique patient ID
 function generatePatientId() {
   return `HIS${Date.now()}${Math.floor(Math.random() * 1000)}`;
 }
 
-// ======================================================
-// Create a new patient
-// ======================================================
+// ===== Create Patient Route =====
 router.post("/", uploadPatient.single("id_proof_path"), async (req, res) => {
   try {
     const { first_name, last_name, gender, dob, mobile } = req.body;
@@ -72,8 +70,11 @@ router.post("/", uploadPatient.single("id_proof_path"), async (req, res) => {
       return res.status(400).json({ error: "First name, last name, and gender are required" });
     }
 
+    // Save only the path to the DB
     const idProofPath = req.file ? `/uploads/patient_docs/${req.file.filename}` : null;
-    const patientId = generatePatientId();
+
+    // Auto-generate patient ID
+    const patientId = `HIS${Date.now()}`;
 
     const result = await pool.query(
       `INSERT INTO patients 
@@ -90,23 +91,22 @@ router.post("/", uploadPatient.single("id_proof_path"), async (req, res) => {
   }
 });
 
-// ======================================================
-// Get all patients OR count by date
-// ======================================================
-router.get("/", async (req, res) => {
-  const { date } = req.query;
 
+// ===== Get Patients Count by Date =====
+router.get("/", async (req, res) => {
+  const { date } = req.query; // optional query param
   try {
+    let result;
     if (date) {
-      const result = await pool.query(
+      // Count patients registered on a specific date
+      result = await pool.query(
         "SELECT COUNT(*) FROM patients WHERE DATE(created_at) = $1",
         [date]
       );
       res.json({ count: parseInt(result.rows[0].count, 10) });
     } else {
-      const result = await pool.query(
-        "SELECT * FROM patients ORDER BY created_at DESC"
-      );
+      // Return all patients if no date is provided
+      result = await pool.query("SELECT * FROM patients ORDER BY created_at DESC");
       res.json(result.rows);
     }
   } catch (err) {
@@ -114,5 +114,6 @@ router.get("/", async (req, res) => {
     res.status(500).json({ count: 0 });
   }
 });
+
 
 module.exports = router;
