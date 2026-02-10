@@ -39,11 +39,13 @@ export default function AddNewReportPage() {
       try {
         setLoading(true);
 
-        const res = await api.post("/api/pacs/studies", {
-          pacs_id: activePacs.id,
-          startDate: filters.startDate || undefined,
-          endDate: filters.endDate || undefined,
-        });
+        const res = await api.get("/api/pacs/studies", {
+  params: {
+    pacs_id: activePacs.id,
+    startDate: filters.startDate || undefined,
+    endDate: filters.endDate || undefined,
+  },
+});
 
         setStudies(res.data || []);
         setCurrentPage(1);
@@ -57,6 +59,13 @@ export default function AddNewReportPage() {
 
     loadStudies();
   }, [activePacs?.id, filters.startDate, filters.endDate]);
+
+  useEffect(() => {
+  if (!activePacs) {
+    const saved = sessionStorage.getItem("activePacs");
+    if (saved) setActivePacs(JSON.parse(saved));
+  }
+}, []);
 
   // ------------------ FILTER LOGIC ------------------
   const filteredStudies = useMemo(() => {
@@ -203,6 +212,8 @@ export default function AddNewReportPage() {
             filters={filters}
             mode="report"
             navigate={navigate}
+            currentPage={currentPage}
+  rowsPerPage={rowsPerPage}
           />
         </table>
       </div>

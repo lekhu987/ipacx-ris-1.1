@@ -68,11 +68,35 @@ const upload = multer({ storage });
 // ======================================================
 function extractAgeFromName(name) {
   if (!name) return "N/A";
-  const ageMatch = name.match(/(\d{1,3})\s*Y/i);
-  if (ageMatch) return ageMatch[1];
-  const monthMatch = name.match(/(\d{1,2})\s*MONTH/i);
-  if (monthMatch) return monthMatch[1] + " Months";
+
+  const clean = String(name);
+
+  // Match: 34Y, 34 Y, ^34^Y, ^34Y
+  const yearMatch = clean.match(/(\d{1,3})\s*\^?\s*Y\b/i);
+  if (yearMatch) return yearMatch[1];
+
+  const monthMatch = clean.match(/(\d{1,2})\s*\^?\s*(MONTH|M)\b/i);
+  if (monthMatch) return `${monthMatch[1]} Months`;
+
   return "N/A";
+}
+
+function formatStudyDateTime(date, time) {
+  if (!date) return "—";
+
+  const yyyy = date.slice(0, 4);
+  const mm = date.slice(4, 6);
+  const dd = date.slice(6, 8);
+
+  let result = `${dd}-${mm}-${yyyy}`;
+
+  if (time && time.length >= 4) {
+    const hh = time.slice(0, 2);
+    const min = time.slice(2, 4);
+    result += ` ${hh}:${min}`;
+  }
+
+  return result;
 }
 
 /* =========================
@@ -140,22 +164,39 @@ router.get("/api/study-report/:uid",  async (req, res) => {
       images = imagesRes.rows;
     }
 
-    // 4️⃣ Return combined data
-   res.json({
-  study,
+  res.json({
+  study: {
+    ...study,
+    study_datetime: formatStudyDateTime(
+      study.study_date,
+      study.study_time
+    ),
+    age: study.patient_age || extractAgeFromName(study.patient_name),
+    gender: study.patient_sex
+  },
+
   report: report
     ? {
         ...report,
-        patient_name: report.patient_name,
-        patient_age: report.patient_age,
-        patient_sex: report.patient_sex,
-        report_content: report.report_content,
-        report_title: report.report_title,
-        body_part: report.body_part,
-        referring_doctor: report.referring_doctor,
+
+        reported_by: report.reported_by_signature
+  ? `${report.reported_by_signature.full_name || ""} ${report.reported_by_signature.qualification || ""}`.trim()
+  : "N/A",
+
+approved_by: report.approved_by_signature
+  ? `${report.approved_by_signature.full_name || ""} ${report.approved_by_signature.designation || ""}`.trim()
+  : "N/A",
+
+        study_datetime: formatStudyDateTime(
+          study.study_date,
+          study.study_time
+        ),
+
+        reported_datetime: report.created_at
+          ? new Date(report.created_at).toLocaleString()
+          : "—",
+
         images,
-        reported_by_signature: report.reported_by_signature,
-        approved_by_signature: report.approved_by_signature,
         addendum_reason: report.addendum_reason
       }
     : null
@@ -536,21 +577,40 @@ router.get("/api/reports/by-study/:uid", async (req, res) => {
        ORDER BY sort_order`,
       [report.id]
     );
+    const studyRes = await pool.query(
+  `SELECT study_date, study_time FROM studies WHERE study_uid=$1`,
+  [uid]
+);
 
-    // 4️⃣ Return everything explicitly
-    res.json({
-      id: report.id,
-      study_uid: report.study_uid,
-      status: report.status,
-      report_content: report.report_content,
-      report_title: report.report_title,
-      body_part: report.body_part,
-      referring_doctor: report.referring_doctor,
-      reported_by_signature: report.reported_by_signature,
-      approved_by_signature: report.approved_by_signature,
-      addendum_reason: report.addendum_reason,
-      images: imagesRes.rows
-    });
+const study = studyRes.rows[0];
+res.json({
+  id: report.id,
+  study_uid: report.study_uid,
+  status: report.status,
+
+  // ✅ FIXED
+  study_datetime: study
+    ? formatStudyDateTime(study.study_date, study.study_time)
+    : "—",
+reported_by: report.reported_by_signature
+  ? `${report.reported_by_signature.full_name || ""} ${report.reported_by_signature.qualification || ""}`.trim()
+  : "N/A",
+
+approved_by: report.approved_by_signature
+  ? `${report.approved_by_signature.full_name || ""} ${report.approved_by_signature.designation || ""}`.trim()
+  : "N/A",
+
+  reported_datetime: report.created_at
+    ? new Date(report.created_at).toLocaleString()
+    : "—",
+
+  report_content: report.report_content,
+  report_title: report.report_title,
+  body_part: report.body_part,
+  referring_doctor: report.referring_doctor,
+  addendum_reason: report.addendum_reason,
+  images: imagesRes.rows
+});
 
   } catch (err) {
     console.error("Fetch report error:", err.message);

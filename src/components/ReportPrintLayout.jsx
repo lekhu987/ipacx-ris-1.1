@@ -78,7 +78,8 @@ export default function ReportPrintLayout({ report }) {
             <tr>
               <td>
                 <b>Study Date / Time:</b>{" "}
-                {report.study_datetime || "—"}
+                {report.study_datetime || report.study_date || "—"}
+
               </td>
               <td>
                 <b>Ref. Doctor:</b>{" "}
@@ -213,10 +214,10 @@ export default function ReportPrintLayout({ report }) {
           }}
         >
           <div>
-            <b>Reported By:</b> {report.reported_by || "N/A"}
+            <b>Reported By:</b> {report.reported_by_signature || "N/A"}
           </div>
           <div>
-            <b>Approved By:</b> {report.approved_by || "N/A"}
+       <b>Approved By:</b> {report.approved_by_signature || "N/A"}
           </div>
         </div>
       </div>

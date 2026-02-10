@@ -1,10 +1,28 @@
 import React from "react";
-
 export default function StudiesTable({
   studies = [],
   mode = "pacs", // "pacs" | "report"
   navigate,
+  currentPage,
+  rowsPerPage,
 }) {
+  const openViewer = (study) => {
+  if (!study?.StudyInstanceUID) return;
+
+  if (study.PACS === "DCM4CHEE") {
+    window.open(
+      `https://192.168.1.34:3030/viewer/${study.StudyInstanceUID}`,
+      "_blank"
+    );
+  } else {
+    // ORTHANC (default)
+    window.open(
+      `http://192.168.1.34:8042/ohif/viewer?StudyInstanceUIDs=${study.StudyInstanceUID}`,
+      "_blank"
+    );
+  }
+};
+
   return (
     <tbody>
       {studies.length === 0 ? (
@@ -16,7 +34,8 @@ export default function StudiesTable({
       ) : (
         studies.map((s, idx) => (
           <tr key={s.StudyInstanceUID || idx}>
-            <td>{idx + 1}</td>
+            <td>{(currentPage - 1) * rowsPerPage + idx + 1}</td>
+
             <td>{s.PatientID || "-"}</td>
             <td>{s.PatientName || "-"}</td>
             <td>{s.AccessionNumber || "-"}</td>
@@ -35,7 +54,7 @@ export default function StudiesTable({
         <button
           className="icon-btn"
           title="View Study"
-          onClick={() => window.open(`http://192.168.1.34:8042/ohif/viewer?StudyInstanceUIDs=${s.StudyInstanceUID}`, "_blank")}
+          onClick={() => openViewer(s)}
         >
           👁️
         </button>

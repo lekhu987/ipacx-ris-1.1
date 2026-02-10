@@ -12,6 +12,7 @@ function PacsManagement() {
 
   const [form, setForm] = useState({
     pacs_name: "",
+    pacs_type: "ORTHANC", // ORTHANC | DCM4CHEE
     ae_title: "",
     ip_address: "",
     port: "",
@@ -38,9 +39,15 @@ function PacsManagement() {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
-  /* ================= SAVE (ADD / UPDATE) ================= */
+  /* ================= SAVE ================= */
   const handleSave = async () => {
-    if (!form.pacs_name || !form.ae_title || !form.ip_address || !form.port) {
+    if (
+      !form.pacs_name ||
+      !form.pacs_type ||
+      !form.ae_title ||
+      !form.ip_address ||
+      !form.port
+    ) {
       alert("All fields are required");
       return;
     }
@@ -57,7 +64,13 @@ function PacsManagement() {
       alert("PACS saved successfully");
       setShowForm(false);
       setSelectedPacsId(null);
-      setForm({ pacs_name: "", ae_title: "", ip_address: "", port: "" });
+      setForm({
+        pacs_name: "",
+        pacs_type: "ORTHANC",
+        ae_title: "",
+        ip_address: "",
+        port: "",
+      });
       fetchPacsList();
     } catch (err) {
       setError(err.response?.data?.message || "Failed to save PACS");
@@ -75,6 +88,7 @@ function PacsManagement() {
 
     setForm({
       pacs_name: selectedPacs.pacs_name,
+      pacs_type: selectedPacs.pacs_type,
       ae_title: selectedPacs.ae_title,
       ip_address: selectedPacs.ip_address,
       port: selectedPacs.port,
@@ -119,11 +133,13 @@ function PacsManagement() {
 
     try {
       await api.post("/api/pacs/test", {
+        pacs_type: selectedPacs.pacs_type,
         ip_address: selectedPacs.ip_address,
         port: selectedPacs.port,
         ae_title: selectedPacs.ae_title,
       });
-      alert("PACS connection successful");
+
+      alert(`${selectedPacs.pacs_type} connection successful`);
     } catch {
       alert("Unable to connect to PACS");
     }
@@ -156,18 +172,30 @@ function PacsManagement() {
             value={form.pacs_name}
             onChange={handleChange}
           />
+
+          <select
+            name="pacs_type"
+            value={form.pacs_type}
+            onChange={handleChange}
+          >
+            <option value="ORTHANC">ORTHANC</option>
+            <option value="DCM4CHEE">DCM4CHEE</option>
+          </select>
+
           <input
             name="ae_title"
             placeholder="AE Title"
             value={form.ae_title}
             onChange={handleChange}
           />
+
           <input
             name="ip_address"
             placeholder="IP Address"
             value={form.ip_address}
             onChange={handleChange}
           />
+
           <input
             type="number"
             name="port"
@@ -190,6 +218,7 @@ function PacsManagement() {
             <th>Select</th>
             <th>#</th>
             <th>PACS Name</th>
+            <th>Type</th>
             <th>AE Title</th>
             <th>IP</th>
             <th>Port</th>
@@ -208,6 +237,7 @@ function PacsManagement() {
               </td>
               <td>{index + 1}</td>
               <td>{p.pacs_name}</td>
+              <td>{p.pacs_type}</td>
               <td>{p.ae_title}</td>
               <td>{p.ip_address}</td>
               <td>{p.port}</td>

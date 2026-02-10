@@ -7,12 +7,18 @@ export const StudiesContext = createContext();
 export function StudiesProvider({ children }) {
   const [studies, setStudies] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null); // New: track errors
 
   useEffect(() => {
     let mounted = true;
 
-    api.get("/api/studies")
-      .then(({ data }) => {
+    async function fetchStudies() {
+      setLoading(true); // Ensure loading true at fetch start
+      setError(null);   // Reset previous errors
+
+      try {
+        const { data } = await api.get("/api/pacs/studies");
+
         if (!mounted || !Array.isArray(data)) return;
 
         const normalized = data.map((s) => ({
@@ -34,13 +40,15 @@ export function StudiesProvider({ children }) {
         }));
 
         setStudies(normalized);
-      })
-      .catch((err) => {
+      } catch (err) {
         console.error("Failed to fetch studies:", err);
-      })
-      .finally(() => {
+        if (mounted) setError("Failed to load studies. Try again.");
+      } finally {
         if (mounted) setLoading(false);
-      });
+      }
+    }
+
+    fetchStudies();
 
     return () => {
       mounted = false;
@@ -48,7 +56,7 @@ export function StudiesProvider({ children }) {
   }, []);
 
   return (
-    <StudiesContext.Provider value={{ studies, loading }}>
+    <StudiesContext.Provider value={{ studies, loading, error }}>
       {children}
     </StudiesContext.Provider>
   );

@@ -44,13 +44,26 @@ export default function PACSpage() {
     setCurrentPage(1);
 
     try {
-      const res = await api.post("/api/pacs/studies", {
-        pacs_id: pacs.id,
-        startDate: dateFilters.startDate || undefined,
-        endDate: dateFilters.endDate || undefined,
-      });
+      const res = await api.get("/api/pacs/studies", {
+  params: {
+    pacs_id: pacs.id,
+    startDate: dateFilters.startDate || undefined,
+    endDate: dateFilters.endDate || undefined,
+  },
+});
 
-      setStudies(Array.isArray(res.data) ? res.data : []);
+console.log("Studies received:", res.data.length);
+
+ console.log("Studies received:", res.data.length, res.data); // ✅ ADD
+      const studiesWithPacs = Array.isArray(res.data)
+  ? res.data.map((s) => ({
+      ...s,
+      PACS: pacs.pacs_name, // 👈 THIS IS THE KEY LINE
+    }))
+  : [];
+
+setStudies(studiesWithPacs);
+
     } catch {
       setError("Failed to load studies");
     } finally {
@@ -58,6 +71,7 @@ export default function PACSpage() {
     }
   }
 
+  
   // ===================== LOAD PACS SERVERS =====================
   useEffect(() => {
     async function loadPacs() {
@@ -153,6 +167,7 @@ export default function PACSpage() {
       );
     });
   }, [studies, filters]);
+  
 
   const handleFilterChange = (e) => {
     const { name, value } = e.target;
@@ -284,8 +299,10 @@ export default function PACSpage() {
                   onChange={handleFilterChange}
                 >
                   <option value="">All</option>
-                  <option value="Male">Male</option>
-                  <option value="Female">Female</option>
+                  <option value="M">Male</option>
+<option value="F">Female</option>
+<option value="O">Other</option>
+
                 </select>
               </th>
 
@@ -299,6 +316,8 @@ export default function PACSpage() {
             filters={filters}
             mode="pacs"
             navigate={navigate}
+            currentPage={currentPage}
+  rowsPerPage={rowsPerPage}
           />
         </table>
       </div>
