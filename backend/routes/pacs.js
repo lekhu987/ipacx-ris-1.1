@@ -107,29 +107,36 @@ router.post("/:id/deactivate", async (req, res) => {
    TEST PACS
 ====================================================== */
 router.post("/test", async (req, res) => {
-  const { pacs_type, ip_address, port } = req.body;
+  const { pacs_type, ip_address, port, ae_title } = req.body;
 
   try {
     if (pacs_type === "ORTHANC") {
-      await axios.get(`${ORTHANC_URL}system`, { auth: ORTHANC_AUTH });
-      return res.json({ success: true, message: "Orthanc reachable" });
+      // Test connectivity + small C-FIND equivalent
+      const { data: ids } = await axios.post(
+        `http://${ip_address}:${port}/tools/find`,
+        { Level: "Study", Query: {}, Limit: 1 }, // limit to 1 study for testing
+        { auth: ORTHANC_AUTH }
+      );
+      return res.json({ success: true, message: "Orthanc reachable and query successful", studyCount: ids.length });
     }
 
-    // DCM4CHEE – TCP check
-    const socket = new net.Socket();
-    socket.setTimeout(3000);
-    socket.connect(port, ip_address);
+    if (pacs_type === "DCM4CHEE") {
+      const qidoUrl = `http://${ip_address}:${port}/dcm4chee-arc/aets/${ae_title}/rs/studies?limit=1`;
+      const response = await axios.get(qidoUrl, {
+        auth: { username: "pacs", password: "pacs" },
+        headers: { Accept: "application/dicom+json" },
+      });
 
-    socket.on("connect", () => {
-      socket.destroy();
-      res.json({ success: true, message: "DCM4CHEE reachable" });
-    });
+      return res.json({ success: true, message: "DCM4CHEE reachable and query successful", studyCount: response.data.length });
+    }
 
-    socket.on("error", () => res.status(500).json({ error: "DCM4CHEE not reachable" }));
-  } catch {
-    res.status(500).json({ error: "PACS test failed" });
+    res.status(400).json({ success: false, message: "Unknown PACS type" });
+  } catch (err) {
+    console.error("PACS test error:", err.message);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 /* ======================================================
    GET STUDIES (ACTIVE PACS)
