@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import PatientRegistration from "./PatientRegistration";
-import "./PatientList.css";
 import api from "../api/axios"; // adjust path if needed
+import "./PatientList.css"; // custom styles
 
 function PatientList() {
   const [showForm, setShowForm] = useState(false);
@@ -13,13 +13,11 @@ function PatientList() {
   useEffect(() => {
     loadPatients();
   }, []);
-const loadPatients = async () => {
-    try {
-      // Add /api prefix to match your backend route
-      const res = await api.get("/api/patients"); 
 
-      // Your backend returns result.rows directly, which is an array
-      setPatients(res.data); 
+  const loadPatients = async () => {
+    try {
+      const res = await api.get("/api/patients");
+      setPatients(res.data || []);
     } catch (err) {
       console.error("Failed to load patients", err);
       setPatients([]);
@@ -29,6 +27,7 @@ const loadPatients = async () => {
   // After new patient is saved
   const handleAddPatient = (patient) => {
     setPatients((prev) => [patient, ...prev]);
+    setShowForm(false); // close modal after save
   };
 
   // Navigate to scheduling page
@@ -37,8 +36,10 @@ const loadPatients = async () => {
   };
 
   return (
-    <div className="patient-list-container">
-      <div className="header">
+    <div className="patient-page">
+
+      {/* Header */}
+      <div className="patient-header">
         <h2>Patient List</h2>
         <button
           className="add-patient-btn"
@@ -48,6 +49,7 @@ const loadPatients = async () => {
         </button>
       </div>
 
+      {/* Modal for Patient Registration */}
       {showForm && (
         <div className="modal-overlay">
           <div className="modal-content">
@@ -59,6 +61,7 @@ const loadPatients = async () => {
         </div>
       )}
 
+      {/* Patient Table */}
       <div className="table-wrapper">
         <table className="patient-table">
           <thead>
@@ -79,7 +82,7 @@ const loadPatients = async () => {
           <tbody>
             {patients.length === 0 ? (
               <tr>
-                <td colSpan="10" style={{ textAlign: "center" }}>
+                <td colSpan={10} className="no-data">
                   No patients found
                 </td>
               </tr>
@@ -109,6 +112,7 @@ const loadPatients = async () => {
           </tbody>
         </table>
       </div>
+
     </div>
   );
 }

@@ -1,13 +1,15 @@
 // routes/patients.js
+
 const express = require("express");
 const router = express.Router();
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const { Pool } = require("pg");
-const axios = require("axios");
 
-// PostgreSQL pool (make sure to import the same config or pass pool from server.js)
+// =============================
+// PostgreSQL Connection
+// =============================
 const pool = new Pool({
   host: process.env.POSTGRES_HOST || "localhost",
   port: process.env.POSTGRES_PORT || 5432,
@@ -16,104 +18,217 @@ const pool = new Pool({
   database: process.env.POSTGRES_DB || "RIS",
 });
 
-// ======================================================
-// Helper: Extract age from patient name
-// ======================================================
-function extractAgeFromName(name) {
-  if (!name) return "N/A";
-  const ageMatch = name.match(/(\d{1,3})\s*Y/i);
-  if (ageMatch) return ageMatch[1];
-  const monthMatch = name.match(/(\d{1,2})\s*MONTH/i);
-  if (monthMatch) return monthMatch[1] + " Months";
-  return "N/A";
+// =============================
+// Upload Folder Setup
+// =============================
+const uploadDir = path.join(__dirname, "../uploads/patient_docs");
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-// ======================================================
-// File upload setup for patient ID proof
-// ======================================================
-const patientDocsDir = path.join(__dirname, "../uploads/patient_docs");
-if (!fs.existsSync(patientDocsDir)) {
-  fs.mkdirSync(patientDocsDir, { recursive: true });
-}
-
-const patientUploadStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, patientDocsDir),
+// =============================
+// Multer Storage
+// =============================
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname) || ".jpg";
+    const ext = path.extname(file.originalname);
     cb(null, `PAT_${Date.now()}${ext}`);
   },
 });
 
-const uploadPatient = multer({
-  storage: patientUploadStorage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB limit
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith("image/")) {
-      return cb(new Error("Only image files allowed"));
+      cb(new Error("Only image files allowed"));
     }
     cb(null, true);
   },
 });
 
-
-// Auto-generate unique patient ID
-function generatePatientId() {
-  return `HIS${Date.now()}${Math.floor(Math.random() * 1000)}`;
+// =============================
+// Generate UHID
+// =============================
+function generateUHID() {
+  return `UHID${Date.now()}${Math.floor(Math.random() * 100)}`;
 }
 
-// ===== Create Patient Route =====
-router.post("/", uploadPatient.single("id_proof_path"), async (req, res) => {
+// ======================================================
+// CREATE PATIENT
+// ======================================================
+router.post("/", upload.single("id_proof_path"), async (req, res) => {
   try {
-    const { first_name, last_name, gender, dob, mobile } = req.body;
+    const {
+      first_name,
+      last_name,
+      gender,
+      dob,
+      age,
+      mobile,
+      email,
+      address,
+      idType,
+      idNumber,
+      biometric_flag,
+      data_privacy_accepted,
+      consent_image_sharing,
+      consent_telemedicine,
+      digital_signature,
+    } = req.body;
 
+    // Validation
     if (!first_name || !last_name || !gender) {
-      return res.status(400).json({ error: "First name, last name, and gender are required" });
+      return res.status(400).json({
+        success: false,
+        message: "First Name, Last Name and Gender are required",
+      });
     }
 
-    // Save only the path to the DB
-    const idProofPath = req.file ? `/uploads/patient_docs/${req.file.filename}` : null;
+    const uhid = generateUHID();
 
-    // Auto-generate patient ID
-    const patientId = `HIS${Date.now()}`;
+    const idProofPath = req.file
+      ? `/uploads/patient_docs/${req.file.filename}`
+      : null;
 
     const result = await pool.query(
-      `INSERT INTO patients 
-        (patient_id, first_name, last_name, gender, dob, mobile, id_proof_path)
-       VALUES ($1,$2,$3,$4,$5,$6,$7)
-       RETURNING *`,
-      [patientId, first_name, last_name, gender, dob || null, mobile || null, idProofPath]
+      `
+      INSERT INTO patients (
+        uhid,
+        first_name,
+        last_name,
+        gender,
+        dob,
+        age,
+        mobile,
+        email,
+        address,
+        id_type,
+        id_number,
+        biometric_flag,
+        id_proof_path,
+        data_privacy_accepted,
+        consent_image_sharing,
+        consent_telemedicine,
+        digital_signature
+      )
+      VALUES (
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,
+        $10,$11,$12,$13,$14,$15,$16,$17
+      )
+      RETURNING *
+      `,
+      [
+        uhid,
+        first_name,
+        last_name,
+        gender,
+        dob || null,
+        age || null,
+        mobile || null,
+        email || null,
+        address || null,
+        idType || null,
+        idNumber || null,
+        biometric_flag === "true" || biometric_flag === true,
+        idProofPath,
+        data_privacy_accepted === "true" || data_privacy_accepted === true,
+        consent_image_sharing === "true" || consent_image_sharing === true,
+        consent_telemedicine === "true" || consent_telemedicine === true,
+        digital_signature || null,
+      ]
     );
 
-    res.status(201).json({ success: true, patient: result.rows[0] });
-  } catch (err) {
-    console.error("Patient registration error:", err.message);
-    res.status(500).json({ error: "Failed to register patient" });
+    res.status(201).json({
+      success: true,
+      message: "Patient Registered Successfully",
+      patient: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Patient Create Error:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Server error while creating patient",
+    });
   }
 });
 
-
-// ===== Get Patients Count by Date =====
+// ======================================================
+// GET ALL PATIENTS
+// ======================================================
 router.get("/", async (req, res) => {
-  const { date } = req.query; // optional query param
   try {
-    let result;
-    if (date) {
-      // Count patients registered on a specific date
-      result = await pool.query(
-        "SELECT COUNT(*) FROM patients WHERE DATE(created_at) = $1",
-        [date]
-      );
-      res.json({ count: parseInt(result.rows[0].count, 10) });
-    } else {
-      // Return all patients if no date is provided
-      result = await pool.query("SELECT * FROM patients ORDER BY created_at DESC");
-      res.json(result.rows);
-    }
-  } catch (err) {
-    console.error("Error fetching patients:", err.message);
-    res.status(500).json({ count: 0 });
+    const result = await pool.query(
+      "SELECT * FROM patients ORDER BY created_at DESC"
+    );
+
+    res.json({
+      success: true,
+      count: result.rowCount,
+      patients: result.rows,
+    });
+  } catch (error) {
+    console.error("Fetch Patients Error:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Failed to fetch patients",
+    });
   }
 });
 
+// ======================================================
+// GET SINGLE PATIENT
+// ======================================================
+router.get("/:uhid", async (req, res) => {
+  try {
+    const { uhid } = req.params;
+
+    const result = await pool.query(
+      "SELECT * FROM patients WHERE uhid = $1",
+      [uhid]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Patient not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      patient: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Get Patient Error:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+    });
+  }
+});
+
+// ======================================================
+// DELETE PATIENT
+// ======================================================
+router.delete("/:uhid", async (req, res) => {
+  try {
+    const { uhid } = req.params;
+
+    await pool.query("DELETE FROM patients WHERE uhid = $1", [uhid]);
+
+    res.json({
+      success: true,
+      message: "Patient deleted successfully",
+    });
+  } catch (error) {
+    console.error("Delete Error:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Failed to delete patient",
+    });
+  }
+});
 
 module.exports = router;

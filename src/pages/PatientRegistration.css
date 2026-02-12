@@ -1,222 +1,322 @@
-/* =========================
-   OVERLAY & CARD
-========================= */
-.registration-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 1000;
+/* ================= MODAL BODY ================= */
+
+.pr-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 1.5rem;
+  background-color: #f9fafb;
 }
 
-.registration-card {
-  background: #ffffff;
-  width: 90%;
-  max-width: 1100px;
-  border-radius: 8px;
-  overflow: hidden;
-  box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+.pr-body-inner {
+  background-color: #ffffff;
+  padding: 1.5rem;
+  border-radius: 1rem;
+  border: 1px solid #e5e7eb;
+  width: 100%;
+  box-sizing: border-box;
 }
 
-/* =========================
-   HEADER
-========================= */
-.registration-header {
-  padding: 14px 18px;
-  background: #668198;
-  color: #ffffff;
+.pr-footer {
+  padding: 1.5rem;
+  border-top: 1px solid #e5e7eb;
   display: flex;
   justify-content: space-between;
+  background: #fff;
+}
+
+/* ================= GRID SYSTEM ================= */
+
+.pr-grid {
+  display: grid;
+  width: 100%;
+   align-items: start;
+}
+
+.pr-grid-gap {
+  gap: 1.25rem;
+}
+
+/* 2 Column */
+.pr-grid-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+/* 3 Column */
+.pr-grid-3 {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+/* 12 Column Layout */
+.pr-grid-12 {
+  grid-template-columns: repeat(12, 1fr);
+}
+
+/* Column Span Helpers */
+.pr-col-span-1 { grid-column: span 1; }
+.pr-col-span-2 { grid-column: span 2; }
+.pr-col-span-3 { grid-column: span 3; }
+.pr-col-span-4 { grid-column: span 4; }
+.pr-col-span-5 { grid-column: span 5; }
+.pr-col-span-6 { grid-column: span 6; }
+.pr-col-span-7 { grid-column: span 7; }
+.pr-col-span-8 { grid-column: span 8; }
+.pr-col-span-9 { grid-column: span 9; }
+.pr-col-span-10 { grid-column: span 10; }
+.pr-col-span-11 { grid-column: span 11; }
+.pr-col-span-12 { grid-column: span 12; }
+
+/* ================= LABELS ================= */
+
+.pr-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #6b7280;
+  margin-bottom: 0.35rem;
+}
+
+/* ================= INPUTS ================= */
+
+.pr-input,
+.pr-select,
+.pr-textarea {
+  width: 100%;
+  padding: 0.55rem 0.75rem;
+  border: 1px solid #d1d5db;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  box-sizing: border-box;
+  background-color: #ffffff;
+  transition: border 0.2s ease, box-shadow 0.2s ease;
+}
+
+.pr-input:focus,
+.pr-select:focus,
+.pr-textarea:focus {
+  outline: none;
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.15);
+}
+
+.pr-textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+/* ================= INPUT WITH ICON ================= */
+
+.pr-input-with-icon {
+  position: relative;
+  display: flex;
   align-items: center;
 }
 
-.registration-header h2 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
+.pr-input-with-icon .pr-input {
+  padding-left: 2.2rem;
 }
 
-.close-icon {
-  background: none;
-  border: none;
-  font-size: 22px;
-  color: #ffffff;
-  cursor: pointer;
+.pr-icon,
+.pr-icon-orange {
+  position: absolute;
+  left: 0.7rem;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  color: #6b7280;
 }
 
-/* =========================
-   BODY
-========================= */
-.registration-body {
-  padding: 18px;
-  max-height: 80vh;
-  overflow-y: auto;
-  background: #ffffff;
+.pr-icon-orange {
+  color: #f97316;
 }
 
-/* =========================
-   SECTIONS
-========================= */
-.form-section {
-  margin-bottom: 20px;
+/* ================= CHECKBOX & RADIO ================= */
+
+.pr-checkbox-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;        /* prevent breaking */
+  white-space: nowrap;      /* prevent text wrapping */
+  width: 100%;
 }
 
-.form-section h3 {
+.pr-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   font-size: 14px;
-  font-weight: 600;
-  margin-bottom: 12px;
-  color: #1f2937;
+  font-weight: 500;
 }
-
-/* =========================
-   GRID SYSTEM
-========================= */
-.grid-row {
+/* 3 column layout */
+.pr-grid-3 {
   display: grid;
-  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  align-items: end;
 }
 
-.four-cols  { grid-template-columns: repeat(4, 1fr); }
-.three-cols { grid-template-columns: repeat(3, 1fr); }
-.two-cols   { grid-template-columns: repeat(2, 1fr); }
-.single-col { grid-template-columns: 1fr; }
-
-/* =========================
-   INPUT GROUP
-========================= */
-.input-group {
+/* Normal field */
+.pr-field {
   display: flex;
   flex-direction: column;
 }
 
-.input-group label {
-  font-size: 12px;
-  font-weight: 500;
-  margin-bottom: 4px;
-  color: #374151;
+/* Checkbox column */
+.pr-checkbox-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 24px; /* aligns with input fields */
 }
 
-/* =========================
-   ALL INPUTS (STANDARD SIZE)
-========================= */
-.input-group input,
-.input-group select,
-.input-group textarea {
-  width: 100%;
-  height: 36px;
-  padding: 6px 8px;
-  font-size: 13px;
-  border: 1px solid #cbd5e1;
-  border-radius: 4px;
-  background-color: #ffffff;
-  line-height: 1.2;
-  box-sizing: border-box;
-  appearance: none;
+/* Checkbox style */
+.pr-checkbox {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
 }
 
-/* =========================
-   DATE INPUT (COMPACT)
-========================= */
-input[type="date"] {
-  height: 32px;
-  padding: 4px 6px;
-  font-size: 12px;
-}
-
-/* =========================
-   TEXTAREA
-========================= */
-textarea {
-  height: 60px;
-  resize: none;
-}
-
-/* =========================
-   DISABLED FIELD
-========================= */
-.disabled-field {
-  background: #f1f5f9;
-  color: #374151;
-}
-
-/* =========================
-   MOBILE NUMBER FIX
-========================= */
-.mobile-row {
+/* Checkbox label */
+.pr-checkbox-label {
   display: flex;
   align-items: center;
   gap: 6px;
-}
-
-/* Country code – SMALL but aligned */
-.country-code {
-  height: 32px;
-  width: 56px;
-  padding: 4px 6px;
-  font-size: 12px;
-  text-align: center;
-  border: 1px solid #cbd5e1;
-  border-radius: 4px;
-  background: #ffffff;
-}
-
-/* 10 digit boxes */
-.mobile-box-group {
-  display: flex;
-  gap: 4px;
-}
-
-.mobile-box {
-  width: 32px;
-  height: 36px;
-  text-align: center;
-  font-size: 13px;
-  border: 1px solid #cbd5e1;
-  border-radius: 4px;
-}
-
-/* =========================
-   FILE NAME
-========================= */
-.file-name {
-  font-size: 11px;
-  margin-top: 4px;
-  color: #6b7280;
-}
-
-/* =========================
-   FOOTER
-========================= */
-.form-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 18px;
-  padding-top: 12px;
-  border-top: 1px solid #e5e7eb;
-}
-
-.btn-cancel {
-  background: #e5e7eb;
-  border: none;
-  padding: 8px 16px;
-  font-size: 13px;
-  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
 }
 
-.btn-submit {
-  background: #627788;
+.pr-checkbox {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;           /* prevent shrinking */
+}
+
+.pr-grid {
+  display: grid;
+  width: 100%;
+  align-items: start;   /* 🔥 THIS FIXES ALL STEPS */
+}
+
+
+/* ================= SECTION BOX ================= */
+
+.pr-section {
+  padding: 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid #e5e7eb;
+  background-color: #f9fafb;
+}
+
+/* ================= INFO BOX ================= */
+
+.pr-info-box {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem;
+  border-radius: 0.75rem;
+  border: 1px solid #bfdbfe;
+  background-color: #eff6ff;
+  margin-bottom: 1rem;
+}
+
+.pr-info-box h4 {
+  font-weight: 700;
+  color: #1e40af;
+  margin: 0;
+}
+
+.pr-info-box p {
+  font-size: 0.875rem;
+  color: #1e3a8a;
+  margin: 0;
+}
+
+/* ================= PHOTO UPLOAD ================= */
+
+.pr-photo-wrapper {
+  display: flex;
+  justify-content: center;
+  padding: 1rem 0;
+}
+
+.pr-photo-upload {
+  position: relative;
+  width: 6rem;
+  height: 6rem;
+  border: 2px dashed #d1d5db;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  overflow: hidden;
+  background-color: #ffffff;
+}
+
+.pr-photo-upload:hover {
+  border-color: #4f46e5;
+}
+
+.pr-photo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.pr-photo-input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* ================= BUTTONS ================= */
+
+.pr-btn-primary {
+  background-color: #4f46e5;
   color: #ffffff;
   border: none;
-  padding: 8px 16px;
-  font-size: 13px;
-  border-radius: 4px;
+  padding: 0.55rem 1.25rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.pr-btn-primary:hover {
+  background-color: #4338ca;
+}
+
+.pr-btn-secondary {
+  background-color: #e5e7eb;
+  color: #374151;
+  border: none;
+  padding: 0.55rem 1.25rem;
+  border-radius: 0.5rem;
+  font-size: 0.875rem;
+  font-weight: 600;
   cursor: pointer;
 }
 
-.btn-submit:hover {
-  background: #0076db;
+.pr-btn-secondary:hover {
+  background-color: #d1d5db;
+}
+.pr-align-left {
+  display: flex;
+  align-items: center;
+  margin-top: 24px; /* aligns with input height */
+}
+/* 2 inputs + auto column */
+.pr-grid-2-auto {
+  grid-template-columns: 1fr 1fr auto;
+}
+input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  margin-top: 4px;   /* 🔥 THIS fixes vertical alignment */
 }
