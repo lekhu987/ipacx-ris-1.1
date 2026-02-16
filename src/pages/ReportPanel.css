@@ -376,6 +376,7 @@
   unicode-bidi: plaintext !important;
 }
 
+
 @media print {
 
   /* Hide ONLY viewer */
@@ -415,4 +416,11 @@
     display: none !important;
   }
 }
-  
+
+.editor-toolbar button {
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+
+  cursor: pointer;
+}

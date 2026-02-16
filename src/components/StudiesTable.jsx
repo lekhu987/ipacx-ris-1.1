@@ -11,7 +11,7 @@ export default function StudiesTable({
 
   if (study.PACS === "DCM4CHEE") {
     window.open(
-      `https://192.168.1.34:3030/viewer/${study.StudyInstanceUID}`,
+      `https://192.168.1.34:3031/viewer/${study.StudyInstanceUID}`,
       "_blank"
     );
   } else {

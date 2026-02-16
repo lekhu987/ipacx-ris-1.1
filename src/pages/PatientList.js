@@ -1,12 +1,15 @@
+// src/components/PatientList.jsx
+
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import PatientRegistration from "./PatientRegistration";
-import api from "../api/axios"; // adjust path if needed
-import "./PatientList.css"; // custom styles
+import api from "../api/axios"; // Adjust path to your axios instance
+import "./PatientList.css"; // Custom CSS
 
 function PatientList() {
   const [showForm, setShowForm] = useState(false);
   const [patients, setPatients] = useState([]);
+  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
   // Load patients on page load
@@ -16,21 +19,28 @@ function PatientList() {
 
   const loadPatients = async () => {
     try {
-      const res = await api.get("/api/patients");
-      setPatients(res.data || []);
+      setLoading(true);
+      const res = await api.get("/patients"); // matches your Express route
+      // Ensure patients is always an array
+      const data = res.data && Array.isArray(res.data.patients)
+        ? res.data.patients
+        : [];
+      setPatients(data);
     } catch (err) {
-      console.error("Failed to load patients", err);
+      console.error("Failed to load patients:", err);
       setPatients([]);
+    } finally {
+      setLoading(false);
     }
   };
 
   // After new patient is saved
   const handleAddPatient = (patient) => {
     setPatients((prev) => [patient, ...prev]);
-    setShowForm(false); // close modal after save
+    setShowForm(false); // close modal
   };
 
-  // Navigate to scheduling page
+  // Navigate to schedule page
   const handleSchedule = (patient) => {
     navigate("/schedule", { state: { patient } });
   };
@@ -61,58 +71,60 @@ function PatientList() {
         </div>
       )}
 
-      {/* Patient Table */}
-      <div className="table-wrapper">
-        <table className="patient-table">
-          <thead>
-            <tr>
-              <th>Patient ID</th>
-              <th>Name</th>
-              <th>Gender</th>
-              <th>DOB</th>
-              <th>Mobile</th>
-              <th>Referring Doctor</th>
-              <th>Visit Type</th>
-              <th>Modality</th>
-              <th>Study Type</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-
-          <tbody>
-            {patients.length === 0 ? (
+      {/* Loading State */}
+      {loading ? (
+        <p className="loading-text">Loading patients...</p>
+      ) : (
+        <div className="table-wrapper">
+          <table className="patient-table">
+            <thead>
               <tr>
-                <td colSpan={10} className="no-data">
-                  No patients found
-                </td>
+                <th>Patient ID</th>
+                <th>Name</th>
+                <th>Gender</th>
+                <th>DOB</th>
+                <th>Mobile</th>
+                <th>Referring Doctor</th>
+                <th>Visit Type</th>
+                <th>Modality</th>
+                <th>Study Type</th>
+                <th>Action</th>
               </tr>
-            ) : (
-              patients.map((p) => (
-                <tr key={p.patient_id}>
-                  <td><strong>{p.patient_id}</strong></td>
-                  <td>{p.first_name} {p.last_name}</td>
-                  <td>{p.gender}</td>
-                  <td>{p.dob}</td>
-                  <td>{p.mobile}</td>
-                  <td>{p.referring_doctor}</td>
-                  <td>{p.visit_type}</td>
-                  <td>{p.modality}</td>
-                  <td>{p.study_type}</td>
-                  <td>
-                    <button
-                      className="schedule-btn"
-                      onClick={() => handleSchedule(p)}
-                    >
-                      Schedule
-                    </button>
+            </thead>
+            <tbody>
+              {patients.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="no-data">
+                    No patients found
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
+              ) : (
+                patients.map((p) => (
+                  <tr key={p.uhid || p.patient_id}>
+                    <td><strong>{p.uhid || p.patient_id}</strong></td>
+                    <td>{p.first_name} {p.last_name}</td>
+                    <td>{p.gender}</td>
+                    <td>{p.dob ? new Date(p.dob).toLocaleDateString() : "-"}</td>
+                    <td>{p.mobile || "-"}</td>
+                    <td>{p.referring_doctor || "-"}</td>
+                    <td>{p.visit_type || "-"}</td>
+                    <td>{p.modality || "-"}</td>
+                    <td>{p.study_type || "-"}</td>
+                    <td>
+                      <button
+                        className="schedule-btn"
+                        onClick={() => handleSchedule(p)}
+                      >
+                        Schedule
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

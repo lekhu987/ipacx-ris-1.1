@@ -54,6 +54,62 @@ function RichEditor({
   );
 }
 
+function changeCase(caseType) {
+  const selection = window.getSelection();
+  if (!selection.rangeCount) return;
+
+  const range = selection.getRangeAt(0);
+  const selectedText = range.toString();
+  if (!selectedText) return;
+
+  let newText = selectedText;
+  switch (caseType) {
+    case "uppercase":
+      newText = selectedText.toUpperCase();
+      break;
+    case "lowercase":
+      newText = selectedText.toLowerCase();
+      break;
+    case "capitalize":
+      newText = selectedText.replace(/\b\w/g, c => c.toUpperCase());
+      break;
+    default:
+      break;
+  }
+
+  // Replace selection
+  range.deleteContents();
+  range.insertNode(document.createTextNode(newText));
+
+  // Move cursor to the end of new text
+  selection.removeAllRanges();
+  const newRange = document.createRange();
+  newRange.setStart(range.endContainer, range.endOffset);
+  selection.addRange(newRange);
+}
+
+function setLineSpacing(spacing) {
+  const selection = window.getSelection();
+  if (!selection.rangeCount) return;
+
+  const range = selection.getRangeAt(0);
+  const selectedText = range.toString();
+  if (!selectedText) return;
+
+  const p = document.createElement("div");
+  p.style.lineHeight = spacing;
+  p.textContent = selectedText;
+
+  range.deleteContents();
+  range.insertNode(p);
+
+  // Keep cursor after inserted text
+  selection.removeAllRanges();
+  const newRange = document.createRange();
+  newRange.setStartAfter(p);
+  selection.addRange(newRange);
+}
+
 //reporttitle
 function ReportTitle({ value, onChange, onManualEdit }) {
   const ref = useRef();
@@ -884,6 +940,32 @@ const insertTextAtCursor = (text) => {
     study.PatientSex
   );
 
+  const applyPixelFontSize = (size) => {
+  restoreSelection();
+  // 1. Force the browser to use CSS instead of <font> tags
+  document.execCommand("styleWithCSS", false, true);
+  
+  // 2. We use a temporary size to "mark" the selection
+  document.execCommand("fontSize", false, "1");
+  
+  // 3. Find the elements we just created and change '1' to our actual pixel size
+  const fontElements = document.getElementsByTagName("font");
+  for (let i = 0; i < fontElements.length; i++) {
+    if (fontElements[i].size === "1") {
+      fontElements[i].removeAttribute("size");
+      fontElements[i].style.fontSize = size + "px";
+    }
+  }
+  
+  // Alternative for modern browsers: find spans with size 1
+  const spanElements = document.getElementsByTagName("span");
+  for (let i = 0; i < spanElements.length; i++) {
+    if (spanElements[i].style.fontSize === "x-small" || spanElements[i].getAttribute("size") === "1") {
+       spanElements[i].style.fontSize = size + "px";
+    }
+  }
+  saveSelection();
+};
   return (
     <div className="split-layout" style={{ display: "flex", height: "100vh", position: "relative", fontFamily: "'Times New Roman', Times, serif" }}>
     
@@ -975,222 +1057,255 @@ const insertTextAtCursor = (text) => {
     )}
   </>
 )}
-        {/* Toolbar row - UPDATED BUTTONS */}
-        <div className="top-row" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 8 }}>
-          <div className="editor-toolbar toolbar" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <select title="Font size" onChange={(e) => exec("fontSize", e.target.value)} defaultValue="3" style={{ height: 28 }}>
-              <option value="1">H6</option>
-              <option value="2">H5</option>
-              <option value="3">H4</option>
-              <option value="4">H3</option>
-              <option value="5">H2</option>
-              <option value="6">H1</option>
-              <option value="7">H0</option>
-            </select>
-
-            <select title="Font family" onChange={(e) => exec("fontName", e.target.value)} defaultValue="Times New Roman" style={{ height: 28 }}>
-              <option value="Times New Roman">Times New Roman</option>
-              <option value="Arial">Arial</option>
-              <option value="Calibri">Calibri</option>
-              <option value="Georgia">Georgia</option>
-            </select>
-
-            {/* Color picker button + palette */}
-            <div style={{ position: "relative" }} onMouseLeave={() => {/* keep open/closing handled by click*/} }>
-              <button
-                type="button"
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => {
-                  // Save current selection before opening palette
-                  saveSelection();
-                  setShowColorPalette((s) => !s);
-                }}
-                style={{ height: 28 }}
-              >
-                A ▼
-              </button>
-
-              {showColorPalette && (
-                <div style={{ position: "absolute", top: 34, left: 0 }}>
-                  <WordColorPicker onSelect={(color) => applyColor(color)} />
-                </div>
-              )}
-            </div>
-
-            {/* toolbar buttons */}
-            {toolbar.map((t) => (
-              <button key={t.type} type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => exec(t.type)} style={{ height: 28 }}>
-                {t.icon}
-              </button>
-            ))}
-<div style={{ position: "relative" }}>
-  <button
-    type="button"
-    className="template-btn"
-    style={{ height: 28 }}
-    onClick={() => setShowTemplateMenu(s => !s)}
-  >
-    Templates ▼
-  </button>
-
-  {showTemplateMenu && (
-    <div
-      style={{
-        position: "absolute",
-        top: 34,
-        left: 0,
-        background: "#fff",
-        border: "1px solid #ccc",
-        boxShadow: "0 2px 6px rgba(0,0,0,0.15)",
-        borderRadius: 6,
-        width: 260,
-        zIndex: 1000,
-        maxHeight: 250,
-        overflowY: "auto",
-      }}
-    >
-      {templates.length === 0 ? (
-        <div style={{ padding: 10, fontSize: 12, color: "#777" }}>
-          No templates for {study.Modality} / {study.BodyPartExamined}
-        </div>
-      ) : (
-        templates.map(t => (
-          <div
-            key={t.id}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              padding: "8px 10px",
-              borderBottom: "1px solid #eee",
-            }}
-          >
-            <span style={{ fontSize: 12 }}>
-              {t.template_name}
-            </span>
-
-            <button
-              title="Apply template"
-              onClick={() => applyTemplate(t)}
-              style={{
-                background: "#198754",
-                color: "#fff",
-                border: "none",
-                borderRadius: 4,
-                padding: "2px 8px",
-                cursor: "pointer",
-              }}
-            >
-              +
-            </button>
-          </div>
-        ))
-      )}
-    </div>
-  )}
-</div>
-
-            <button
-              type="button"
-              onClick={() => {
-                // If not shown previously, show and open file dialog
-                if (!showKeyImages) {
-                  setShowKeyImages(true);
-                  // open file dialog after a tick (so section is visible)
-                  setTimeout(() => fileInputRef.current?.click(), 50);
-                } else {
-                  // if shown, open file dialog directly
-                  fileInputRef.current?.click();
-                }
-              }}
-              style={{ height: 28 }}
-            >
-              Key Images
-            </button>
-          </div>
-
-        <button
-  type="button"
-  onClick={() => {
-    const recognition = recognitionRef.current;
-    if (!recognition) return;
-
-    if (!recognitionRunningRef.current) {
-      try {
-        recognition.start();
-        setListening(true);
-      } catch (e) {
-        console.warn("Recognition already started");
-      }
-    } else {
-      recognition.stop();
-    }
-  }}
+       {/* Refined Professional Toolbar - Rounded Rectangle Style */}
+<div 
+  className="report-toolbar-wrapper" 
   style={{
-    marginBottom: 6,
-    background: listening ? "#dc3545" : "#e7e8eaff",
-    color: "#080101ff",
-    border: "none",
-    padding: "6px 6px",
-    borderRadius: 4,
+    display: "flex", 
+    alignItems: "center", 
+    justifyContent: "space-between", 
+    gap: "8px", 
+    padding: "4px 12px", 
+    marginBottom: "10px", 
+    backgroundColor: "#587dbc", 
+    borderRadius: "25px", // Professional round-shape rectangle
+    border: "1px solid #d1d9e0", // Subtle highlight border
+    boxShadow: "0 2px 8px rgba(0,0,0,0.06)", // Fit-to-text shadow
+    height: "42px", // Fixed height to prevent shaking
+    width: "100%",
+    boxSizing: "border-box"
   }}
 >
-  {listening ? "Stop Dictation" : "🎙️ Start Dictation"}
-</button>
+  {/* LEFT: EDITING TOOLS */}
+  <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+    
+   {/* 🔢 Font Size: 8-72px (Word Style) */}
+<select 
+  title="Font Size" 
+  onChange={(e) => applyPixelFontSize(e.target.value)} 
+  defaultValue="14"
+  style={{ 
+    height: "28px", 
+    width: "50px", 
+    borderRadius: "15px", 
+    border: "1px solid #ccc", 
+    paddingLeft: "4px", 
+    cursor: "pointer" 
+  }}
+>
+  {[8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72].map(size => (
+    <option key={size} value={size}>{size}</option>
+  ))}
+</select>
 
- <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-  <div className="status-print-hide" style={{ fontWeight: "bold" }}>
-  Status = {study.ReportStatus || ""}
-</div>
+    {/* 🔤 Small Font Family */}
+    <select 
+      title="Font Family" 
+      onChange={(e) => exec("fontName", e.target.value)} 
+      defaultValue="Arial"
+      style={{ height: "28px", width: "70px", borderRadius: "15px", border: "1px solid #ccc", fontSize: "11px", cursor: "pointer" }}
+    >
+      <option value="Arial">Arial</option>
+      <option value="Times New Roman">TNR</option>
+      <option value="Calibri">Calibri</option>
+      <option value="Georgia">Georgia</option>
+      <option value="Verdana">Verdana</option>
+      <option value="Courier New">Courier</option>
+      <option value="Tahoma">Tahoma</option>
+      <option value="Trebuchet MS">Trebuchet</option>
+      <option value="Impact">Impact</option>
+      <option value="Segoe UI">Segoe</option>
+    </select>
 
-          <div className="status-buttons" style={{ display: "flex", gap: 6 }}>
-            {/* DRAFT BUTTON: Calls handleSaveReport with "Draft" status */}
-            <div className="status-buttons" style={{ display: "flex", gap: 6 }}>
-  {!isAddendum && (
-    <>
+    {/* 🅱 Format Dropdown */}
+    <select 
+      title="Format" 
+      onChange={(e) => { if(e.target.value) exec(e.target.value); e.target.value = ""; }} 
+      style={{ height: "28px", width: "75px", borderRadius: "15px", border: "1px solid #ccc", cursor: "pointer" }}
+    >
+      <option value="">Format</option>
+      <option value="bold">Bold</option>
+      <option value="italic">Italic</option>
+      <option value="underline">Underline</option>
+      <option value="insertUnorderedList">Bullets</option>
+      <option value="insertOrderedList">Numbers</option>
+    </select>
+
+    {/* 📐 Align Dropdown */}
+    <select 
+      title="Align" 
+      onChange={(e) => { if(e.target.value) exec(e.target.value); e.target.value = ""; }} 
+      style={{ height: "28px", width: "65px", borderRadius: "15px", border: "1px solid #ccc", cursor: "pointer" }}
+    >
+      <option value="">Align</option>
+      <option value="justifyLeft">Left</option>
+      <option value="justifyCenter">Center</option>
+      <option value="justifyRight">Right</option>
+      <option value="justifyFull">Justify</option>
+    </select>
+
+<select
+  title="Change Case"
+  onChange={(e) => {
+    const val = e.target.value;
+    if (!val) return;
+    changeCase(val); // ✅ call your working function
+    e.target.value = "";
+  }}
+  style={{ height: "28px", width: "90px", borderRadius: "15px", border: "1px solid #ccc", cursor: "pointer", fontSize: "11px" }}
+>
+  <option value="">Case</option>
+  <option value="uppercase">UPPERCASE</option>
+  <option value="lowercase">lowercase</option>
+  <option value="capitalize">Capitalize</option>
+</select>
+<select
+  title="Line Spacing"
+  onChange={(e) => {
+    const spacing = e.target.value;
+    if (!spacing) return;
+    setLineSpacing(spacing); // ✅ call your working function
+    e.target.value = "";
+  }}
+  style={{ height: "28px", width: "90px", borderRadius: "15px", border: "1px solid #ccc", cursor: "pointer", fontSize: "11px" }}
+>
+  <option value="">Line Spacing</option>
+  <option value="1">1.0</option>
+  <option value="1.15">1.15</option>
+  <option value="1.5">1.5</option>
+  <option value="2">2.0</option>
+</select>
+
+    {/* 🎨 Color Palette */}
+    <div style={{ position: "relative" }}>
       <button
-        className="status-btn draft"
-        onClick={() => handleSaveReport("Draft")}
-        style={{ padding: "6px 14px", borderRadius: 4, background: "#6c757d", color: "#fff" }}
+        type="button"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => { saveSelection(); setShowColorPalette(!showColorPalette); }}
+        style={{ height: "28px", width: "32px", borderRadius: "50%", border: "1px solid #ccc", background: "#fff", cursor: "pointer" }}
       >
-        Draft
+        🎨
       </button>
+      {showColorPalette && (
+        <div style={{ position: "absolute", top: "32px", left: 0, zIndex: 3000 }}>
+          <WordColorPicker onSelect={(color) => { applyColor(color); setShowColorPalette(false); }} />
+        </div>
+      )}
+    </div>
 
-      <button
-        onClick={() => handleSaveReport("Final")}
-        disabled={!study.ApprovedBy}
-        style={{
-          cursor: study.ApprovedBy ? "pointer" : "not-allowed",
-          background: study.ApprovedBy ? "#198754" : "#6c757d",
-          padding: "6px 14px",
-          borderRadius: 4,
-          color: "#fff",
-        }}
-      >
-        Final
-      </button>
-    </>
-  )}
+    {/* 📂 Templates (Fixed Dropdown Logic) */}
+    <div style={{ position: "relative" }}>
+        <button
+          type="button"
+          onClick={() => setShowTemplateMenu(!showTemplateMenu)}
+          style={{ height: "28px", padding: "0 10px", borderRadius: "15px", border: "1px solid #ccc", background: "#fff", cursor: "pointer", fontSize: "11px" }}
+        >
+          Templates ▼
+        </button>
+        {showTemplateMenu && (
+            <div style={{ position: "absolute", top: "32px", left: 0, background: "#fff", border: "1px solid #ccc", boxShadow: "0 4px 12px rgba(0,0,0,0.15)", borderRadius: "8px", width: "220px", zIndex: 3000, maxHeight: "200px", overflowY: "auto" }}>
+                {templates.length === 0 ? (
+                  <div style={{ padding: "10px", fontSize: "11px", color: "#888" }}>No templates available</div>
+                ) : (
+                  templates.map(t => (
+                    <div key={t.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderBottom: "1px solid #f0f0f0" }}>
+                        <span style={{ fontSize: "11px", fontWeight: "500" }}>{t.template_name}</span>
+                        <button onClick={() => { applyTemplate(t); setShowTemplateMenu(false); }} style={{ background: "#198754", color: "#fff", border: "none", borderRadius: "4px", padding: "2px 6px", cursor: "pointer" }}>+</button>
+                    </div>
+                  ))
+                )}
+            </div>
+        )}
+    </div>
 
-  {isAddendum && (
+    {/* 🖼 RESTORED: Key Images */}
     <button
-      onClick={() => handleSaveReport("Addendum")}
+      type="button"
+      onClick={() => {
+        if (!showKeyImages) {
+          setShowKeyImages(true);
+          setTimeout(() => fileInputRef.current?.click(), 50);
+        } else {
+          fileInputRef.current?.click();
+        }
+      }}
+      style={{ height: "28px", padding: "0 10px", borderRadius: "15px", border: "1px solid #ccc", background: "#fff", cursor: "pointer", fontSize: "11px" }}
+    >
+      Key Images
+    </button>
+  </div>
+
+  {/* RIGHT: VOICE & ACTIONS */}
+  <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
+    
+    {/* 🎙 Dictation (Icon Only) */}
+    <button
+      type="button"
+      onClick={() => {
+        const rec = recognitionRef.current;
+        if (!rec) return;
+        listening ? rec.stop() : rec.start();
+        setListening(!listening);
+      }}
       style={{
-        backgroundColor: "#0d6efd",
-        color: "#fff",
-        padding: "6px 14px",
-        borderRadius: 4,
+        height: "30px", width: "30px", borderRadius: "50%", border: "none",
+        background: listening ? "#dc3545" : "#f1f3f5",
+        color: listening ? "#fff" : "#444",
+        cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center"
       }}
     >
-      Save Addendum
+      {listening ? "⏹" : "🎙️"}
     </button>
-  )}
-</div>
 
-            <button className="status-btn close" onClick={() => navigate("/reporting")} style={{ padding: "6px 14px", borderRadius: 4, background: "#dc3545", color: "#fff" }}>X</button>
-          </div>
+    <div style={{ display: "flex", gap: "6px" }}>
+      {!isAddendum ? (
+        <>
+          {/* 🟡 Highlighted Draft */}
+          <button
+            onClick={() => handleSaveReport("Draft")}
+            style={{
+              padding: "4px 12px", borderRadius: "15px", border: "none", cursor: "pointer",
+              background: "#ffc107", color: "#000", fontWeight: "bold", fontSize: "11px"
+            }}
+          >
+            DRAFT
+          </button>
+
+          {/* 🟢 Highlighted Final */}
+          <button
+            onClick={() => handleSaveReport("Final")}
+            disabled={!study.ApprovedBy}
+            style={{
+              padding: "4px 12px", borderRadius: "15px", border: "none",
+              cursor: study.ApprovedBy ? "pointer" : "not-allowed",
+              background: study.ApprovedBy ? "#198754" : "#adb5bd",
+              color: "#fff", fontWeight: "bold", fontSize: "11px"
+            }}
+          >
+            FINAL
+          </button>
+        </>
+      ) : (
+        <button
+          onClick={() => handleSaveReport("Addendum")}
+          style={{ padding: "4px 12px", borderRadius: "15px", border: "none", background: "#0d6efd", color: "#fff", fontWeight: "bold", fontSize: "11px" }}
+        >
+          ADDENDUM
+        </button>
+      )}
+
+      {/* ✕ Close */}
+      <button 
+        onClick={() => navigate("/pacspage")} 
+        style={{ height: "28px", width: "28px", borderRadius: "50%", border: "none", background: "#343a40", color: "#fff", cursor: "pointer", fontWeight: "bold" }}
+      >
+        ✕
+      </button>
+    </div>
+  </div>
+
         </div>
-        </div>
+
 
         {/* Patient table */}
         <table className="data-table" style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12 }}>

@@ -39,10 +39,10 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB limit
   fileFilter: (req, file, cb) => {
     if (!file.mimetype.startsWith("image/")) {
-      cb(new Error("Only image files allowed"));
+      return cb(new Error("Only image files allowed"));
     }
     cb(null, true);
   },
@@ -55,9 +55,9 @@ function generateUHID() {
   return `UHID${Date.now()}${Math.floor(Math.random() * 100)}`;
 }
 
-// ======================================================
+// =============================
 // CREATE PATIENT
-// ======================================================
+// =============================
 router.post("/", upload.single("id_proof_path"), async (req, res) => {
   try {
     const {
@@ -78,19 +78,16 @@ router.post("/", upload.single("id_proof_path"), async (req, res) => {
       digital_signature,
     } = req.body;
 
-    // Validation
+    // Basic validation
     if (!first_name || !last_name || !gender) {
       return res.status(400).json({
         success: false,
-        message: "First Name, Last Name and Gender are required",
+        message: "First Name, Last Name, and Gender are required",
       });
     }
 
     const uhid = generateUHID();
-
-    const idProofPath = req.file
-      ? `/uploads/patient_docs/${req.file.filename}`
-      : null;
+    const idProofPath = req.file ? `/uploads/patient_docs/${req.file.filename}` : null;
 
     const result = await pool.query(
       `
@@ -154,14 +151,12 @@ router.post("/", upload.single("id_proof_path"), async (req, res) => {
   }
 });
 
-// ======================================================
+// =============================
 // GET ALL PATIENTS
-// ======================================================
+// =============================
 router.get("/", async (req, res) => {
   try {
-    const result = await pool.query(
-      "SELECT * FROM patients ORDER BY created_at DESC"
-    );
+    const result = await pool.query("SELECT * FROM patients ORDER BY created_at DESC");
 
     res.json({
       success: true,
@@ -177,17 +172,14 @@ router.get("/", async (req, res) => {
   }
 });
 
-// ======================================================
+// =============================
 // GET SINGLE PATIENT
-// ======================================================
+// =============================
 router.get("/:uhid", async (req, res) => {
   try {
     const { uhid } = req.params;
 
-    const result = await pool.query(
-      "SELECT * FROM patients WHERE uhid = $1",
-      [uhid]
-    );
+    const result = await pool.query("SELECT * FROM patients WHERE uhid = $1", [uhid]);
 
     if (result.rowCount === 0) {
       return res.status(404).json({
@@ -209,9 +201,9 @@ router.get("/:uhid", async (req, res) => {
   }
 });
 
-// ======================================================
+// =============================
 // DELETE PATIENT
-// ======================================================
+// =============================
 router.delete("/:uhid", async (req, res) => {
   try {
     const { uhid } = req.params;
@@ -223,7 +215,7 @@ router.delete("/:uhid", async (req, res) => {
       message: "Patient deleted successfully",
     });
   } catch (error) {
-    console.error("Delete Error:", error.message);
+    console.error("Delete Patient Error:", error.message);
     res.status(500).json({
       success: false,
       message: "Failed to delete patient",

@@ -8,7 +8,6 @@ const axios = require("axios");
 
 const generateFinalReportPDF = require("../utils/generateFinalReportPDF");
 
-
 // ======================================================
 // ORTHANC CONNECTION CONFIG
 // ======================================================
@@ -29,7 +28,8 @@ const pool = new Pool({
 /* ======================================================
    REPORT IMAGE UPLOAD  (FIXED)
 ====================================================== */
-const reportImagesDir = path.join(__dirname, "uploads/report_images");
+const reportImagesDir = path.join(__dirname, "../uploads/report_images");
+
 if (!fs.existsSync(reportImagesDir)) {
   fs.mkdirSync(reportImagesDir, { recursive: true });
 }
@@ -102,17 +102,17 @@ function formatStudyDateTime(date, time) {
 /* =========================
    UPLOAD REPORT IMAGES
 ========================= */
-router.post("/upload", upload.array("images", 10), (req, res) => {
+router.post("/api/reports/upload", upload.array("images", 10), (req, res) => {
   try {
     const paths = req.files.map(
       f => `/uploads/report_images/${f.filename}`
     );
     res.json({ success: true, paths });
   } catch (err) {
+    console.error("Upload error:", err.message);
     res.status(500).json({ success: false });
   }
 });
-
 
 /* ======================================================
    GET STUDY + REPORT BY STUDY UID (FOR PREFILL)
@@ -134,22 +134,32 @@ router.get("/api/study-report/:uid",  async (req, res) => {
 
     // 2️⃣ Fetch latest report (Draft / Final / Addendum)
     const reportRes = await pool.query(
-      `
-      SELECT r.*, 
-        (SELECT reason FROM report_addendums 
-         WHERE report_id = r.id 
-         ORDER BY created_at DESC LIMIT 1) AS addendum_reason
-      FROM reports r
-      WHERE r.study_uid = $1
-      ORDER BY 
-        (r.status = 'Addendum') DESC,
-        r.created_at DESC
-      LIMIT 1
-      `,
-      [uid]
-    );
+  `
+  SELECT *
+  FROM reports
+  WHERE study_uid = $1
+  ORDER BY (status = 'Addendum') DESC, created_at DESC
+  LIMIT 1
+  `,
+  [uid]
+);
+
 
     const report = reportRes.rows.length ? reportRes.rows[0] : null;
+if (report) {
+  const addendumRes = await pool.query(
+    `SELECT reason 
+     FROM report_addendums 
+     WHERE report_id = $1
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [report.id]
+  );
+
+  report.addendum_reason = addendumRes.rows.length
+    ? addendumRes.rows[0].reason
+    : null;
+}
 
     // 3️⃣ Fetch report images if report exists
     let images = [];
@@ -277,17 +287,6 @@ router.get("/api/reports", async (req, res) => {
   }
 });
 
-router.post("/api/reports/upload", upload.array("images", 10), (req, res) => {
-  try {
-    const paths = req.files.map(
-      f => `/uploads/report_images/${f.filename}`
-    );
-    res.json({ success: true, paths });
-  } catch (err) {
-    console.error("Upload error:", err.message);
-    res.status(500).json({ success: false });
-  }
-});
 
 
 //save and update
@@ -536,22 +535,34 @@ router.get("/api/reports/by-study/:uid", async (req, res) => {
 
     // 1️⃣ Fetch the latest report (Final or Addendum)
     const reportRes = await pool.query(
-      `
-      SELECT r.*, 
-        (SELECT reason FROM report_addendums 
-         WHERE report_id = r.id 
-         ORDER BY created_at DESC LIMIT 1) AS addendum_reason
-      FROM reports r
-      WHERE r.study_uid = $1
-      ORDER BY (r.status = 'Addendum') DESC, r.created_at DESC
-      LIMIT 1
-      `,
-      [uid]
-    );
+  `
+  SELECT *
+  FROM reports
+  WHERE study_uid = $1
+  ORDER BY (status = 'Addendum') DESC, created_at DESC
+  LIMIT 1
+  `,
+  [uid]
+);
+
 
     if (!reportRes.rows.length) return res.json(null);
 
     let report = reportRes.rows[0];
+    // Fetch latest addendum reason for this report
+const addendumRes = await pool.query(
+  `SELECT reason 
+   FROM report_addendums 
+   WHERE report_id = $1
+   ORDER BY created_at DESC
+   LIMIT 1`,
+  [report.id]
+);
+
+report.addendum_reason = addendumRes.rows.length
+  ? addendumRes.rows[0].reason
+  : null;
+
 
     // 2️⃣ If signature missing, fallback to previous Final report
     if (!report.reported_by_signature || !report.approved_by_signature) {
@@ -577,40 +588,21 @@ router.get("/api/reports/by-study/:uid", async (req, res) => {
        ORDER BY sort_order`,
       [report.id]
     );
-    const studyRes = await pool.query(
-  `SELECT study_date, study_time FROM studies WHERE study_uid=$1`,
-  [uid]
-);
 
-const study = studyRes.rows[0];
-res.json({
-  id: report.id,
-  study_uid: report.study_uid,
-  status: report.status,
-
-  // ✅ FIXED
-  study_datetime: study
-    ? formatStudyDateTime(study.study_date, study.study_time)
-    : "—",
-reported_by: report.reported_by_signature
-  ? `${report.reported_by_signature.full_name || ""} ${report.reported_by_signature.qualification || ""}`.trim()
-  : "N/A",
-
-approved_by: report.approved_by_signature
-  ? `${report.approved_by_signature.full_name || ""} ${report.approved_by_signature.designation || ""}`.trim()
-  : "N/A",
-
-  reported_datetime: report.created_at
-    ? new Date(report.created_at).toLocaleString()
-    : "—",
-
-  report_content: report.report_content,
-  report_title: report.report_title,
-  body_part: report.body_part,
-  referring_doctor: report.referring_doctor,
-  addendum_reason: report.addendum_reason,
-  images: imagesRes.rows
-});
+    // 4️⃣ Return everything explicitly
+    res.json({
+      id: report.id,
+      study_uid: report.study_uid,
+      status: report.status,
+      report_content: report.report_content,
+      report_title: report.report_title,
+      body_part: report.body_part,
+      referring_doctor: report.referring_doctor,
+      reported_by_signature: report.reported_by_signature,
+      approved_by_signature: report.approved_by_signature,
+      addendum_reason: report.addendum_reason,
+      images: imagesRes.rows
+    });
 
   } catch (err) {
     console.error("Fetch report error:", err.message);
@@ -618,6 +610,37 @@ approved_by: report.approved_by_signature
   }
 });
 
+/* ======================================================
+   SAVE ADDENDUM REASON
+====================================================== */
+router.post("/api/addendum/save-reason", async (req, res) => {
+  console.log("===== ADDENDUM API CALLED =====");
+  console.log("BODY RECEIVED:", req.body);
+  try {
+    const { report_id, study_uid, reason, created_by } = req.body;
+
+    if (!report_id || !reason) {
+      return res.json({ success: false, message: "Missing data" });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO report_addendums 
+       (report_id, study_uid, reason, created_by, created_at)
+       VALUES ($1, $2, $3, $4, NOW())
+       RETURNING id`,
+      [report_id, study_uid, reason, created_by]
+    );
+
+    res.json({
+      success: true,
+      id: result.rows[0].id
+    });
+
+  } catch (err) {
+    console.error("Save addendum reason error:", err);
+    res.status(500).json({ success: false });
+  }
+});
 
 /* =========================
    GET PDF BY REPORT ID
@@ -626,50 +649,47 @@ router.get("/api/reports/:id/pdf", async (req, res) => {
   try {
     const reportId = req.params.id;
 
-    // We use a Subquery for addendum_reason to get the LATEST entry
     const reportRes = await pool.query(
       `SELECT r.*, 
-        (SELECT reason FROM report_addendums 
-         WHERE report_id = r.id 
-         ORDER BY created_at DESC LIMIT 1) AS addendum_reason 
-       FROM reports r 
+              s.study_date,
+              s.study_time,
+              (SELECT reason 
+               FROM report_addendums 
+               WHERE report_id = r.id 
+               ORDER BY created_at DESC 
+               LIMIT 1) AS addendum_reason
+       FROM reports r
+       LEFT JOIN studies s ON r.study_uid = s.study_uid
        WHERE r.id = $1`,
       [reportId]
     );
 
-    if (reportRes.rows.length === 0) {
+    if (!reportRes.rows.length) {
       return res.status(404).json({ error: "Report not found" });
     }
 
     const report = reportRes.rows[0];
 
-    // Fetch associated images
     const imagesRes = await pool.query(
-      `SELECT image_path FROM report_images WHERE report_id = $1 ORDER BY sort_order`,
+      `SELECT image_path 
+       FROM report_images 
+       WHERE report_id = $1 
+       ORDER BY sort_order`,
       [reportId]
     );
 
-    // Generate the PDF and wait for the file to be ready
-   const pdfPath = await generateFinalReportPDF(
-  report,
-  imagesRes.rows,
-  { printMode: false }   // 👈 VIEW MODE
-);
+    const pdfPath = await generateFinalReportPDF(
+      report,
+      imagesRes.rows,
+      { printMode: false }
+    );
 
-    const absolutePdfPath = path.resolve(pdfPath);
-
-    // Serve the file
     res.contentType("application/pdf");
-    res.sendFile(absolutePdfPath, (err) => {
-      if (err) {
-        console.error("Error sending file:", err);
-        if (!res.headersSent) res.status(500).send("Error downloading PDF");
-      }
-    });
+    res.sendFile(path.resolve(pdfPath));
 
   } catch (err) {
     console.error("PDF Route Error:", err);
-    if (!res.headersSent) res.status(500).json({ error: "Internal Server Error" });
+    res.status(500).json({ error: "Internal Server Error" });
   }
 });
 
@@ -684,15 +704,19 @@ router.get("/api/reports/study/:studyUid/pdf", async (req, res) => {
     // The subquery looks into report_addendums for the specific report_id
     // and grabs the single most recent reason string.
     let query = `
-      SELECT r.*, 
-        (SELECT reason 
-         FROM report_addendums 
-         WHERE report_id = r.id 
-         ORDER BY created_at DESC 
-         LIMIT 1) AS addendum_reason
-      FROM reports r
-      WHERE r.study_uid = $1
-    `;
+  SELECT r.*, 
+         s.study_date,
+         s.study_time,
+         (SELECT reason 
+          FROM report_addendums 
+          WHERE report_id = r.id 
+          ORDER BY created_at DESC 
+          LIMIT 1) AS addendum_reason
+  FROM reports r
+  LEFT JOIN studies s ON r.study_uid = s.study_uid
+  WHERE r.study_uid = $1
+`;
+
     const params = [studyUid];
 
     if (requestedType) {
@@ -736,16 +760,19 @@ router.get("/api/reports/study/:studyUid/pdf", async (req, res) => {
 router.get("/api/reports/:id/pdf/print", async (req, res) => {
   try {
     const reportId = req.params.id;
+const reportRes = await pool.query(
+  `SELECT r.*, 
+          s.study_date,
+          s.study_time,
+          (SELECT reason FROM report_addendums 
+           WHERE report_id = r.id 
+           ORDER BY created_at DESC LIMIT 1) AS addendum_reason 
+   FROM reports r 
+   LEFT JOIN studies s ON r.study_uid = s.study_uid
+   WHERE r.id = $1`,
+  [reportId]
+);
 
-    const reportRes = await pool.query(
-      `SELECT r.*, 
-        (SELECT reason FROM report_addendums 
-         WHERE report_id = r.id 
-         ORDER BY created_at DESC LIMIT 1) AS addendum_reason 
-       FROM reports r 
-       WHERE r.id = $1`,
-      [reportId]
-    );
 
     if (!reportRes.rows.length) {
       return res.status(404).json({ error: "Report not found" });
