@@ -1,8 +1,8 @@
+
 .split-layout {
-  display: flex;
-  height: 100vh;
-  overflow: hidden;
+  min-height: 100vh;
   font-family: "Times New Roman", Times, serif;
+  color: #000;
 }
 
 .panel-arrows {
@@ -116,15 +116,10 @@
 .split-layout .panel-arrows {
   transition: top 0.2s, left 0.2s;
 }
-
-.split-layout {
-  margin: 0;
-  padding: 0;
-  display: flex;
-  height: 100vh;
-  overflow: hidden;
-  font-family: "Times New Roman", Times, serif;
-  color: #000;
+#reportPanel {
+  width: 100%;
+  padding: 6px 12px;
+  box-sizing: border-box;
 }
 
 
@@ -185,6 +180,59 @@
   margin-bottom: 0 !important;
 }
 
+#reportPanel .report-toolbar-wrapper {
+  position: sticky;
+  top: 0;
+  z-index: 800;
+}
+
+#reportPanel [data-editor="history"],
+#reportPanel [data-editor="findings"],
+#reportPanel [data-editor="conclusion"] {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+#reportPanel .ghost-editor {
+  min-height: 100px;
+  padding: 8px;
+  box-sizing: border-box;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+#reportPanel .ghost-key-images {
+  min-height: 120px;
+}
+
+#reportPanel .page-flow {
+  display: flow-root;
+  padding-top: 0.1px; /* prevent top margin collapse on new pages */
+  box-sizing: border-box;
+}
+
+#reportPanel .page-header {
+  box-sizing: border-box;
+}
+
+#reportPanel .page-measure {
+  line-height: 1.4;
+}
+
+#reportPanel .page-measure p,
+#reportPanel .page-measure div {
+  margin: 0;
+}
+
+#reportPanel .key-images {
+  border: none !important;
+}
+
 
 /* Status buttons */
 .report-status-bar {
@@ -242,30 +290,6 @@
 .data-table td {
   width: 33.33% !important;
 }
-@media print {
-  /* Show header and footer only during print */
-  .print-header,
-  .print-footer {
-    display: block !important;
-  }
-
-  /* Optional: hide buttons, toolbar, etc. */
-  .toolbar,
-  .status-buttons,
-  .top-row,
-  .buttons {
-    display: none !important;
-  }
-
-  /* Ensure report panel uses full width for print */
-  #reportPanel {
-    width: 100% !important;
-    overflow: visible !important;
-    padding: 0 !important;
-    margin: 0 !important;
-  }
-}
-
 
 /* Report title */
 .report-title {
@@ -376,33 +400,6 @@
   unicode-bidi: plaintext !important;
 }
 
-
-@media print {
-
-  /* Hide ONLY viewer */
-  #viewerPanel,
-  .viewer-panel,
-  iframe {
-    display: none !important;
-    width: 0 !important;
-    height: 0 !important;
-    visibility: hidden !important;
-  }
-
-  /* Show report panel fully */
-  #reportPanel {
-    display: block !important;
-    width: 100% !important;
-    height: auto !important;
-    overflow: visible !important;
-    padding: 0 !important;
-    margin: 0 !important;
-  }
-
-  .split-layout {
-    display: block !important;
-  }
-}
 /* Hide elements with this class when printing */
 @media print {
   .status-print-hide,
@@ -423,4 +420,93 @@
   border: 1px solid #ccc;
 
   cursor: pointer;
+}
+/* ================================= */
+/* ULTRA TIGHT PRINT LAYOUT */
+/* ================================= */
+
+@media print {
+
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+  html, body {
+    width: 210mm !important;
+  }
+
+  /* Hide UI */
+  #viewerPanel,
+  iframe,
+  .top-row,
+  .editor-toolbar,
+  .status-buttons,
+  .buttons,
+  .report-toolbar-wrapper {
+    display: none !important;
+  }
+
+  #reportPanel {
+    display: block !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  .a4-container {
+    padding: 0 !important;
+    background: #fff !important;
+  }
+
+  /* 🔥 Reduce inside spacing */
+  .a4-page {
+    box-shadow: none !important;
+    margin: 0 auto !important;
+    padding: 25.4mm 15mm !important;   /* 1in header/footer */
+    box-sizing: border-box !important;
+    width: 210mm !important;
+    height: 297mm !important;
+    overflow: hidden !important;
+    font-size: 14px !important;
+    line-height: 1.4 !important;
+    transform: none !important;
+  }
+  /* ✅ CLEAN JUSTIFY FIX */
+#reportPanel .page-flow {
+  font-family: "Times New Roman", Times, serif !important;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+}
+
+#reportPanel .page-flow p,
+#reportPanel .page-flow div {
+  text-align: justify !important;
+  text-justify: inter-word !important;
+}
+
+#reportPanel .page-flow h1,
+#reportPanel .page-flow h2,
+#reportPanel .page-flow h3 {
+  text-align: left !important;
+}
+
+
+  .section {
+    break-inside: auto !important;
+    page-break-inside: auto !important;
+  }
+
+  /* 🔥 Reduce outer browser margin */
+  @page {
+    size: A4;
+    margin: 0;
+  }
+}
+.a4-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
 }

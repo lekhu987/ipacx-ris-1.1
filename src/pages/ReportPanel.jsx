@@ -1,5 +1,5 @@
 // src/pages/ReportPanel.jsx 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
@@ -17,7 +17,8 @@ function RichEditor({
   onSelectionChange,
   placeholder,
   disabled = false,
-  editorKey, 
+  editorKey,
+  compact = false,
 }) {
   const ref = useRef();
 
@@ -27,8 +28,11 @@ function RichEditor({
     }
   }, [value]);
 
+  const empty = isEmptyHtml(value);
+
   return (
     <div
+      className="rich-editor"
       ref={ref}
       data-editor={editorKey} 
       contentEditable={!disabled}
@@ -43,11 +47,15 @@ function RichEditor({
       onMouseUp={!disabled ? onSelectionChange : undefined}
       onKeyUp={!disabled ? onSelectionChange : undefined}
       style={{
-        minHeight: 100,
-        padding: 8,
-        border: "1px solid #aaa",
+        minHeight: compact ? (empty ? 80 : 0) : 100,
+        padding: compact ? (empty ? 8 : 0) : 8,
+        border: editorKey === "history" || editorKey === "findings" || editorKey === "conclusion" ? "none" : "1px solid #aaa",
+        outline: "none",
+        boxShadow: "none",
         backgroundColor: disabled ? "#f1f3f5" : "#fff",
         cursor: disabled ? "not-allowed" : "text",
+        textAlign: editorKey === "history" || editorKey === "findings" || editorKey === "conclusion" ? "justify" : "left",
+        textAlignLast: editorKey === "history" || editorKey === "findings" || editorKey === "conclusion" ? "left" : "auto",
       }}
       data-placeholder={placeholder}
     />
@@ -108,6 +116,32 @@ function setLineSpacing(spacing) {
   const newRange = document.createRange();
   newRange.setStartAfter(p);
   selection.addRange(newRange);
+}
+
+function htmlToBlocks(html) {
+  if (!html || !html.trim()) return [""];
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
+  const container = doc.body.firstChild;
+  if (!container) return [];
+  const nodes = Array.from(container.childNodes).filter((n) => {
+    if (n.nodeType === Node.TEXT_NODE) {
+      return n.textContent && n.textContent.trim();
+    }
+    return true;
+  });
+  if (nodes.length === 0) return [];
+  return nodes.map((n) => {
+    if (n.nodeType === Node.TEXT_NODE) {
+      return `<p>${n.textContent}</p>`;
+    }
+    return n.outerHTML || "";
+  }).filter(Boolean);
+}
+
+function isEmptyHtml(html) {
+  if (!html) return true;
+  const text = html.replace(/<[^>]*>/g, "").replace(/\u00a0/g, " ").trim();
+  return text.length === 0;
 }
 
 //reporttitle
@@ -384,7 +418,23 @@ const [isAddendum, setIsAddendum] = useState(false);
 const [noteInput, setNoteInput] = useState("");
 const [parentReportId, setParentReportId] = useState(null);
 const [addendumConfirmed, setAddendumConfirmed] = useState(false);
-
+const [totalPages, setTotalPages] = useState(1);
+const headerRef = useRef(null);
+const measureRef = useRef(null);
+const firstBodyRef = useRef(null);
+const otherBodyRef = useRef(null);
+const [headerBlockMm, setHeaderBlockMm] = useState(30);
+const [bodyPxFirst, setBodyPxFirst] = useState(0);
+const [bodyPxOther, setBodyPxOther] = useState(0);
+const [pages, setPages] = useState([]);
+const HEADER_FOOTER_MM = 25.4; // 1 inch (letterhead-like)
+const PAGE_SIDE_PADDING_MM = 15;
+const CONTENT_HEIGHT_MM = 297 - (HEADER_FOOTER_MM * 2);
+const CONTENT_SAFE_HEIGHT_MM = CONTENT_HEIGHT_MM - 3;
+const OTHER_TOP_OFFSET_MM = 0;
+const PAGE_NUMBER_OFFSET_MM = 6;
+const firstPageBodyMm = Math.max(20, CONTENT_SAFE_HEIGHT_MM - headerBlockMm);
+const otherPageBodyMm = CONTENT_SAFE_HEIGHT_MM;
 
 //report tile
 // Auto-update report title based on modality + body part
@@ -479,7 +529,118 @@ useEffect(() => {
     }
   };
 }, []);
+const blocks = useMemo(() => {
+  const items = [];
+  items.push({ type: "sectionTitle", text: "History" });
+  htmlToBlocks(history).forEach((html, i) =>
+    items.push({ type: "html", html, section: "history", blockIndex: i, key: `h-${i}` })
+  );
 
+  items.push({ type: "sectionTitle", text: "Findings" });
+  htmlToBlocks(findings).forEach((html, i) =>
+    items.push({ type: "html", html, section: "findings", blockIndex: i, key: `f-${i}` })
+  );
+
+  if (showKeyImages) {
+    items.push({ type: "keyImages", images: keyImages.slice(), key: "ki" });
+  }
+
+  items.push({ type: "sectionTitle", text: "Conclusion" });
+  htmlToBlocks(conclusion).forEach((html, i) =>
+    items.push({ type: "html", html, section: "conclusion", blockIndex: i, key: `c-${i}` })
+  );
+
+  return items;
+}, [history, findings, conclusion, showKeyImages, keyImages]);
+
+useEffect(() => {
+  setTotalPages(Math.max(1, pages.length));
+}, [pages]);
+
+useLayoutEffect(() => {
+  if (headerRef.current) {
+    const px = headerRef.current.getBoundingClientRect().height || 0;
+    const mm = px / 3.78;
+    if (mm > 10 && Math.abs(mm - headerBlockMm) > 0.5) {
+      setHeaderBlockMm(mm);
+    }
+  }
+}, [reportTitle, study, headerBlockMm]);
+
+useLayoutEffect(() => {
+  if (firstBodyRef.current) {
+    const h = firstBodyRef.current.getBoundingClientRect().height || 0;
+    if (h > 0 && Math.abs(h - bodyPxFirst) > 1) {
+      setBodyPxFirst(h);
+    }
+  }
+  if (otherBodyRef.current) {
+    const h = otherBodyRef.current.getBoundingClientRect().height || 0;
+    if (h > 0 && Math.abs(h - bodyPxOther) > 1) {
+      setBodyPxOther(h);
+    }
+  }
+}, [headerBlockMm, bodyPxFirst, bodyPxOther]);
+
+useLayoutEffect(() => {
+  if (!measureRef.current) return;
+  const container = measureRef.current;
+  container.innerHTML = "";
+
+  const measureBlock = (block) => {
+    const el = document.createElement("div");
+    el.className = "page-block";
+    if (block.type === "sectionTitle") {
+      el.innerHTML = `<h3 style="font-size:12px;margin:0 0 8px;">${block.text}</h3>`;
+    } else if (block.type === "keyImages") {
+      const wrap = document.createElement("div");
+      wrap.className = "key-images ghost-key-images";
+      block.images.forEach(() => {
+        const box = document.createElement("div");
+        box.style.width = "120px";
+        box.style.height = "120px";
+        wrap.appendChild(box);
+      });
+      el.appendChild(wrap);
+    } else {
+      el.classList.add("ghost-editor");
+      el.innerHTML = block.html || "<div><br/></div>";
+    }
+    container.appendChild(el);
+    const h = el.getBoundingClientRect().height || el.offsetHeight || 0;
+    return { el, h };
+  };
+
+  const heights = blocks.map((b) => measureBlock(b).h);
+  const firstPx = bodyPxFirst || (firstPageBodyMm * 3.78);
+  const otherPx = bodyPxOther || ((otherPageBodyMm - OTHER_TOP_OFFSET_MM) * 3.78);
+
+  const newPages = [];
+  let current = [];
+  let remaining = firstPx;
+  let pageIndex = 0;
+
+  const PAGE_BUFFER_PX = 12; // keep page flow consistent with on-screen
+
+  heights.forEach((h, i) => {
+    const block = blocks[i];
+    const nextH = i + 1 < heights.length ? heights[i + 1] : 0;
+    const needsTogether = block?.type === "sectionTitle";
+    const required = needsTogether ? h + nextH : h;
+    const fit = required <= (remaining - PAGE_BUFFER_PX) || current.length === 0;
+    if (!fit) {
+      newPages.push(current);
+      current = [];
+      pageIndex += 1;
+      remaining = otherPx;
+    }
+    current.push(i);
+    remaining -= h;
+  });
+  if (current.length > 0) newPages.push(current);
+
+  setPages(newPages);
+}, [blocks, bodyPxFirst, bodyPxOther, firstPageBodyMm, otherPageBodyMm]);
 
 // template
 useEffect(() => {
@@ -522,6 +683,18 @@ const applyTemplate = (template) => {
 
   alert(`Template applied: ${template.template_name}`);
   setShowTemplateMenu(false);
+};
+
+const replaceSectionBlock = (section, blockIndex, html) => {
+  const get = (s) => (s === "history" ? history : s === "findings" ? findings : conclusion);
+  const set = (s, v) => (s === "history" ? setHistory(v) : s === "findings" ? setFindings(v) : setConclusion(v));
+  const blocks = htmlToBlocks(get(section));
+  if (blockIndex < 0 || blockIndex >= blocks.length) {
+    set(section, html);
+    return;
+  }
+  blocks[blockIndex] = html;
+  set(section, blocks.join(""));
 };
 
 useEffect(() => {
@@ -823,9 +996,9 @@ useEffect(() => {
   };
 
   /* ============
-     Selection utilities
-     ... (Selection utility functions remain unchanged) ...
-     ============ */
+     Selection utilities
+     ... (Selection utility functions remain unchanged) ...
+     ============ */
   const saveSelection = () => {
     const sel = window.getSelection();
     if (!sel) return;
@@ -866,6 +1039,19 @@ useEffect(() => {
     }
     // after exec, update savedRangeRef (so future ops keep correct range)
     saveSelection();
+    if (activeEditorRef.current) {
+      activeEditorRef.current.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  };
+
+  const syncActiveEditorToState = () => {
+    if (!activeEditorRef.current) return;
+    activeEditorRef.current.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+
+  const handlePrint = () => {
+    syncActiveEditorToState();
+    window.requestAnimationFrame(() => window.print());
   };
 
   // toolbar definition
@@ -878,8 +1064,8 @@ useEffect(() => {
   ];
 
   /* ================
-     Active editor handlers passed to RichEditor
-     ================ */
+     Active editor handlers passed to RichEditor
+     ================ */
  const handleEditorFocus = (domNode) => {
   activeEditorRef.current = domNode; // store actual DOM node
   saveSelection();                   // save cursor
@@ -914,8 +1100,8 @@ const insertTextAtCursor = (text) => {
 };
 
   /* ====================
-     Color picker apply handler
-     ==================== */
+     Color picker apply handler
+     ==================== */
   const applyColor = (color) => {
     // restore selection and apply
     restoreSelection();
@@ -967,12 +1153,12 @@ const insertTextAtCursor = (text) => {
   saveSelection();
 };
   return (
+    
     <div className="split-layout" style={{ display: "flex", height: "100vh", position: "relative", fontFamily: "'Times New Roman', Times, serif" }}>
     
 {/* Report Panel */}
 
 <div
-  ref={reportRef}
   id="reportPanel"
   style={{
     width: "100%",
@@ -983,16 +1169,6 @@ const insertTextAtCursor = (text) => {
     position: "relative", // needed for overlay
   }}
 >
-  {/* ====================== */}
-  {/* PRINT HEADER */}
-  {/* ====================== */}
-  <div className="print-header" style={{ display: "none", textAlign: "center", fontWeight: "bold", fontSize: 18, marginBottom: 12 }}>
-    Hospital Name
-  </div>
-
-  
-
-  
 {/* Addendum Section */}
 {/* ====================== */}
 {isAddendum && (
@@ -1150,6 +1326,7 @@ const insertTextAtCursor = (text) => {
     const val = e.target.value;
     if (!val) return;
     changeCase(val); // ✅ call your working function
+    syncActiveEditorToState();
     e.target.value = "";
   }}
   style={{ height: "28px", width: "90px", borderRadius: "15px", border: "1px solid #ccc", cursor: "pointer", fontSize: "11px" }}
@@ -1165,6 +1342,7 @@ const insertTextAtCursor = (text) => {
     const spacing = e.target.value;
     if (!spacing) return;
     setLineSpacing(spacing); // ✅ call your working function
+    syncActiveEditorToState();
     e.target.value = "";
   }}
   style={{ height: "28px", width: "90px", borderRadius: "15px", border: "1px solid #ccc", cursor: "pointer", fontSize: "11px" }}
@@ -1305,278 +1483,280 @@ const insertTextAtCursor = (text) => {
   </div>
 
         </div>
-
-
-        {/* Patient table */}
-        <table className="data-table" style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12 }}>
-          <tbody>
-            <tr>
-              <td style={{ padding: 6, border: "1px solid #000" }}>
-                <strong>Patient Name:</strong> {cleanPatientName(patientName)}
-              </td>
-              <td style={{ padding: 6, border: "1px solid #000" }}>
-                <strong>Age/Gender:</strong> {age}/{gender}
-              </td>
-              <td style={{ padding: 6, border: "1px solid #000" }}>
-                <strong>Patient ID:</strong> {study.PatientID}
-              </td>
-            </tr>
-
-            <tr>
-              <td style={{ padding: 6, border: "1px solid #000" }}>
-                <strong>Study Date/Time:</strong>{" "}
-                {formatDicomDateTime(study.StudyDate, study.StudyTime)}
-              </td>
-      <td style={{ padding: 6, border: "1px solid #000" }}>
-  <strong>Ref. Doctor:</strong>{" "}
-  {editRefDoctor ? (
-    <input
-      autoFocus
-      value={study.ReferringPhysicianName || ""}
-      onChange={(e) =>
-        setStudy((p) => ({ ...p, ReferringPhysicianName: e.target.value }))
-      }
-      onBlur={() => setEditRefDoctor(false)}
-      onKeyDown={(e) => e.key === "Enter" && setEditRefDoctor(false)}
-      style={{ width: "70%" }}
-    />
-  ) : (
-    <span
-      onClick={() => setEditRefDoctor(true)}
-      
-    >
-      {study.ReferringPhysicianName || "—"}
-    </span>
-  )}
-</td>
-
-
-              <td style={{ padding: 6, border: "1px solid #000" }}>
-                <strong>Accession No:</strong> {study.AccessionNumber}
-              </td>
-            </tr>
-
-            <tr>
-              <td style={{ padding: 6, border: "1px solid #000" }}>
-                <strong>Reported Date/Time:</strong> {formatDateTime(new Date())}
-              </td>
-              <td style={{ padding: 6, border: "1px solid #000" }}>
-                <strong>Modality:</strong> {study.Modality}
-              </td>
-             <td style={{ padding: 6, border: "1px solid #000" }}>
-  <strong>Body Part:</strong>{" "}
-  {editBodyPart ? (
-    <input
-      autoFocus
-      value={study.BodyPartExamined || ""}
-      onChange={(e) =>
-        setStudy((p) => ({ ...p, BodyPartExamined: e.target.value }))
-      }
-      onBlur={() => setEditBodyPart(false)}
-      onKeyDown={(e) => e.key === "Enter" && setEditBodyPart(false)}
-      style={{ width: "70%" }}
-    />
-  ) : (
-    <span
-      onClick={() => setEditBodyPart(true)}
-      
-    >
-      {study.BodyPartExamined || "—"}
-    </span>
-  )}
-</td>
-            </tr>
-          </tbody>
-        </table>
-
-       <ReportTitle
-  value={reportTitle}
-  onChange={setReportTitle}
-  onManualEdit={() => setIsManualTitle(true)}
-/>
-
-
-
-
-        {/* History */}
-        <section className="section" style={{ marginBottom: 20 }}>
-          <h3 style={{ fontSize: 12, marginBottom: 8 }}>History</h3>
-         <RichEditor
-  value={history}
-  onChange={setHistory}
-  onFocus={handleEditorFocus}
-  onSelectionChange={handleEditorSelectionChange}
-  placeholder="Enter history..."
-  disabled={isAddendum && !addendumConfirmed}
-  editorKey="history" 
-/>
-
-        </section>
-
-        {/* Findings */}
-       <section className="section" style={{ marginBottom: 20 }}>
-  <h3 style={{ fontSize: 12, marginBottom: 8 }}>Findings</h3>
-  <RichEditor
-    value={findings}
-    onChange={setFindings}
-    onFocus={handleEditorFocus}
-    onSelectionChange={handleEditorSelectionChange}
-    placeholder="Enter findings..."
-    disabled={isAddendum && !addendumConfirmed}
-   editorKey="findings"
-  />
-</section>
-
-
-        {/* Key Images */}
-        {showKeyImages && (
-          <section className="section" style={{ marginBottom: 20 }}>
-            <h3 style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              Key Images
-              <button
-                style={{ background: "transparent", border: "none", fontSize: 12, cursor: "pointer", color: "#555" }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowKeyImages(false);
-                  // keep current images or clear them depending on desired behaviour
-                }}
-              >
-                ✕
-              </button>
-            </h3>
-
-            {/* hidden input (will open when container clicked or "Key Images" clicked) */}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              style={{ display: "none" }}
-              onChange={(e) => handleFiles(e.target.files)}
-            />
-
-            <div
-              className="key-images"
-              onClick={() => fileInputRef.current?.click()}
-              onDrop={(e) => {
-                e.preventDefault();
-                handleFiles(e.dataTransfer.files);
-              }}
-              onDragOver={(e) => e.preventDefault()}
-              style={{
-                border: "2px dashed #aaa",
-                minHeight: 120,
-                padding: 10,
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 8,
-                alignItems: "flex-start",
-              }}
-            >
-              {keyImages.length === 0 && <div style={{ color: "#666" }}>Click to add images or drag & drop</div>}
-           {keyImages.map((src, i) => (
-  <div
-    key={i}
-    className="key-image-item"
-    style={{ position: "relative", width: 120, height: 120 }}
-  >
-   <img
-  src={src}
-  alt={`ki-${i}`}
+{/* ===================== */}
+{/* A4 CONTAINER */}
+{/* ===================== */}
+<div
+  className="a4-container"
   style={{
-    width: "100%",
-    height: "100%",
-    objectFit: "contain",
-    border: "1px solid #ddd",
-    borderRadius: 6,
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    padding: "30px 0",
+    background: "#e6e9ebd6", // Darker background to simulate PDF viewer
+    minHeight: "100vh",
+    gap: "20px"
   }}
-/>
+>
+  {/* Hidden measurement container */}
+  <div
+    ref={measureRef}
+    className="page-measure"
+    style={{
+      position: "absolute",
+      top: "-9999px",
+      width: `calc(210mm - ${PAGE_SIDE_PADDING_MM * 2}mm)`,
+      visibility: "hidden",
+      pointerEvents: "none",
+      boxSizing: "border-box",
+    }}
+  />
 
-    <button
-      className="remove-btn"
-      onClick={(e) => {
-        e.stopPropagation();
-        setKeyImages((prev) => prev.filter((_, idx) => idx !== i));
-      }}
+  {/* RENDERED A4 PAGES */}
+  {Array.from({ length: totalPages }).map((_, index) => (
+    <div
+      key={index}
+      className="a4-page"
+      ref={index === 0 ? reportRef : null} // Keep ref for page 1
       style={{
-        position: "absolute",
-        top: 4,
-        right: 4,
-        background: "rgba(0,0,0,0.6)",
-        color: "#fff",
-        border: "none",
-        borderRadius: "50%",
-        width: 22,
-        height: 22,
-        cursor: "pointer",
+        width: "210mm",
+        height: "297mm",
+        background: "#fff",
+        padding: `${HEADER_FOOTER_MM}mm ${PAGE_SIDE_PADDING_MM}mm`,
+        boxShadow: "0 0 12px rgba(0,0,0,0.15)",
+        position: "relative",
+        overflow: "hidden", // Important: Keeps content inside current sheet
+        boxSizing: "border-box",
       }}
     >
-      ✕
-    </button>
-  </div>
-))}
+      {index === 0 && (
+        <div
+          ref={headerRef}
+          className="page-header"
+          style={{ minHeight: `${headerBlockMm}mm` }}
+        >
+          <>
+            <table className="data-table" style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12 }}>
+              <tbody>
+                <tr>
+                  <td style={{ padding: 6, border: "1px solid #000" }}>
+                    <strong>Patient Name:</strong> {cleanPatientName(patientName)}
+                  </td>
+                  <td style={{ padding: 6, border: "1px solid #000" }}>
+                    <strong>Age/Gender:</strong> {age}/{gender}
+                  </td>
+                  <td style={{ padding: 6, border: "1px solid #000" }}>
+                    <strong>Patient ID:</strong> {study.PatientID}
+                  </td>
+                </tr>
+                <tr>
+                  <td style={{ padding: 6, border: "1px solid #000" }}>
+                    <strong>Study Date/Time:</strong> {formatDicomDateTime(study.StudyDate, study.StudyTime)}
+                  </td>
+                  <td style={{ padding: 6, border: "1px solid #000" }}>
+                    <strong>Ref. Doctor:</strong>{" "}
+                    {editRefDoctor ? (
+                      <input
+                        autoFocus
+                        value={study.ReferringPhysicianName || ""}
+                        onChange={(e) => setStudy((p) => ({ ...p, ReferringPhysicianName: e.target.value }))}
+                        onBlur={() => setEditRefDoctor(false)}
+                        onKeyDown={(e) => e.key === "Enter" && setEditRefDoctor(false)}
+                        style={{ width: "70%" }}
+                      />
+                    ) : (
+                      <span onClick={() => setEditRefDoctor(true)} style={{ cursor: 'pointer' }}>
+                        {study.ReferringPhysicianName || "—"}
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ padding: 6, border: "1px solid #000" }}>
+                    <strong>Accession No:</strong> {study.AccessionNumber}
+                  </td>
+                </tr>
+                <tr>
+                  <td style={{ padding: 6, border: "1px solid #000" }}>
+                    <strong>Reported Date/Time:</strong> {formatDateTime(new Date())}
+                  </td>
+                  <td style={{ padding: 6, border: "1px solid #000" }}>
+                    <strong>Modality:</strong> {study.Modality}
+                  </td>
+                  <td style={{ padding: 6, border: "1px solid #000" }}>
+                    <strong>Body Part:</strong>{" "}
+                    {editBodyPart ? (
+                      <input
+                        autoFocus
+                        value={study.BodyPartExamined || ""}
+                        onChange={(e) => setStudy((p) => ({ ...p, BodyPartExamined: e.target.value }))}
+                        onBlur={() => setEditBodyPart(false)}
+                        onKeyDown={(e) => e.key === "Enter" && setEditBodyPart(false)}
+                        style={{ width: "70%" }}
+                      />
+                    ) : (
+                      <span onClick={() => setEditBodyPart(true)} style={{ cursor: 'pointer' }}>
+                        {study.BodyPartExamined || "—"}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
 
-            </div>
-          </section>
-        )}
+            <ReportTitle
+              value={reportTitle}
+              onChange={setReportTitle}
+              onManualEdit={() => setIsManualTitle(true)}
+            />
+          </>
+        </div>
+      )}
 
-        {/* Conclusion */}
-        <section className="section" style={{ marginBottom: 20 }}>
-          <h3 style={{ fontSize: 12, marginBottom: 8 }}>Conclusion</h3>
-          <RichEditor
-  value={conclusion}
-  onChange={setConclusion}
-  onFocus={handleEditorFocus}
-  onSelectionChange={handleEditorSelectionChange}
-  placeholder="Enter conclusion..."
-  disabled={isAddendum && !addendumConfirmed}
- editorKey="conclusion"
-/>
-        </section>
+      <div
+        ref={index === 0 ? firstBodyRef : (index === 1 ? otherBodyRef : null)}
+        style={{
+          height: index === 0
+            ? (bodyPxFirst ? `${bodyPxFirst}px` : `${firstPageBodyMm}mm`)
+            : (bodyPxOther ? `${bodyPxOther}px` : `${otherPageBodyMm}mm`),
+          overflow: "hidden",
+        }}
+      >
+        <div
+          className="page-flow"
+          style={{
+            position: "relative",
+            paddingTop: index === 0 ? 0 : `${OTHER_TOP_OFFSET_MM}mm`,
+          }}
+        >
+          {(pages[index] || []).map((blockIdx) => {
+            const block = blocks[blockIdx];
+            if (!block) return null;
+            if (block.type === "sectionTitle") {
+              return (
+                <section key={`t-${blockIdx}`} className="section" style={{ marginBottom: 20 }}>
+                  <h3 style={{ fontSize: 12, marginBottom: 8 }}>{block.text}</h3>
+                </section>
+              );
+            }
+            if (block.type === "keyImages") {
+              return (
+                <section key={`k-${blockIdx}`} className="section" style={{ marginBottom: 20 }}>
+                  <h3 style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
+                    Key Images
+                    <button
+                      className="no-print"
+                      style={{ background: "transparent", border: "none", fontSize: 12, cursor: "pointer", color: "#555" }}
+                      onClick={(e) => { e.stopPropagation(); setShowKeyImages(false); }}
+                    >
+                      ✕
+                    </button>
+                  </h3>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    style={{ display: "none" }}
+                    onChange={(e) => handleFiles(e.target.files)}
+                  />
+                  <div
+                    className="key-images"
+                    onClick={() => fileInputRef.current?.click()}
+                    onDrop={(e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
+                    onDragOver={(e) => e.preventDefault()}
+                    style={{
+                      border: "2px dashed #aaa",
+                      minHeight: 120,
+                      padding: 10,
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: 8,
+                    }}
+                  >
+                    {keyImages.length === 0 && <div style={{ color: "#666", fontSize: 11 }}>Click to add images or drag & drop</div>}
+                    {keyImages.map((src, i) => (
+                      <div key={i} style={{ position: "relative", width: 120, height: 120 }}>
+                        <img src={src} alt={`ki-${i}`} style={{ width: "100%", height: "100%", objectFit: "contain", border: "1px solid #ddd", borderRadius: 6 }} />
+                        <button
+                          className="remove-btn no-print"
+                          onClick={(e) => { e.stopPropagation(); setKeyImages((prev) => prev.filter((_, idx) => idx !== i)); }}
+                          style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, cursor: "pointer" }}
+                        >✕</button>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              );
+            }
 
-   {/* ====================== */}
-{/* Footer */}
-{/* ====================== */}
-<footer
-  className="footer-row"
-  style={{ display: "flex", justifyContent: "space-between", marginTop: 30 }}
->
-  <div style={{ fontWeight: "bold", fontSize: 11 }}>
-    Reported By:
-    <DigitalSignatureField
-  type="reported"
-  value={study.ReportedBy}
-  onSelect={(data) =>
-    setStudy((prev) => ({ ...prev, ReportedBy: data }))
-  }
-/>
-  </div>
+            const placeholderText =
+              block.section === "history"
+                ? "Enter history..."
+                : block.section === "findings"
+                ? "Enter findings..."
+                : "Enter conclusion...";
 
-  <div style={{ fontWeight: "bold", fontSize: 11 }}>
-    Approved By:
-    <DigitalSignatureField
-  type="approved"
-  value={study.ApprovedBy}
-  onSelect={(data) =>
-    setStudy((prev) => ({ ...prev, ApprovedBy: data }))
-  }
-/>
-  </div>
-</footer>
+            return (
+              <section key={`b-${blockIdx}`} className="section" style={{ marginBottom: 20 }}>
+                <RichEditor
+                  value={block.html}
+                  onChange={(html) => replaceSectionBlock(block.section, block.blockIndex, html)}
+                  onFocus={handleEditorFocus}
+                  onSelectionChange={handleEditorSelectionChange}
+                  placeholder={block.blockIndex === 0 ? placeholderText : ""}
+                  disabled={isAddendum && !addendumConfirmed}
+                  editorKey={block.section}
+                  compact
+                />
+              </section>
+            );
+          })}
 
-        <div className="buttons toolbar" style={{ marginTop: 12 }}>
-         
-          <button onClick={() => window.print()} style={{ padding: "8px 12px", marginLeft: 8 }}>Print</button>
-          
+          {/* Footer (Only on the Last Page) */}
+          {index === totalPages - 1 && (
+            <footer className="footer-row" style={{ display: "flex", justifyContent: "space-between", marginTop: 30 }}>
+              <div style={{ fontWeight: "bold", fontSize: 11 }}>
+                Reported By:
+                <DigitalSignatureField
+                  type="reported"
+                  value={study.ReportedBy}
+                  onSelect={(data) => setStudy((prev) => ({ ...prev, ReportedBy: data }))}
+                />
+              </div>
+              <div style={{ fontWeight: "bold", fontSize: 11 }}>
+                Approved By:
+                <DigitalSignatureField
+                  type="approved"
+                  value={study.ApprovedBy}
+                  onSelect={(data) => setStudy((prev) => ({ ...prev, ApprovedBy: data }))}
+                />
+              </div>
+            </footer>
+          )}
         </div>
       </div>
-      {/* ====================== */}
-  {/* PRINT FOOTER */}
-  {/* ====================== */}
-  <div className="print-footer" style={{ display: "none", textAlign: "center", fontSize: 12, marginTop: 20 }}>
-    123 Main Street, City, State, ZIP | Phone: 123-456-7890
-  </div>
+
+      {/* Page Number (Bottom Center) */}
+      <div style={{ position: "absolute", bottom: `${Math.max(4, HEADER_FOOTER_MM - PAGE_NUMBER_OFFSET_MM)}mm`, left: 0, right: 0, textAlign: "center", fontSize: "10px", color: "#999" }}>
+        Page {index + 1} of {totalPages}
+      </div>
     </div>
+  ))}
+
+  {/* Toolbar Buttons (Bottom) */}
+  <div className="buttons toolbar no-print" style={{ marginTop: 12 }}>
+    <button 
+      onClick={handlePrint} 
+      style={{ padding: "8px 20px", background: "#007bff", color: "#fff", border: "none", borderRadius: "4px", cursor: "pointer" }}
+    >
+      Print Final Report
+    </button>
+  </div>
+</div>
+    </div>
+</div>
+
     
   );
 }
+
+
