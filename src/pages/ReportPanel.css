@@ -197,6 +197,31 @@
   line-height: 1.4;
 }
 
+#reportPanel [data-editor="history"] p,
+#reportPanel [data-editor="findings"] p,
+#reportPanel [data-editor="conclusion"] p {
+  margin: 0; /* remove browser default paragraph margins (often causes big gaps before lists) */
+}
+
+#reportPanel [data-editor="history"] ul,
+#reportPanel [data-editor="history"] ol,
+#reportPanel [data-editor="findings"] ul,
+#reportPanel [data-editor="findings"] ol,
+#reportPanel [data-editor="conclusion"] ul,
+#reportPanel [data-editor="conclusion"] ol {
+  margin: 0;
+  margin-block-start: 0;
+  margin-block-end: 0;
+  padding-left: 18px; /* avoid the big default indent */
+  padding-inline-start: 18px;
+}
+
+#reportPanel [data-editor="history"] li,
+#reportPanel [data-editor="findings"] li,
+#reportPanel [data-editor="conclusion"] li {
+  margin: 0;
+}
+
 #reportPanel .ghost-editor {
   /* Measurement-only element (used to paginate content into A4 pages).
      Keep this aligned with the compact RichEditor render so we don't

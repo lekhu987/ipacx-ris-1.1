@@ -15,10 +15,14 @@ function RichEditor({
   onChange,
   onFocus,
   onSelectionChange,
+  onKeyDown,
   placeholder,
   disabled = false,
   editorKey,
   compact = false,
+  emptyMinHeight = 80,
+  emptyPadding = 8,
+  blockIndex,
 }) {
   const ref = useRef();
 
@@ -35,6 +39,7 @@ function RichEditor({
       className="rich-editor"
       ref={ref}
       data-editor={editorKey} 
+      data-block-index={typeof blockIndex === "number" ? blockIndex : undefined}
       contentEditable={!disabled}
       suppressContentEditableWarning
       onFocus={() => {
@@ -44,11 +49,13 @@ function RichEditor({
         }
       }}
       onInput={(e) => !disabled && onChange(e.currentTarget.innerHTML)}
+      onKeyDown={!disabled && typeof onKeyDown === "function" ? (e) => onKeyDown(e, ref.current) : undefined}
+      onBeforeInput={!disabled && typeof onKeyDown === "function" ? (e) => onKeyDown(e, ref.current) : undefined}
       onMouseUp={!disabled ? onSelectionChange : undefined}
       onKeyUp={!disabled ? onSelectionChange : undefined}
       style={{
-        minHeight: compact ? (empty ? 80 : 0) : 100,
-        padding: compact ? (empty ? 8 : 0) : 8,
+        minHeight: compact ? (empty ? emptyMinHeight : 0) : 100,
+        padding: compact ? (empty ? emptyPadding : 0) : 8,
         border: editorKey === "history" || editorKey === "findings" || editorKey === "conclusion" ? "none" : "1px solid #aaa",
         outline: "none",
         boxShadow: "none",
@@ -123,21 +130,50 @@ function htmlToBlocks(html) {
   const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
   const container = doc.body.firstChild;
   if (!container) return [];
-  const nodes = Array.from(container.childNodes).filter((n) => {
+
+  const isEmptyElement = (el) => {
+    if (!el || el.nodeType !== Node.ELEMENT_NODE) return false;
+    const text = (el.textContent || "").replace(/\u00a0/g, " ").trim();
+    if (text.length > 0) return false;
+    const inner = (el.innerHTML || "")
+      .replace(/\u00a0/g, " ")
+      .replace(/&nbsp;/gi, " ")
+      .trim();
+    return /^(?:\s|<br\s*\/?>|<wbr\s*\/?>)*$/i.test(inner);
+  };
+
+  // Drop leading empty blocks, and collapse multiple empty blocks into one.
+  const nodes = [];
+  const childNodes = Array.from(container.childNodes);
+  let seenContent = false;
+  let prevWasEmpty = false;
+  for (const n of childNodes) {
     if (n.nodeType === Node.TEXT_NODE) {
-      return n.textContent && n.textContent.trim();
+      const t = (n.textContent || "").replace(/\u00a0/g, " ").trim();
+      if (!t) continue;
+      seenContent = true;
+      prevWasEmpty = false;
+      nodes.push(n);
+      continue;
     }
-    return true;
-  });
-  if (nodes.length === 0) return [];
-  return nodes
-    .map((n) => {
+
+    const emptyEl = isEmptyElement(n);
+    if (!seenContent && emptyEl) continue; // skip leading empties (prevents big blank space)
+    if (emptyEl && prevWasEmpty) continue; // collapse multiple empties
+
+    if (!emptyEl) seenContent = true;
+    prevWasEmpty = emptyEl;
+    nodes.push(n);
+  }
+
+  if (nodes.length === 0) return [""];
+
+  return nodes.map((n) => {
     if (n.nodeType === Node.TEXT_NODE) {
       return `<p>${n.textContent}</p>`;
     }
     return n.outerHTML || "";
-  })
-    .filter(Boolean);
+  }).filter(Boolean);
 }
 
 function isEmptyHtml(html) {
@@ -415,6 +451,8 @@ export default function CreateReport() {
   const recognitionRef = useRef(null);
   const recognitionRunningRef = useRef(false);
   const printSnapshotRef = useRef(null);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const focusRequestRef = useRef(null);
 
   const location = useLocation(); // import from react-router-dom
 const [isAddendum, setIsAddendum] = useState(false);
@@ -532,16 +570,21 @@ useEffect(() => {
     }
   };
 }, []);
- const blocks = useMemo(() => {
-   const items = [];
-   items.push({ type: "sectionTitle", text: "History" });
-   htmlToBlocks(history).forEach((html, i) =>
-     items.push({ type: "html", html, section: "history", blockIndex: i, key: `h-${i}` })
-   );
+const blocks = useMemo(() => {
+  const items = [];
+
+  const historyBlocks = htmlToBlocks(history);
+  const findingsBlocks = htmlToBlocks(findings);
+  const conclusionBlocks = htmlToBlocks(conclusion);
+
+  items.push({ type: "sectionTitle", text: "History" });
+  historyBlocks.forEach((html, i) =>
+    items.push({ type: "html", html, section: "history", blockIndex: i, sectionCount: historyBlocks.length, key: `h-${i}` })
+  );
 
   items.push({ type: "sectionTitle", text: "Findings" });
-  htmlToBlocks(findings).forEach((html, i) =>
-    items.push({ type: "html", html, section: "findings", blockIndex: i, key: `f-${i}` })
+  findingsBlocks.forEach((html, i) =>
+    items.push({ type: "html", html, section: "findings", blockIndex: i, sectionCount: findingsBlocks.length, key: `f-${i}` })
   );
 
   if (showKeyImages) {
@@ -549,14 +592,40 @@ useEffect(() => {
   }
 
   items.push({ type: "sectionTitle", text: "Conclusion" });
-  htmlToBlocks(conclusion).forEach((html, i) =>
-    items.push({ type: "html", html, section: "conclusion", blockIndex: i, key: `c-${i}` })
+  conclusionBlocks.forEach((html, i) =>
+    items.push({ type: "html", html, section: "conclusion", blockIndex: i, sectionCount: conclusionBlocks.length, key: `c-${i}` })
   );
 
-   return items;
- }, [history, findings, conclusion, showKeyImages, keyImages]);
+ return items;
+}, [history, findings, conclusion, showKeyImages, keyImages]);
 
  const splitGuardRef = useRef(new Set());
+
+ const requestEditorFocus = (section, blockIndex, place = "end") => {
+   focusRequestRef.current = { section, blockIndex, place };
+ };
+
+ useEffect(() => {
+   const req = focusRequestRef.current;
+   if (!req) return;
+
+   const el = document.querySelector(
+     `#reportPanel [data-editor="${req.section}"][data-block-index="${req.blockIndex}"]`
+   );
+   if (!el) return;
+
+   focusRequestRef.current = null;
+   el.focus();
+
+   try {
+     const range = document.createRange();
+     range.selectNodeContents(el);
+     range.collapse(req.place !== "start");
+     const sel = window.getSelection();
+     sel?.removeAllRanges();
+     sel?.addRange(range);
+   } catch {}
+ }, [history, findings, conclusion, pages, totalPages]);
 
 useEffect(() => {
   setTotalPages(Math.max(1, pages.length));
@@ -673,8 +742,9 @@ useLayoutEffect(() => {
     editor.innerHTML = html || "<div><br/></div>";
 
     if (isEmptyHtml(html)) {
-      editor.style.minHeight = "80px";
-      editor.style.padding = "8px";
+      const isOnlyBlock = block.blockIndex === 0 && block.sectionCount === 1;
+      editor.style.minHeight = isOnlyBlock ? "80px" : "18px";
+      editor.style.padding = isOnlyBlock ? "8px" : "0px";
     }
 
     section.appendChild(editor);
@@ -717,45 +787,48 @@ useLayoutEffect(() => {
      if (wouldOverflow() && current.length > 0) {
        flow.removeChild(el);
 
-       // If a single (plain) paragraph doesn't fit, split it so we can use the remaining space
-       // instead of pushing the entire paragraph to the next page.
-       const block = blocks[i];
-       const remainingPx = (pageBox.clientHeight - PAGE_BUFFER_PX) - flow.scrollHeight;
-       if (block?.type === "html" && remainingPx > 80) {
-         const candidate = getPlainTextSplitCandidate(block.html);
-         if (candidate) {
-           const words = candidate.text.split(" ").filter(Boolean);
-           const guardKey = `${block.section}:${block.blockIndex}:${words.length}`;
-           if (!splitGuardRef.current.has(guardKey) && words.length > 35) {
-             const fits = (count) => {
-               const partText = words.slice(0, count).join(" ");
-               const partHtml = `<${candidate.tag}>${escapeHtml(partText)}</${candidate.tag}>`;
-               const testEl = makeSectionEl({ ...block, html: partHtml });
-               flow.appendChild(testEl);
-               const ok = !wouldOverflow();
-               flow.removeChild(testEl);
-               return ok;
-             };
+       // Optional smart split: only do this during print so editing/backspace isn't fighting auto-splits.
+       if (isPrinting) {
+         // If a single (plain) paragraph doesn't fit, split it so we can use the remaining space
+         // instead of pushing the entire paragraph to the next page.
+         const block = blocks[i];
+         const remainingPx = (pageBox.clientHeight - PAGE_BUFFER_PX) - flow.scrollHeight;
+         if (block?.type === "html" && remainingPx > 80) {
+           const candidate = getPlainTextSplitCandidate(block.html);
+           if (candidate) {
+             const words = candidate.text.split(" ").filter(Boolean);
+             const guardKey = `${block.section}:${block.blockIndex}:${words.length}`;
+             if (!splitGuardRef.current.has(guardKey) && words.length > 35) {
+               const fits = (count) => {
+                 const partText = words.slice(0, count).join(" ");
+                 const partHtml = `<${candidate.tag}>${escapeHtml(partText)}</${candidate.tag}>`;
+                 const testEl = makeSectionEl({ ...block, html: partHtml });
+                 flow.appendChild(testEl);
+                 const ok = !wouldOverflow();
+                 flow.removeChild(testEl);
+                 return ok;
+               };
 
-             let lo = 5;
-             let hi = words.length - 5;
-             let best = 0;
-             while (lo <= hi) {
-               const mid = (lo + hi) >> 1;
-               if (fits(mid)) {
-                 best = mid;
-                 lo = mid + 1;
-               } else {
-                 hi = mid - 1;
+               let lo = 5;
+               let hi = words.length - 5;
+               let best = 0;
+               while (lo <= hi) {
+                 const mid = (lo + hi) >> 1;
+                 if (fits(mid)) {
+                   best = mid;
+                   lo = mid + 1;
+                 } else {
+                   hi = mid - 1;
+                 }
                }
-             }
 
-             if (best >= 10 && best <= words.length - 10) {
-               const firstHtml = `<${candidate.tag}>${escapeHtml(words.slice(0, best).join(" "))}</${candidate.tag}>`;
-               const secondHtml = `<${candidate.tag}>${escapeHtml(words.slice(best).join(" "))}</${candidate.tag}>`;
-               splitGuardRef.current.add(guardKey);
-               if (splitSectionBlock(block.section, block.blockIndex, firstHtml, secondHtml)) {
-                 return;
+               if (best >= 10 && best <= words.length - 10) {
+                 const firstHtml = `<${candidate.tag}>${escapeHtml(words.slice(0, best).join(" "))}</${candidate.tag}>`;
+                 const secondHtml = `<${candidate.tag}>${escapeHtml(words.slice(best).join(" "))}</${candidate.tag}>`;
+                 splitGuardRef.current.add(guardKey);
+                 if (splitSectionBlock(block.section, block.blockIndex, firstHtml, secondHtml)) {
+                   return;
+                 }
                }
              }
            }
@@ -788,7 +861,7 @@ useLayoutEffect(() => {
 
   if (current.length > 0) newPages.push(current);
   setPages(newPages);
-}, [blocks, bodyPxFirst, bodyPxOther, firstPageBodyMm, otherPageBodyMm]);
+}, [blocks, bodyPxFirst, bodyPxOther, firstPageBodyMm, otherPageBodyMm, isPrinting]);
 
 // template
 useEffect(() => {
@@ -854,6 +927,87 @@ const splitSectionBlock = (section, blockIndex, firstHtml, secondHtml) => {
   sectionBlocks.splice(blockIndex, 1, firstHtml, secondHtml);
   set(section, sectionBlocks.join(""));
   return true;
+};
+
+const mergeWithPrevSectionBlock = (section, blockIndex) => {
+  const get = (s) => (s === "history" ? history : s === "findings" ? findings : conclusion);
+  const set = (s, v) => (s === "history" ? setHistory(v) : s === "findings" ? setFindings(v) : setConclusion(v));
+  const sectionBlocks = htmlToBlocks(get(section));
+  if (blockIndex <= 0 || blockIndex >= sectionBlocks.length) return false;
+
+  const prev = sectionBlocks[blockIndex - 1] || "";
+  const cur = sectionBlocks[blockIndex] || "";
+
+  // If the previous block is empty, backspace-at-start should simply remove it.
+  if (isEmptyHtml(prev)) {
+    sectionBlocks.splice(blockIndex - 1, 1);
+    set(section, sectionBlocks.join(""));
+    requestEditorFocus(section, blockIndex - 1, "start");
+    return true;
+  }
+
+  // Merge into a single block so `htmlToBlocks()` doesn't immediately split it again.
+  // Wrapping ensures we get exactly one top-level node.
+  const merged = `<div>${prev}${cur}</div>`;
+  sectionBlocks.splice(blockIndex - 1, 2, merged);
+  set(section, sectionBlocks.join(""));
+  requestEditorFocus(section, blockIndex - 1, "end");
+  return true;
+};
+
+const isCaretAtStart = (editorEl) => {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return false;
+  const range = sel.getRangeAt(0);
+  if (!range.collapsed) return false;
+  if (!editorEl || !editorEl.contains(range.startContainer)) return false;
+
+  try {
+    const pre = range.cloneRange();
+    pre.selectNodeContents(editorEl);
+    pre.setEnd(range.startContainer, range.startOffset);
+
+    const frag = pre.cloneContents();
+    const hasMeaningfulContent = (node) => {
+      if (!node) return false;
+      if (node.nodeType === Node.TEXT_NODE) {
+        const t = (node.textContent || "")
+          .replace(/\u00a0/g, " ")
+          .replace(/[\u200B-\u200D\uFEFF]/g, "") // zero-width chars
+          .trim();
+        return t.length > 0;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return false;
+
+      const tag = node.tagName?.toLowerCase?.() || "";
+      if (tag === "br" || tag === "wbr") return false;
+      if (tag === "img" || tag === "svg" || tag === "table") return true;
+
+      for (const child of Array.from(node.childNodes || [])) {
+        if (hasMeaningfulContent(child)) return true;
+      }
+      return false;
+    };
+
+    for (const child of Array.from(frag.childNodes || [])) {
+      if (hasMeaningfulContent(child)) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const handleEditorKeyDown = (section, blockIndex) => (e, editorEl) => {
+  const isBackspace =
+    e?.key === "Backspace" || e?.nativeEvent?.inputType === "deleteContentBackward" || e?.inputType === "deleteContentBackward";
+  if (!isBackspace) return;
+  if (blockIndex <= 0) return;
+  if (!editorEl) return;
+  if (!isCaretAtStart(editorEl)) return;
+
+  e.preventDefault();
+  mergeWithPrevSectionBlock(section, blockIndex);
 };
 
 useEffect(() => {
@@ -1218,6 +1372,7 @@ useEffect(() => {
       keyImages,
       showKeyImages,
     };
+    setIsPrinting(true);
     window.requestAnimationFrame(() => window.print());
   };
 
@@ -1232,6 +1387,7 @@ useEffect(() => {
       setConclusion(snap.conclusion);
       setKeyImages(snap.keyImages);
       setShowKeyImages(snap.showKeyImages);
+      setIsPrinting(false);
     };
 
     window.addEventListener("afterprint", handleAfterPrint);
@@ -1886,10 +2042,14 @@ const insertTextAtCursor = (text) => {
                   onChange={(html) => replaceSectionBlock(block.section, block.blockIndex, html)}
                   onFocus={handleEditorFocus}
                   onSelectionChange={handleEditorSelectionChange}
+                  onKeyDown={handleEditorKeyDown(block.section, block.blockIndex)}
                   placeholder={block.blockIndex === 0 ? placeholderText : ""}
                   disabled={isAddendum && !addendumConfirmed}
                   editorKey={block.section}
                   compact
+                  emptyMinHeight={block.blockIndex === 0 && block.sectionCount === 1 ? 80 : 18}
+                  emptyPadding={block.blockIndex === 0 && block.sectionCount === 1 ? 8 : 0}
+                  blockIndex={block.blockIndex}
                 />
               </section>
             );
