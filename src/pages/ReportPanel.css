@@ -198,8 +198,11 @@
 }
 
 #reportPanel .ghost-editor {
-  min-height: 100px;
-  padding: 8px;
+  /* Measurement-only element (used to paginate content into A4 pages).
+     Keep this aligned with the compact RichEditor render so we don't
+     over-measure and push content to the next page prematurely. */
+  min-height: 0;
+  padding: 0;
   box-sizing: border-box;
   overflow-wrap: anywhere;
   word-break: break-word;

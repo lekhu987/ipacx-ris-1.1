@@ -130,14 +130,12 @@ function htmlToBlocks(html) {
     return true;
   });
   if (nodes.length === 0) return [];
-  return nodes
-    .map((n) => {
+  return nodes.map((n) => {
     if (n.nodeType === Node.TEXT_NODE) {
       return `<p>${n.textContent}</p>`;
     }
     return n.outerHTML || "";
-  })
-    .filter(Boolean);
+  }).filter(Boolean);
 }
 
 function isEmptyHtml(html) {
@@ -531,12 +529,12 @@ useEffect(() => {
     }
   };
 }, []);
- const blocks = useMemo(() => {
-   const items = [];
-   items.push({ type: "sectionTitle", text: "History" });
-   htmlToBlocks(history).forEach((html, i) =>
-     items.push({ type: "html", html, section: "history", blockIndex: i, key: `h-${i}` })
-   );
+const blocks = useMemo(() => {
+  const items = [];
+  items.push({ type: "sectionTitle", text: "History" });
+  htmlToBlocks(history).forEach((html, i) =>
+    items.push({ type: "html", html, section: "history", blockIndex: i, key: `h-${i}` })
+  );
 
   items.push({ type: "sectionTitle", text: "Findings" });
   htmlToBlocks(findings).forEach((html, i) =>
@@ -552,10 +550,8 @@ useEffect(() => {
     items.push({ type: "html", html, section: "conclusion", blockIndex: i, key: `c-${i}` })
   );
 
-   return items;
- }, [history, findings, conclusion, showKeyImages, keyImages]);
-
- const splitGuardRef = useRef(new Set());
+  return items;
+}, [history, findings, conclusion, showKeyImages, keyImages]);
 
 useEffect(() => {
   setTotalPages(Math.max(1, pages.length));
@@ -586,206 +582,63 @@ useLayoutEffect(() => {
   }
 }, [headerBlockMm, bodyPxFirst, bodyPxOther]);
 
- useLayoutEffect(() => {
-   if (!measureRef.current) return;
-   const container = measureRef.current;
-   container.innerHTML = "";
+useLayoutEffect(() => {
+  if (!measureRef.current) return;
+  const container = measureRef.current;
+  container.innerHTML = "";
 
-  const PX_PER_MM = 3.78;
-  const firstBodyPx = bodyPxFirst || (firstPageBodyMm * PX_PER_MM);
-  const otherBodyPx = bodyPxOther || (otherPageBodyMm * PX_PER_MM);
-  const otherTopOffsetPx = OTHER_TOP_OFFSET_MM * PX_PER_MM;
-
-  const PAGE_BUFFER_PX = 2; // small safety buffer to avoid 1px clipping
-
-  const makePageBox = (pageHeightPx, paddingTopPx) => {
-    const pageBox = document.createElement("div");
-    pageBox.style.width = "100%";
-    pageBox.style.height = `${pageHeightPx}px`;
-    pageBox.style.overflow = "hidden";
-    pageBox.style.boxSizing = "border-box";
-
-    const flow = document.createElement("div");
-    flow.className = "page-flow";
-    flow.style.position = "relative";
-    flow.style.paddingTop = `${paddingTopPx}px`;
-    flow.style.boxSizing = "border-box";
-
-    pageBox.appendChild(flow);
-    container.appendChild(pageBox);
-
-    return { pageBox, flow };
-  };
-
-  const makeSectionEl = (block) => {
-    const section = document.createElement("section");
-    section.className = "section";
-
+  const measureBlock = (block) => {
+    const el = document.createElement("div");
+    el.className = "page-block";
     if (block.type === "sectionTitle") {
-      const h3 = document.createElement("h3");
-      h3.style.fontSize = "12px";
-      h3.style.margin = "0 0 8px";
-      h3.textContent = block.text;
-      section.appendChild(h3);
-      return section;
-    }
-
-    if (block.type === "keyImages") {
-      const h3 = document.createElement("h3");
-      h3.style.fontSize = "12px";
-      h3.style.margin = "0 0 8px";
-      h3.textContent = "Key Images";
-      section.appendChild(h3);
-
+      el.innerHTML = `<h3 style="font-size:12px;margin:0 0 8px;">${block.text}</h3>`;
+    } else if (block.type === "keyImages") {
       const wrap = document.createElement("div");
       wrap.className = "key-images ghost-key-images";
-      (block.images || []).forEach(() => {
+      block.images.forEach(() => {
         const box = document.createElement("div");
         box.style.width = "120px";
         box.style.height = "120px";
         wrap.appendChild(box);
       });
-      section.appendChild(wrap);
-      return section;
+      el.appendChild(wrap);
+    } else {
+      el.classList.add("ghost-editor");
+      el.innerHTML = block.html || "<div><br/></div>";
     }
-
-    // html block (compact RichEditor look)
-    const editor = document.createElement("div");
-    editor.setAttribute("data-editor", block.section || "");
-    editor.style.minHeight = "0px";
-    editor.style.padding = "0px";
-    editor.style.border = "none";
-    editor.style.outline = "none";
-    editor.style.boxShadow = "none";
-    editor.style.backgroundColor = "#fff";
-    editor.style.cursor = "text";
-    editor.style.textAlign =
-      block.section === "history" || block.section === "findings" || block.section === "conclusion"
-        ? "justify"
-        : "left";
-    editor.style.textAlignLast =
-      block.section === "history" || block.section === "findings" || block.section === "conclusion"
-        ? "left"
-        : "auto";
-
-    const html = block.html || "";
-    editor.innerHTML = html || "<div><br/></div>";
-
-    if (isEmptyHtml(html)) {
-      editor.style.minHeight = "80px";
-      editor.style.padding = "8px";
-    }
-
-    section.appendChild(editor);
-    return section;
+    container.appendChild(el);
+    const h = el.getBoundingClientRect().height || el.offsetHeight || 0;
+    return { el, h };
   };
+
+  const heights = blocks.map((b) => measureBlock(b).h);
+  const firstPx = bodyPxFirst || (firstPageBodyMm * 3.78);
+  const otherPx = bodyPxOther || ((otherPageBodyMm - OTHER_TOP_OFFSET_MM) * 3.78);
 
   const newPages = [];
   let current = [];
-  let { pageBox, flow } = makePageBox(firstBodyPx, 0);
+  let remaining = firstPx;
+  let pageIndex = 0;
 
-   const wouldOverflow = () =>
-     flow.scrollHeight > (pageBox.clientHeight - PAGE_BUFFER_PX);
+  const PAGE_BUFFER_PX = 12; // keep page flow consistent with on-screen
 
-   const escapeHtml = (s) =>
-     String(s)
-       .replace(/&/g, "&amp;")
-       .replace(/</g, "&lt;")
-       .replace(/>/g, "&gt;");
-
-   const getPlainTextSplitCandidate = (html) => {
-     if (!html) return null;
-     try {
-       const parsed = new DOMParser().parseFromString(html, "text/html").body.firstChild;
-       if (!parsed || parsed.nodeType !== Node.ELEMENT_NODE) return null;
-       if (parsed.tagName !== "P" && parsed.tagName !== "DIV") return null;
-       if (parsed.children && parsed.children.length > 0) return null; // only plain text
-       const tag = parsed.tagName.toLowerCase();
-       const text = (parsed.textContent || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
-       if (!text) return null;
-       return { tag, text };
-     } catch {
-       return null;
-     }
-   };
-
-   for (let i = 0; i < blocks.length; i += 1) {
-     const el = makeSectionEl(blocks[i]);
-     flow.appendChild(el);
-
-     if (wouldOverflow() && current.length > 0) {
-       flow.removeChild(el);
-
-       // If a single (plain) paragraph doesn't fit, split it so we can use the remaining space
-       // instead of pushing the entire paragraph to the next page.
-       const block = blocks[i];
-       const remainingPx = (pageBox.clientHeight - PAGE_BUFFER_PX) - flow.scrollHeight;
-       if (block?.type === "html" && remainingPx > 80) {
-         const candidate = getPlainTextSplitCandidate(block.html);
-         if (candidate) {
-           const words = candidate.text.split(" ").filter(Boolean);
-           const guardKey = `${block.section}:${block.blockIndex}:${words.length}`;
-           if (!splitGuardRef.current.has(guardKey) && words.length > 35) {
-             const fits = (count) => {
-               const partText = words.slice(0, count).join(" ");
-               const partHtml = `<${candidate.tag}>${escapeHtml(partText)}</${candidate.tag}>`;
-               const testEl = makeSectionEl({ ...block, html: partHtml });
-               flow.appendChild(testEl);
-               const ok = !wouldOverflow();
-               flow.removeChild(testEl);
-               return ok;
-             };
-
-             let lo = 5;
-             let hi = words.length - 5;
-             let best = 0;
-             while (lo <= hi) {
-               const mid = (lo + hi) >> 1;
-               if (fits(mid)) {
-                 best = mid;
-                 lo = mid + 1;
-               } else {
-                 hi = mid - 1;
-               }
-             }
-
-             if (best >= 10 && best <= words.length - 10) {
-               const firstHtml = `<${candidate.tag}>${escapeHtml(words.slice(0, best).join(" "))}</${candidate.tag}>`;
-               const secondHtml = `<${candidate.tag}>${escapeHtml(words.slice(best).join(" "))}</${candidate.tag}>`;
-               splitGuardRef.current.add(guardKey);
-               if (splitSectionBlock(block.section, block.blockIndex, firstHtml, secondHtml)) {
-                 return;
-               }
-             }
-           }
-         }
-       }
-
-       // Avoid leaving a section title alone at the bottom of a page.
-       let carryTitle = null;
-       let carryTitleIndex = null;
-       const lastIdx = current[current.length - 1];
-      if (blocks[lastIdx]?.type === "sectionTitle") {
-        carryTitleIndex = current.pop();
-        carryTitle = flow.lastChild;
-        if (carryTitle) flow.removeChild(carryTitle);
-      }
-
+  heights.forEach((h, i) => {
+    const block = blocks[i];
+    const nextH = i + 1 < heights.length ? heights[i + 1] : 0;
+    const needsTogether = block?.type === "sectionTitle";
+    const required = needsTogether ? h + nextH : h;
+    const fit = required <= (remaining - PAGE_BUFFER_PX) || current.length === 0;
+    if (!fit) {
       newPages.push(current);
       current = [];
-
-      ({ pageBox, flow } = makePageBox(otherBodyPx, otherTopOffsetPx));
-      if (carryTitle) {
-        flow.appendChild(carryTitle);
-        current.push(carryTitleIndex);
-      }
-       flow.appendChild(el);
-     }
-
-     current.push(i);
-   }
-
+      pageIndex += 1;
+      remaining = otherPx;
+    }
+    current.push(i);
+    remaining -= h;
+  });
   if (current.length > 0) newPages.push(current);
+
   setPages(newPages);
 }, [blocks, bodyPxFirst, bodyPxOther, firstPageBodyMm, otherPageBodyMm]);
 
@@ -842,16 +695,6 @@ const replaceSectionBlock = (section, blockIndex, html) => {
   }
   blocks[blockIndex] = html;
   set(section, blocks.join(""));
-};
-
-const splitSectionBlock = (section, blockIndex, firstHtml, secondHtml) => {
-  const get = (s) => (s === "history" ? history : s === "findings" ? findings : conclusion);
-  const set = (s, v) => (s === "history" ? setHistory(v) : s === "findings" ? setFindings(v) : setConclusion(v));
-  const sectionBlocks = htmlToBlocks(get(section));
-  if (blockIndex < 0 || blockIndex >= sectionBlocks.length) return false;
-  sectionBlocks.splice(blockIndex, 1, firstHtml, secondHtml);
-  set(section, sectionBlocks.join(""));
-  return true;
 };
 
 useEffect(() => {
@@ -1787,17 +1630,17 @@ const insertTextAtCursor = (text) => {
           {(pages[index] || []).map((blockIdx) => {
             const block = blocks[blockIdx];
             if (!block) return null;
-             if (block.type === "sectionTitle") {
-               return (
-                 <section key={`t-${blockIdx}`} className="section" style={{ marginBottom: 20 }}>
-                  <h3 style={{ fontSize: 12, margin: "0 0 8px" }}>{block.text}</h3>
-                 </section>
-               );
-             }
-             if (block.type === "keyImages") {
-               return (
-                 <section key={`k-${blockIdx}`} className="section" style={{ marginBottom: 20 }}>
-                  <h3 style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, margin: "0 0 8px" }}>
+            if (block.type === "sectionTitle") {
+              return (
+                <section key={`t-${blockIdx}`} className="section" style={{ marginBottom: 20 }}>
+                  <h3 style={{ fontSize: 12, marginBottom: 8 }}>{block.text}</h3>
+                </section>
+              );
+            }
+            if (block.type === "keyImages") {
+              return (
+                <section key={`k-${blockIdx}`} className="section" style={{ marginBottom: 20 }}>
+                  <h3 style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
                     Key Images
                     <button
                       className="no-print"
@@ -1915,5 +1758,3 @@ const insertTextAtCursor = (text) => {
     
   );
 }
-
-
