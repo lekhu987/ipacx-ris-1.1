@@ -414,6 +414,7 @@ export default function CreateReport() {
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef(null);
   const recognitionRunningRef = useRef(false);
+  const printSnapshotRef = useRef(null);
 
   const location = useLocation(); // import from react-router-dom
 const [isAddendum, setIsAddendum] = useState(false);
@@ -837,7 +838,8 @@ const replaceSectionBlock = (section, blockIndex, html) => {
   const set = (s, v) => (s === "history" ? setHistory(v) : s === "findings" ? setFindings(v) : setConclusion(v));
   const blocks = htmlToBlocks(get(section));
   if (blockIndex < 0 || blockIndex >= blocks.length) {
-    set(section, html);
+    blocks.push(html);
+    set(section, blocks.join(""));
     return;
   }
   blocks[blockIndex] = html;
@@ -1207,9 +1209,34 @@ useEffect(() => {
   };
 
   const handlePrint = () => {
-    syncActiveEditorToState();
+    // Snapshot state before opening print dialog. Restored in `afterprint` to
+    // prevent content loss if the browser triggers unexpected layout/event quirks.
+    printSnapshotRef.current = {
+      history,
+      findings,
+      conclusion,
+      keyImages,
+      showKeyImages,
+    };
     window.requestAnimationFrame(() => window.print());
   };
+
+  useEffect(() => {
+    const handleAfterPrint = () => {
+      const snap = printSnapshotRef.current;
+      if (!snap) return;
+      printSnapshotRef.current = null;
+
+      setHistory(snap.history);
+      setFindings(snap.findings);
+      setConclusion(snap.conclusion);
+      setKeyImages(snap.keyImages);
+      setShowKeyImages(snap.showKeyImages);
+    };
+
+    window.addEventListener("afterprint", handleAfterPrint);
+    return () => window.removeEventListener("afterprint", handleAfterPrint);
+  }, []);
 
   // toolbar definition
   const toolbar = [
