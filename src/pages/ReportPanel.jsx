@@ -787,66 +787,65 @@ useLayoutEffect(() => {
      if (wouldOverflow() && current.length > 0) {
        flow.removeChild(el);
 
-       // Optional smart split: only do this during print so editing/backspace isn't fighting auto-splits.
-       if (isPrinting) {
-         // If a single (plain) paragraph doesn't fit, split it so we can use the remaining space
-         // instead of pushing the entire paragraph to the next page.
-         const block = blocks[i];
-         const remainingPx = (pageBox.clientHeight - PAGE_BUFFER_PX) - flow.scrollHeight;
-         if (block?.type === "html" && remainingPx > 80) {
-           const candidate = getPlainTextSplitCandidate(block.html);
-           if (candidate) {
-             const words = candidate.text.split(" ").filter(Boolean);
-             const guardKey = `${block.section}:${block.blockIndex}:${words.length}`;
-             if (!splitGuardRef.current.has(guardKey) && words.length > 35) {
-               const fits = (count) => {
-                 const partText = words.slice(0, count).join(" ");
-                 const partHtml = `<${candidate.tag}>${escapeHtml(partText)}</${candidate.tag}>`;
-                 const testEl = makeSectionEl({ ...block, html: partHtml });
-                 flow.appendChild(testEl);
-                 const ok = !wouldOverflow();
-                 flow.removeChild(testEl);
-                 return ok;
-               };
+        // Smart split: if a single (plain) paragraph doesn't fit, split it so we can use the
+        // remaining space instead of pushing the entire paragraph to the next page.
+        const block = blocks[i];
+        const remainingPx = (pageBox.clientHeight - PAGE_BUFFER_PX) - flow.scrollHeight;
+        if (block?.type === "html" && remainingPx > 80) {
+          const candidate = getPlainTextSplitCandidate(block.html);
+          if (candidate) {
+            const words = candidate.text.split(" ").filter(Boolean);
+            const guardKey = `${block.section}:${block.blockIndex}:${words.length}`;
+            if (!splitGuardRef.current.has(guardKey) && words.length > 35) {
+              const fits = (count) => {
+                const partText = words.slice(0, count).join(" ");
+                const partHtml = `<${candidate.tag}>${escapeHtml(partText)}</${candidate.tag}>`;
+                const testEl = makeSectionEl({ ...block, html: partHtml });
+                flow.appendChild(testEl);
+                const ok = !wouldOverflow();
+                flow.removeChild(testEl);
+                return ok;
+              };
 
-               let lo = 5;
-               let hi = words.length - 5;
-               let best = 0;
-               while (lo <= hi) {
-                 const mid = (lo + hi) >> 1;
-                 if (fits(mid)) {
-                   best = mid;
-                   lo = mid + 1;
-                 } else {
-                   hi = mid - 1;
-                 }
-               }
+              let lo = 5;
+              let hi = words.length - 5;
+              let best = 0;
+              while (lo <= hi) {
+                const mid = (lo + hi) >> 1;
+                if (fits(mid)) {
+                  best = mid;
+                  lo = mid + 1;
+                } else {
+                  hi = mid - 1;
+                }
+              }
 
-               if (best >= 10 && best <= words.length - 10) {
-                 const firstHtml = `<${candidate.tag}>${escapeHtml(words.slice(0, best).join(" "))}</${candidate.tag}>`;
-                 const secondHtml = `<${candidate.tag}>${escapeHtml(words.slice(best).join(" "))}</${candidate.tag}>`;
-                 splitGuardRef.current.add(guardKey);
-                 if (splitSectionBlock(block.section, block.blockIndex, firstHtml, secondHtml)) {
-                   return;
-                 }
-               }
-             }
-           }
-         }
-       }
+              if (best >= 10 && best <= words.length - 10) {
+                const firstHtml = `<${candidate.tag}>${escapeHtml(words.slice(0, best).join(" "))}</${candidate.tag}>`;
+                const secondHtml = `<${candidate.tag}>${escapeHtml(words.slice(best).join(" "))}</${candidate.tag}>`;
+                splitGuardRef.current.add(guardKey);
+                if (splitSectionBlock(block.section, block.blockIndex, firstHtml, secondHtml)) {
+                  return;
+                }
+              }
+            }
+          }
+        }
 
        // Avoid leaving a section title alone at the bottom of a page.
-       let carryTitle = null;
-       let carryTitleIndex = null;
-       const lastIdx = current[current.length - 1];
-      if (blocks[lastIdx]?.type === "sectionTitle") {
-        carryTitleIndex = current.pop();
-        carryTitle = flow.lastChild;
-        if (carryTitle) flow.removeChild(carryTitle);
-      }
+        let carryTitle = null;
+        let carryTitleIndex = null;
+        const lastIdx = current[current.length - 1];
+       if (blocks[lastIdx]?.type === "sectionTitle") {
+         carryTitleIndex = current.pop();
+         carryTitle = flow.lastChild;
+         if (carryTitle) flow.removeChild(carryTitle);
+       }
 
-      newPages.push(current);
-      current = [];
+       // If we carried the only item on the page (e.g. just a section title),
+       // don't push an empty page; it causes the whole content to "skip" to the next page.
+       if (current.length > 0) newPages.push(current);
+       current = [];
 
       ({ pageBox, flow } = makePageBox(otherBodyPx, otherTopOffsetPx));
       if (carryTitle) {
