@@ -27,7 +27,9 @@ function RichEditor({
   const ref = useRef();
 
   useEffect(() => {
-    if (ref.current && ref.current.innerHTML !== value) {
+    const isFocused = () => document.activeElement === ref.current;
+    // Avoid forcing innerHTML while focused (resets caret, especially after paste)
+    if (ref.current && !isFocused() && ref.current.innerHTML !== value) {
       ref.current.innerHTML = value || "";
     }
   }, [value]);
@@ -48,7 +50,12 @@ function RichEditor({
           setTimeout(onSelectionChange, 0);
         }
       }}
-      onInput={(e) => !disabled && onChange(e.currentTarget.innerHTML)}
+      onInput={(e) => {
+        if (disabled) return;
+        onChange(e.currentTarget.innerHTML);
+        if (typeof onSelectionChange === "function") setTimeout(onSelectionChange, 0);
+      }}
+      onPaste={!disabled && typeof onSelectionChange === "function" ? () => setTimeout(onSelectionChange, 0) : undefined}
       onKeyDown={!disabled && typeof onKeyDown === "function" ? (e) => onKeyDown(e, ref.current) : undefined}
       onBeforeInput={!disabled && typeof onKeyDown === "function" ? (e) => onKeyDown(e, ref.current) : undefined}
       onMouseUp={!disabled ? onSelectionChange : undefined}
@@ -459,7 +466,6 @@ const [isAddendum, setIsAddendum] = useState(false);
 const [noteInput, setNoteInput] = useState("");
 const [parentReportId, setParentReportId] = useState(null);
 const [addendumConfirmed, setAddendumConfirmed] = useState(false);
-const [totalPages, setTotalPages] = useState(1);
 const headerRef = useRef(null);
 const measureRef = useRef(null);
 const firstBodyRef = useRef(null);
@@ -468,14 +474,16 @@ const [headerBlockMm, setHeaderBlockMm] = useState(30);
 const [bodyPxFirst, setBodyPxFirst] = useState(0);
 const [bodyPxOther, setBodyPxOther] = useState(0);
 const [pages, setPages] = useState([]);
+const renderedPages = pages.length ? pages : [[]];
+const totalPages = renderedPages.length;
 const HEADER_FOOTER_MM = 25.4; // 1 inch (letterhead-like)
 const PAGE_SIDE_PADDING_MM = 15;
 const CONTENT_HEIGHT_MM = 297 - (HEADER_FOOTER_MM * 2);
-const CONTENT_SAFE_HEIGHT_MM = CONTENT_HEIGHT_MM - 3;
+const CONTENT_SAFE_HEIGHT_MM = CONTENT_HEIGHT_MM - 1;
 const OTHER_TOP_OFFSET_MM = 0;
 const PAGE_NUMBER_OFFSET_MM = 6;
-const firstPageBodyMm = Math.max(20, CONTENT_SAFE_HEIGHT_MM - headerBlockMm);
-const otherPageBodyMm = CONTENT_SAFE_HEIGHT_MM;
+const firstPageBodyMm = Math.max(20, CONTENT_SAFE_HEIGHT_MM - headerBlockMm - PAGE_NUMBER_OFFSET_MM);
+const otherPageBodyMm = CONTENT_SAFE_HEIGHT_MM - PAGE_NUMBER_OFFSET_MM;
 
 //report tile
 // Auto-update report title based on modality + body part
@@ -627,10 +635,6 @@ const blocks = useMemo(() => {
    } catch {}
  }, [history, findings, conclusion, pages, totalPages]);
 
-useEffect(() => {
-  setTotalPages(Math.max(1, pages.length));
-}, [pages]);
-
 useLayoutEffect(() => {
   if (headerRef.current) {
     const px = headerRef.current.getBoundingClientRect().height || 0;
@@ -666,7 +670,7 @@ useLayoutEffect(() => {
   const otherBodyPx = bodyPxOther || (otherPageBodyMm * PX_PER_MM);
   const otherTopOffsetPx = OTHER_TOP_OFFSET_MM * PX_PER_MM;
 
-  const PAGE_BUFFER_PX = 2; // small safety buffer to avoid 1px clipping
+  const PAGE_BUFFER_PX = 10; // safety buffer to avoid footer/descender clipping
 
   const makePageBox = (pageHeightPx, paddingTopPx) => {
     const pageBox = document.createElement("div");
@@ -721,6 +725,7 @@ useLayoutEffect(() => {
 
     // html block (compact RichEditor look)
     const editor = document.createElement("div");
+    editor.className = "ghost-editor";
     editor.setAttribute("data-editor", block.section || "");
     editor.style.minHeight = "0px";
     editor.style.padding = "0px";
@@ -764,20 +769,282 @@ useLayoutEffect(() => {
        .replace(/</g, "&lt;")
        .replace(/>/g, "&gt;");
 
-   const getPlainTextSplitCandidate = (html) => {
+   const parseRootEl = (html) => {
      if (!html) return null;
      try {
        const parsed = new DOMParser().parseFromString(html, "text/html").body.firstChild;
        if (!parsed || parsed.nodeType !== Node.ELEMENT_NODE) return null;
-       if (parsed.tagName !== "P" && parsed.tagName !== "DIV") return null;
-       if (parsed.children && parsed.children.length > 0) return null; // only plain text
-       const tag = parsed.tagName.toLowerCase();
-       const text = (parsed.textContent || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
-       if (!text) return null;
-       return { tag, text };
+       return parsed;
      } catch {
        return null;
      }
+   };
+
+   const getMeaningfulChildNodes = (el) =>
+     Array.from(el?.childNodes || []).filter((n) => {
+       if (!n) return false;
+       if (n.nodeType === Node.TEXT_NODE) return (n.textContent || "").trim().length > 0;
+       return true;
+     });
+
+   const getTextNodes = (node) => {
+     const nodes = [];
+     try {
+       const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+       let cur = walker.nextNode();
+       while (cur) {
+         const t = (cur.textContent || "").replace(/[\u200B-\u200D\uFEFF]/g, "");
+         if (t.length > 0) nodes.push(cur);
+         cur = walker.nextNode();
+       }
+     } catch {}
+     return nodes;
+   };
+
+   const locateTextOffset = (nodes, offset) => {
+     let remaining = offset;
+     for (const n of nodes) {
+       const len = (n.textContent || "").length;
+       if (remaining <= len) return { node: n, offset: Math.max(0, remaining) };
+       remaining -= len;
+     }
+     const last = nodes[nodes.length - 1];
+     return { node: last, offset: (last.textContent || "").length };
+   };
+
+   function splitByTextRange(block, rootEl) {
+     if (!rootEl) return null;
+     const tagName = rootEl.tagName?.toUpperCase?.() || "";
+     if (tagName !== "P" && tagName !== "DIV" && tagName !== "LI") return null;
+
+     const nodes = getTextNodes(rootEl);
+     if (nodes.length === 0) return null;
+     const totalLen = nodes.reduce((a, n) => a + (n.textContent || "").length, 0);
+     if (totalLen < 40) return null;
+
+     const buildPrefixHtml = (keepChars) => {
+       const clone = rootEl.cloneNode(true);
+       const cloneNodes = getTextNodes(clone);
+       const pos = locateTextOffset(cloneNodes, keepChars);
+       const r = document.createRange();
+       r.selectNodeContents(clone);
+       r.setStart(pos.node, pos.offset);
+       r.deleteContents(); // delete from pos -> end
+       return clone.outerHTML || "";
+     };
+
+     const buildSuffixHtml = (keepChars) => {
+       const clone = rootEl.cloneNode(true);
+       const cloneNodes = getTextNodes(clone);
+       const pos = locateTextOffset(cloneNodes, keepChars);
+       const r = document.createRange();
+       r.selectNodeContents(clone);
+       r.setEnd(pos.node, pos.offset);
+       r.deleteContents(); // delete from start -> pos
+       return clone.outerHTML || "";
+     };
+
+     const min = 15;
+     const max = totalLen - 15;
+     if (max <= min) return null;
+
+     const fits = (count) => {
+       const partHtml = buildPrefixHtml(count);
+       const testEl = makeSectionEl({ ...block, html: partHtml });
+       flow.appendChild(testEl);
+       const ok = !wouldOverflow();
+       flow.removeChild(testEl);
+       return ok;
+     };
+
+     let lo = min;
+     let hi = max;
+     let best = 0;
+     while (lo <= hi) {
+       const mid = (lo + hi) >> 1;
+       if (fits(mid)) {
+         best = mid;
+         lo = mid + 1;
+       } else {
+         hi = mid - 1;
+       }
+     }
+
+     if (best < min || best > max) return null;
+     const firstHtml = buildPrefixHtml(best);
+     const secondHtml = buildSuffixHtml(best);
+     if (isEmptyHtml(firstHtml) || isEmptyHtml(secondHtml)) return null;
+     return { firstHtml, secondHtml, totalLen, key: `range:${totalLen}` };
+   }
+
+   const splitByListItems = (block, root) => {
+     let listEl = null;
+     let wrapper = null;
+     const tag = root.tagName?.toUpperCase?.() || "";
+     if (tag === "UL" || tag === "OL") {
+       listEl = root;
+     } else if (tag === "DIV") {
+       const kids = getMeaningfulChildNodes(root);
+       if (kids.length === 1 && kids[0]?.nodeType === Node.ELEMENT_NODE) {
+         const only = kids[0];
+         const onlyTag = only.tagName?.toUpperCase?.() || "";
+         if (onlyTag === "UL" || onlyTag === "OL") {
+           wrapper = root;
+           listEl = only;
+         }
+       }
+     }
+     if (!listEl) return null;
+
+     const items = Array.from(listEl.children || []).filter((el) => (el?.tagName?.toUpperCase?.() || "") === "LI");
+     if (items.length < 2) return null;
+
+     const buildListHtml = (from, to) => {
+       const listClone = listEl.cloneNode(false);
+       for (let i = from; i < to; i += 1) listClone.appendChild(items[i].cloneNode(true));
+       if (wrapper) {
+         const w = wrapper.cloneNode(false);
+         w.appendChild(listClone);
+         return w.outerHTML || "";
+       }
+       return listClone.outerHTML || "";
+     };
+
+     const fits = (count) => {
+       const partHtml = buildListHtml(0, count);
+       const testEl = makeSectionEl({ ...block, html: partHtml });
+       flow.appendChild(testEl);
+       const ok = !wouldOverflow();
+       flow.removeChild(testEl);
+       return ok;
+     };
+
+     let lo = 1;
+     let hi = items.length - 1;
+     let best = 0;
+     while (lo <= hi) {
+       const mid = (lo + hi) >> 1;
+       if (fits(mid)) {
+         best = mid;
+         lo = mid + 1;
+       } else {
+         hi = mid - 1;
+       }
+     }
+
+     if (best >= 1 && best <= items.length - 1) {
+       return {
+         firstHtml: buildListHtml(0, best),
+         secondHtml: buildListHtml(best, items.length),
+         key: `list:${items.length}`,
+       };
+     }
+
+     // If even the first <li> doesn't fit, split inside that <li>.
+     const li0 = items[0];
+     const li0Split = splitByTextRange(block, li0);
+     if (!li0Split) return null;
+
+     const list1 = listEl.cloneNode(false);
+     const list2 = listEl.cloneNode(false);
+     const liFirst = new DOMParser().parseFromString(li0Split.firstHtml, "text/html").body.firstChild;
+     const liSecond = new DOMParser().parseFromString(li0Split.secondHtml, "text/html").body.firstChild;
+     if (!liFirst || !liSecond) return null;
+
+     list1.appendChild(liFirst);
+     list2.appendChild(liSecond);
+     for (let i = 1; i < items.length; i += 1) list2.appendChild(items[i].cloneNode(true));
+
+     const wrapIfNeeded = (listNode) => {
+       if (!wrapper) return listNode.outerHTML || "";
+       const w = wrapper.cloneNode(false);
+       w.appendChild(listNode);
+       return w.outerHTML || "";
+     };
+
+     return {
+       firstHtml: wrapIfNeeded(list1),
+       secondHtml: wrapIfNeeded(list2),
+       key: `listli0:${items.length}:${li0Split.totalLen}`,
+     };
+   };
+
+   const splitByDivChildren = (block, rootDiv) => {
+     if (!rootDiv || (rootDiv.tagName?.toUpperCase?.() || "") !== "DIV") return null;
+     const children = getMeaningfulChildNodes(rootDiv);
+     if (children.length < 2) return null;
+
+     const fits = (count) => {
+       const clone = rootDiv.cloneNode(false);
+       for (let j = 0; j < count; j += 1) clone.appendChild(children[j].cloneNode(true));
+       const testEl = makeSectionEl({ ...block, html: clone.outerHTML });
+       flow.appendChild(testEl);
+       const ok = !wouldOverflow();
+       flow.removeChild(testEl);
+       return ok;
+     };
+
+     let lo = 1;
+     let hi = children.length - 1;
+     let best = 0;
+     while (lo <= hi) {
+       const mid = (lo + hi) >> 1;
+       if (fits(mid)) {
+         best = mid;
+         lo = mid + 1;
+       } else {
+         hi = mid - 1;
+       }
+     }
+
+     if (best < 1 || best > children.length - 1) return null;
+     const firstEl = rootDiv.cloneNode(false);
+     const secondEl = rootDiv.cloneNode(false);
+     for (let j = 0; j < children.length; j += 1) {
+       (j < best ? firstEl : secondEl).appendChild(children[j].cloneNode(true));
+     }
+     return { firstHtml: firstEl.outerHTML, secondHtml: secondEl.outerHTML, key: `divchildren:${children.length}` };
+   };
+
+   const splitPlainTextByWords = (block, rootEl) => {
+     if (!rootEl) return null;
+     const tagName = rootEl.tagName?.toUpperCase?.() || "";
+     if (tagName !== "P" && tagName !== "DIV" && tagName !== "LI") return null;
+     if (rootEl.children && rootEl.children.length > 0) return null;
+
+     const tag = tagName.toLowerCase();
+     const text = (rootEl.textContent || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+     if (!text) return null;
+     const words = text.split(" ").filter(Boolean);
+     if (words.length < 12) return null;
+
+     const fits = (count) => {
+       const partText = words.slice(0, count).join(" ");
+       const partHtml = `<${tag}>${escapeHtml(partText)}</${tag}>`;
+       const testEl = makeSectionEl({ ...block, html: partHtml });
+       flow.appendChild(testEl);
+       const ok = !wouldOverflow();
+       flow.removeChild(testEl);
+       return ok;
+     };
+
+     let lo = 1;
+     let hi = words.length - 1;
+     let best = 0;
+     while (lo <= hi) {
+       const mid = (lo + hi) >> 1;
+       if (fits(mid)) {
+         best = mid;
+         lo = mid + 1;
+       } else {
+         hi = mid - 1;
+       }
+     }
+
+     if (best < 3 || best > words.length - 3) return null;
+     const firstHtml = `<${tag}>${escapeHtml(words.slice(0, best).join(" "))}</${tag}>`;
+     const secondHtml = `<${tag}>${escapeHtml(words.slice(best).join(" "))}</${tag}>`;
+     return { firstHtml, secondHtml, key: `words:${words.length}` };
    };
 
    for (let i = 0; i < blocks.length; i += 1) {
@@ -791,42 +1058,28 @@ useLayoutEffect(() => {
         // remaining space instead of pushing the entire paragraph to the next page.
         const block = blocks[i];
         const remainingPx = (pageBox.clientHeight - PAGE_BUFFER_PX) - flow.scrollHeight;
-        if (block?.type === "html" && remainingPx > 80) {
-          const candidate = getPlainTextSplitCandidate(block.html);
-          if (candidate) {
-            const words = candidate.text.split(" ").filter(Boolean);
-            const guardKey = `${block.section}:${block.blockIndex}:${words.length}`;
-            if (!splitGuardRef.current.has(guardKey) && words.length > 35) {
-              const fits = (count) => {
-                const partText = words.slice(0, count).join(" ");
-                const partHtml = `<${candidate.tag}>${escapeHtml(partText)}</${candidate.tag}>`;
-                const testEl = makeSectionEl({ ...block, html: partHtml });
-                flow.appendChild(testEl);
-                const ok = !wouldOverflow();
-                flow.removeChild(testEl);
-                return ok;
-              };
+        if (block?.type === "html" && remainingPx > 18) {
+          const root = parseRootEl(block.html);
+          if (root) {
+            const attempts = [
+              splitByListItems(block, root),
+              splitByDivChildren(block, root),
+              splitByTextRange(block, root),
+              splitPlainTextByWords(block, root),
+            ].filter(Boolean);
 
-              let lo = 5;
-              let hi = words.length - 5;
-              let best = 0;
-              while (lo <= hi) {
-                const mid = (lo + hi) >> 1;
-                if (fits(mid)) {
-                  best = mid;
-                  lo = mid + 1;
-                } else {
-                  hi = mid - 1;
+            for (const a of attempts) {
+              const guardKey = `${block.section}:${block.blockIndex}:${a.key}`;
+              if (splitGuardRef.current.has(guardKey)) continue;
+              splitGuardRef.current.add(guardKey);
+              if (splitSectionBlock(block.section, block.blockIndex, a.firstHtml, a.secondHtml)) {
+                const active = activeEditorRef.current;
+                const activeSection = active?.dataset?.editor;
+                const activeBlockIndex = Number(active?.dataset?.blockIndex);
+                if (active && activeSection === block.section && activeBlockIndex === block.blockIndex) {
+                  requestEditorFocus(block.section, block.blockIndex + 1, "end");
                 }
-              }
-
-              if (best >= 10 && best <= words.length - 10) {
-                const firstHtml = `<${candidate.tag}>${escapeHtml(words.slice(0, best).join(" "))}</${candidate.tag}>`;
-                const secondHtml = `<${candidate.tag}>${escapeHtml(words.slice(best).join(" "))}</${candidate.tag}>`;
-                splitGuardRef.current.add(guardKey);
-                if (splitSectionBlock(block.section, block.blockIndex, firstHtml, secondHtml)) {
-                  return;
-                }
+                return;
               }
             }
           }
@@ -1852,7 +2105,7 @@ const insertTextAtCursor = (text) => {
   />
 
   {/* RENDERED A4 PAGES */}
-  {Array.from({ length: totalPages }).map((_, index) => (
+  {renderedPages.map((pageBlockIdxs, index) => (
     <div
       key={index}
       className="a4-page"
@@ -1966,7 +2219,7 @@ const insertTextAtCursor = (text) => {
             paddingTop: index === 0 ? 0 : `${OTHER_TOP_OFFSET_MM}mm`,
           }}
         >
-          {(pages[index] || []).map((blockIdx) => {
+          {(pageBlockIdxs || []).map((blockIdx) => {
             const block = blocks[blockIdx];
             if (!block) return null;
              if (block.type === "sectionTitle") {
@@ -2079,7 +2332,7 @@ const insertTextAtCursor = (text) => {
       </div>
 
       {/* Page Number (Bottom Center) */}
-      <div style={{ position: "absolute", bottom: `${Math.max(4, HEADER_FOOTER_MM - PAGE_NUMBER_OFFSET_MM)}mm`, left: 0, right: 0, textAlign: "center", fontSize: "10px", color: "#999" }}>
+      <div style={{ position: "absolute", bottom: `${Math.max(4, PAGE_NUMBER_OFFSET_MM)}mm`, left: 0, right: 0, textAlign: "center", fontSize: "10px", color: "#999" }}>
         Page {index + 1} of {totalPages}
       </div>
     </div>
