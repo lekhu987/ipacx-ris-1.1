@@ -434,6 +434,10 @@
   box-sizing: border-box;
 }
 
+.split-layout.preview-hidden {
+  grid-template-columns: minmax(0, 1fr) !important;
+}
+
 .left-preview-pane {
   border: 1px solid #cbd3df;
   background: #e9edf2;

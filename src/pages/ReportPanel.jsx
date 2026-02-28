@@ -426,6 +426,7 @@ export default function CreateReport() {
   const [previewPageCount, setPreviewPageCount] = useState(1);
   const [previewContentHeight, setPreviewContentHeight] = useState(0);
   const [previewScale, setPreviewScale] = useState(0.31);
+  const [showPreviewPane, setShowPreviewPane] = useState(false);
 
   const location = useLocation(); // import from react-router-dom
 const [isAddendum, setIsAddendum] = useState(false);
@@ -621,6 +622,7 @@ useEffect(() => {
 ]);
 
 useEffect(() => {
+  if (!showPreviewPane) return;
   const measureEl = previewMeasureRef.current;
   if (!measureEl) return;
 
@@ -645,9 +647,11 @@ useEffect(() => {
   };
 }, [
   previewHtml,
+  showPreviewPane,
 ]);
 
 useEffect(() => {
+  if (!showPreviewPane) return;
   const measureEl = previewMeasureRef.current;
   const paneEl = previewPaneRef.current;
   if (!measureEl || !paneEl) return;
@@ -667,7 +671,7 @@ useEffect(() => {
     clearTimeout(timer);
     window.removeEventListener("resize", updateScale);
   };
-}, [previewHtml]);
+}, [previewHtml, showPreviewPane]);
 
   /* ===========================
         Load report and prefill
@@ -1101,7 +1105,8 @@ const renderPreviewSheet = (attachRef = false) => (
   />
 );
   return (
-  <div className="split-layout">
+  <div className={`split-layout ${showPreviewPane ? "" : "preview-hidden"}`}>
+    {showPreviewPane && (
     <aside className="left-preview-pane" ref={previewPaneRef}>
       <div className="preview-header">Print Preview</div>
 
@@ -1190,6 +1195,7 @@ const renderPreviewSheet = (attachRef = false) => (
           </div>
         ))}
     </aside>
+    )}
 {/* Report Panel */}
 
 <div
@@ -1467,8 +1473,22 @@ const renderPreviewSheet = (attachRef = false) => (
       onClick={() => {
         const rec = recognitionRef.current;
         if (!rec) return;
-        listening ? rec.stop() : rec.start();
-        setListening(!listening);
+        // Guard against InvalidStateError when start() is called twice.
+        if (recognitionRunningRef.current || listening) {
+          try {
+            rec.stop();
+          } catch (err) {
+            console.warn("SpeechRecognition stop ignored:", err);
+          }
+          return;
+        }
+
+        try {
+          rec.start();
+        } catch (err) {
+          // Some browsers throw if already started; keep UI stable.
+          console.warn("SpeechRecognition start ignored:", err);
+        }
       }}
       style={{
         height: "30px", width: "30px", borderRadius: "50%", border: "none",
@@ -1481,6 +1501,22 @@ const renderPreviewSheet = (attachRef = false) => (
     </button>
 
     <div style={{ display: "flex", gap: "6px" }}>
+      <button
+        type="button"
+        onClick={() => setShowPreviewPane((prev) => !prev)}
+        style={{
+          padding: "4px 12px",
+          borderRadius: "15px",
+          border: "none",
+          cursor: "pointer",
+          background: "#6c757d",
+          color: "#fff",
+          fontWeight: "bold",
+          fontSize: "11px",
+        }}
+      >
+        {showPreviewPane ? "PREVIEW OFF" : "PREVIEW ON"}
+      </button>
       <button
         onClick={() => window.print()}
         style={{
@@ -1552,8 +1588,9 @@ const renderPreviewSheet = (attachRef = false) => (
             width: "210mm",
             minHeight: "297mm",
             height: "auto",
-            background: "transparent",
-            border: "none",
+            background: "#fff",
+            border: "1px solid #c7d0dc",
+            padding: "30mm 15mm 20mm 15mm",
             boxSizing: "border-box",
             display: "flow-root",
           }}
