@@ -93,61 +93,21 @@ function setLineSpacing(spacing) {
   if (!selection.rangeCount) return;
 
   const range = selection.getRangeAt(0);
-  const anchorEl =
-    selection.anchorNode?.nodeType === 1
-      ? selection.anchorNode
-      : selection.anchorNode?.parentElement;
-  const editor = anchorEl?.closest?.("[data-editor]");
-  if (!editor) return;
+  const selectedText = range.toString();
+  if (!selectedText) return;
 
-  const isBlock = (el) =>
-    !!el &&
-    el.nodeType === 1 &&
-    [
-      "P",
-      "DIV",
-      "LI",
-      "UL",
-      "OL",
-      "H1",
-      "H2",
-      "H3",
-      "H4",
-      "H5",
-      "H6",
-      "BLOCKQUOTE",
-      "PRE",
-    ].includes(el.tagName);
+  const p = document.createElement("div");
+  p.style.lineHeight = spacing;
+  p.textContent = selectedText;
 
-  // If no selection, apply to the current paragraph/block at cursor.
-  if (range.collapsed) {
-    let target = anchorEl;
-    while (target && target !== editor && !isBlock(target)) {
-      target = target.parentElement;
-    }
-    (target && target !== editor ? target : editor).style.lineHeight = spacing;
-    return;
-  }
+  range.deleteContents();
+  range.insertNode(p);
 
-  // Apply to all block elements touched by the selection.
-  const blocks = [];
-  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_ELEMENT, null);
-  let node = walker.nextNode();
-  while (node) {
-    if (isBlock(node) && range.intersectsNode(node)) {
-      blocks.push(node);
-    }
-    node = walker.nextNode();
-  }
-
-  if (blocks.length === 0) {
-    editor.style.lineHeight = spacing;
-    return;
-  }
-
-  blocks.forEach((b) => {
-    b.style.lineHeight = spacing;
-  });
+  // Keep cursor after inserted text
+  selection.removeAllRanges();
+  const newRange = document.createRange();
+  newRange.setStartAfter(p);
+  selection.addRange(newRange);
 }
 
 //reporttitle
@@ -413,38 +373,18 @@ export default function CreateReport() {
   const [isManualTitle, setIsManualTitle] = useState(false);
   const [editRefDoctor, setEditRefDoctor] = useState(false);
   const [editBodyPart, setEditBodyPart] = useState(false);
-  const [editAccession, setEditAccession] = useState(false);
   const [templates, setTemplates] = useState([]);
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef(null);
   const recognitionRunningRef = useRef(false);
-  const reportSheetRef = useRef(null);
-  const previewMeasureRef = useRef(null);
-  const previewPaneRef = useRef(null);
-  const [previewHtml, setPreviewHtml] = useState("");
-  const [previewPageCount, setPreviewPageCount] = useState(1);
-  const [previewContentHeight, setPreviewContentHeight] = useState(0);
-  const [previewScale, setPreviewScale] = useState(0.31);
 
   const location = useLocation(); // import from react-router-dom
 const [isAddendum, setIsAddendum] = useState(false);
 const [noteInput, setNoteInput] = useState("");
 const [parentReportId, setParentReportId] = useState(null);
 const [addendumConfirmed, setAddendumConfirmed] = useState(false);
-const PX_PER_MM = 96 / 25.4;
-const PREVIEW_PAGE_HEIGHT_PX = 1122;
-const PREVIEW_HEADER_HEIGHT_PX = Math.round(30 * PX_PER_MM);
-const PREVIEW_FOOTER_HEIGHT_PX = Math.round(20 * PX_PER_MM);
-const PREVIEW_CONTENT_HEIGHT_PX =
-  PREVIEW_PAGE_HEIGHT_PX -
-  PREVIEW_HEADER_HEIGHT_PX -
-  PREVIEW_FOOTER_HEIGHT_PX;
-const PREVIEW_SCALED_PAGE_HEIGHT_PX = PREVIEW_PAGE_HEIGHT_PX * previewScale;
-const PREVIEW_SCALED_HEADER_HEIGHT_PX = PREVIEW_HEADER_HEIGHT_PX * previewScale;
-const PREVIEW_SCALED_CONTENT_HEIGHT_PX =
-  PREVIEW_CONTENT_HEIGHT_PX * previewScale;
-const PREVIEW_SCALED_FOOTER_HEIGHT_PX = PREVIEW_FOOTER_HEIGHT_PX * previewScale;
+
 
 //report tile
 // Auto-update report title based on modality + body part
@@ -602,72 +542,6 @@ useEffect(() => {
     approvedByRef.current.textContent = study.ApprovedBy || "";
   }
 }, [study.ApprovedBy]);
-
-useEffect(() => {
-  const syncPreviewHtml = () => {
-    setPreviewHtml(reportSheetRef.current?.innerHTML || "");
-  };
-  syncPreviewHtml();
-  const timer = setTimeout(syncPreviewHtml, 0);
-  return () => clearTimeout(timer);
-}, [
-  study,
-  history,
-  findings,
-  conclusion,
-  showKeyImages,
-  keyImages,
-  reportTitle,
-]);
-
-useEffect(() => {
-  const measureEl = previewMeasureRef.current;
-  if (!measureEl) return;
-
-  const updatePageCount = () => {
-    const computed = window.getComputedStyle(measureEl);
-    const trailingBottomPadding = parseFloat(computed.paddingBottom || "0") || 0;
-    const contentHeight = Math.max(
-      0,
-      (measureEl.scrollHeight || 0) - trailingBottomPadding
-    );
-    setPreviewContentHeight(contentHeight);
-    const rawPages = Math.max(1, Math.ceil(contentHeight / PREVIEW_CONTENT_HEIGHT_PX));
-    setPreviewPageCount(rawPages);
-  };
-
-  updatePageCount();
-  const timer = setTimeout(updatePageCount, 0);
-  window.addEventListener("resize", updatePageCount);
-  return () => {
-    clearTimeout(timer);
-    window.removeEventListener("resize", updatePageCount);
-  };
-}, [
-  previewHtml,
-]);
-
-useEffect(() => {
-  const measureEl = previewMeasureRef.current;
-  const paneEl = previewPaneRef.current;
-  if (!measureEl || !paneEl) return;
-
-  const updateScale = () => {
-    const pageWidth = measureEl.getBoundingClientRect().width || 0;
-    const availableWidth = Math.max(0, paneEl.clientWidth - 26); // pane padding + border safety
-    if (!pageWidth || !availableWidth) return;
-    const nextScale = Math.min(1, Math.max(0.2, availableWidth / pageWidth));
-    setPreviewScale(nextScale);
-  };
-
-  updateScale();
-  const timer = setTimeout(updateScale, 0);
-  window.addEventListener("resize", updateScale);
-  return () => {
-    clearTimeout(timer);
-    window.removeEventListener("resize", updateScale);
-  };
-}, [previewHtml]);
 
   /* ===========================
         Load report and prefill
@@ -1092,117 +966,20 @@ const insertTextAtCursor = (text) => {
   }
   saveSelection();
 };
-
-const renderPreviewSheet = (attachRef = false) => (
-  <div
-    className={`preview-sheet preview-sheet-clone ${attachRef ? "preview-sheet-measure" : ""}`}
-    ref={attachRef ? previewMeasureRef : null}
-    dangerouslySetInnerHTML={{ __html: previewHtml }}
-  />
-);
   return (
-  <div className="split-layout">
-    <aside className="left-preview-pane" ref={previewPaneRef}>
-      <div className="preview-header">Print Preview</div>
-
-      {/* Hidden measurement copy */}
-      <div className="preview-hidden-measure">
-        {renderPreviewSheet(true)}
-      </div>
-
-      {Array.from({ length: previewPageCount })
-        .map((_, pageIndex) => pageIndex)
-        .filter((pageIndex) => {
-          const remainingHeight =
-            previewContentHeight -
-            pageIndex * PREVIEW_CONTENT_HEIGHT_PX;
-
-          if (pageIndex === 0) return true;
-          return remainingHeight > 2;
-        })
-        .map((pageIndex) => (
-          <div
-            className="preview-page-card"
-            key={`p-${pageIndex}`}
-          >
-            <div className="preview-page-label">
-              Page {pageIndex + 1}
-            </div>
-
-            <div
-              className="preview-page-box"
-              style={{
-                height: PREVIEW_SCALED_PAGE_HEIGHT_PX,
-                display: "flex",
-                flexDirection: "column",
-                overflow: "hidden"
-              }}
-            >
-              {/* HEADER RESERVED SPACE */}
-              <div
-                className="preview-page-header"
-                style={{
-                  height: PREVIEW_SCALED_HEADER_HEIGHT_PX,
-                  flexShrink: 0
-                }}
-              />
-              {/* CONTENT WINDOW */}
-              <div
-                className="preview-page-content-window"
-                style={{
-                  height: PREVIEW_SCALED_CONTENT_HEIGHT_PX,
-                  overflow: "hidden",
-                  position: "relative"
-                }}
-              >
-                <div
-                  className="preview-page-shift"
-                  style={{
-                    transform: `scale(${previewScale})`,
-                    transformOrigin: "top left"
-                  }}
-                >
-                  <div
-                    className="preview-page-translate"
-                    style={{
-                      transform: `translateY(-${
-                        pageIndex * PREVIEW_CONTENT_HEIGHT_PX
-                      }px)`,
-                      transformOrigin: "top left"
-                    }}
-                  >
-                    {renderPreviewSheet(false)}
-                  </div>
-                </div>
-              </div>
-
-              {/* FOOTER */}
-              {PREVIEW_SCALED_FOOTER_HEIGHT_PX > 0 && (
-                <div
-                  className="preview-page-footer"
-                  style={{
-                    height: PREVIEW_SCALED_FOOTER_HEIGHT_PX,
-                    flexShrink: 0
-                  }}
-                />
-              )}
-            </div>
-          </div>
-        ))}
-    </aside>
+    <div className="split-layout" style={{ display: "flex", height: "100vh", position: "relative", fontFamily: "'Times New Roman', Times, serif" }}>
+    
 {/* Report Panel */}
 
 <div
   ref={reportRef}
   id="reportPanel"
-  className="report-work-area"
   style={{
     width: "100%",
-    padding: 0,
+    padding: 12,
     boxSizing: "border-box",
     height: "100%",
     overflowY: "auto",
-    overflowX: "hidden",
     position: "relative", // needed for overlay
   }}
 >
@@ -1481,21 +1258,6 @@ const renderPreviewSheet = (attachRef = false) => (
     </button>
 
     <div style={{ display: "flex", gap: "6px" }}>
-      <button
-        onClick={() => window.print()}
-        style={{
-          padding: "4px 12px",
-          borderRadius: "15px",
-          border: "none",
-          cursor: "pointer",
-          background: "#0d6efd",
-          color: "#fff",
-          fontWeight: "bold",
-          fontSize: "11px",
-        }}
-      >
-        PRINT
-      </button>
       {!isAddendum ? (
         <>
           {/* 🟡 Highlighted Draft */}
@@ -1545,21 +1307,8 @@ const renderPreviewSheet = (attachRef = false) => (
         </div>
 
 
-        <div
-          className="report-sheet"
-          ref={reportSheetRef}
-          style={{
-            width: "210mm",
-            minHeight: "297mm",
-            height: "auto",
-            background: "transparent",
-            border: "none",
-            boxSizing: "border-box",
-            display: "flow-root",
-          }}
-        >
         {/* Patient table */}
-        <table className="data-table print-keep-together" style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12 }}>
+        <table className="data-table" style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12 }}>
           <tbody>
             <tr>
               <td style={{ padding: 6, border: "1px solid #000" }}>
@@ -1603,23 +1352,7 @@ const renderPreviewSheet = (attachRef = false) => (
 
 
               <td style={{ padding: 6, border: "1px solid #000" }}>
-                <strong>Accession No:</strong>{" "}
-                {editAccession ? (
-                  <input
-                    autoFocus
-                    value={study.AccessionNumber || ""}
-                    onChange={(e) =>
-                      setStudy((p) => ({ ...p, AccessionNumber: e.target.value }))
-                    }
-                    onBlur={() => setEditAccession(false)}
-                    onKeyDown={(e) => e.key === "Enter" && setEditAccession(false)}
-                    style={{ width: "70%" }}
-                  />
-                ) : (
-                  <span onClick={() => setEditAccession(true)}>
-                    {study.AccessionNumber || "-"}
-                  </span>
-                )}
+                <strong>Accession No:</strong> {study.AccessionNumber}
               </td>
             </tr>
 
@@ -1656,17 +1389,11 @@ const renderPreviewSheet = (attachRef = false) => (
           </tbody>
         </table>
 
-       <div
-         className="report-title-inline"
-         contentEditable
-         suppressContentEditableWarning
-         onBlur={(e) => {
-           setReportTitle(e.currentTarget.innerText);
-           setIsManualTitle(true);
-         }}
-       >
-         {reportTitle}
-       </div>
+       <ReportTitle
+  value={reportTitle}
+  onChange={setReportTitle}
+  onManualEdit={() => setIsManualTitle(true)}
+/>
 
 
 
@@ -1703,7 +1430,7 @@ const renderPreviewSheet = (attachRef = false) => (
 
         {/* Key Images */}
         {showKeyImages && (
-          <section className="section section-key-images" style={{ marginBottom: 20 }}>
+          <section className="section" style={{ marginBottom: 20 }}>
             <h3 style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               Key Images
               <button
@@ -1737,7 +1464,7 @@ const renderPreviewSheet = (attachRef = false) => (
               }}
               onDragOver={(e) => e.preventDefault()}
               style={{
-                border: "none",
+                border: "2px dashed #aaa",
                 minHeight: 120,
                 padding: 10,
                 display: "flex",
@@ -1760,7 +1487,7 @@ const renderPreviewSheet = (attachRef = false) => (
     width: "100%",
     height: "100%",
     objectFit: "contain",
-    border: "none",
+    border: "1px solid #ddd",
     borderRadius: 6,
   }}
 />
@@ -1811,7 +1538,7 @@ const renderPreviewSheet = (attachRef = false) => (
 {/* Footer */}
 {/* ====================== */}
 <footer
-  className="footer-row print-keep-together"
+  className="footer-row"
   style={{ display: "flex", justifyContent: "space-between", marginTop: 30 }}
 >
   <div style={{ fontWeight: "bold", fontSize: 11 }}>
@@ -1836,15 +1563,19 @@ const renderPreviewSheet = (attachRef = false) => (
 />
   </div>
 </footer>
+
+        <div className="buttons toolbar" style={{ marginTop: 12 }}>
+         
+          <button onClick={() => window.print()} style={{ padding: "8px 12px", marginLeft: 8 }}>Print</button>
+          
         </div>
       </div>
-  {/* ====================== */}
+      {/* ====================== */}
   {/* PRINT FOOTER */}
   {/* ====================== */}
   <div className="print-footer" style={{ display: "none", textAlign: "center", fontSize: 12, marginTop: 20 }}>
     123 Main Street, City, State, ZIP | Phone: 123-456-7890
   </div>
-  <div className="print-page-number" style={{ display: "none" }} />
     </div>
     
   );
