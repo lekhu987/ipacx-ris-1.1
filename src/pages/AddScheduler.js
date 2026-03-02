@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import "./AddScheduler.css";
 
-export default function AddScheduler({ onSave, onClose }) {
+export default function AddScheduler({ onSave, onClose, initialData }) {
   const [form, setForm] = useState({
     patientId: "",
     patientName: "",
@@ -12,6 +12,14 @@ export default function AddScheduler({ onSave, onClose }) {
     status: "Pending",
     date: ""
   });
+
+  useEffect(() => {
+    if (!initialData) return;
+    setForm((prev) => ({
+      ...prev,
+      ...initialData,
+    }));
+  }, [initialData]);
 
   const modalities = ["CT", "MRI", "X-Ray", "Ultrasound", "DEXA"];
   const doctors = ["Dr. Smith", "Dr. Johnson", "Dr. Rakesh", "Dr. Priya", "Dr. Karthik"];

@@ -84,3 +84,20 @@
   overflow-y: auto;        /* Scroll inside if content too tall */
   padding: 10px 0;         /* Optional padding inside */
 }
+
+.schedule-btn {
+  border: 0;
+  color: #fff;
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.schedule-btn.not-scheduled {
+  background-color: #dc2626;
+}
+
+.schedule-btn.scheduled {
+  background-color: #16a34a;
+}

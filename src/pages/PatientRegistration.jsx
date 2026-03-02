@@ -45,10 +45,11 @@ const STEPS = [
   { id: 6, title: "Consent" },
 ];
 
-export default function PatientRegistration({ onClose }) {
+export default function PatientRegistration({ onClose, onSave }) {
   const [step, setStep] = useState(1);
   const canvasRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 // Form Data State
     const [formData, setFormData] = useState({
         // Identity
@@ -64,6 +65,8 @@ export default function PatientRegistration({ onClose }) {
 
         // Demographics
         title: "", // Dr., Mr., Ms. etc
+        firstName: "",
+        lastName: "",
         // firstName & lastName handled at bottom with initialData
         name: "", // Computed
         dob: "",
@@ -194,7 +197,7 @@ export default function PatientRegistration({ onClose }) {
     const nextStep = () => setStep(prev => Math.min(prev + 1, STEPS.length));
     const prevStep = () => setStep(prev => Math.max(prev - 1, 1));
 
-    const handleSubmit = () => {
+    const handleSubmit = async () => {
         // Construct full name
         const fullName = `${formData.firstName} ${formData.lastName}`.trim();
         const finalData = { ...formData, name: fullName };
@@ -216,7 +219,24 @@ export default function PatientRegistration({ onClose }) {
             toast.error("Signature and Privacy Acceptance required");
             return;
         }
-        onSubmit(finalData);
+        if (typeof onSave !== "function") {
+            toast.error("Save handler is not configured");
+            return;
+        }
+
+        try {
+            setIsSubmitting(true);
+            await onSave(finalData);
+            toast.success("Patient registered successfully");
+        } catch (error) {
+            const message =
+                error?.response?.data?.error ||
+                error?.response?.data?.message ||
+                "Failed to register patient";
+            toast.error(message);
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     // Signature Canvas Logic
@@ -1030,10 +1050,11 @@ export default function PatientRegistration({ onClose }) {
             {step === 1 ? "Cancel" : "Back"}
           </button>
           <button
-            onClick={step === 6 ? () => alert("Registered") : nextStep}
+            onClick={step === 6 ? handleSubmit : nextStep}
+            disabled={isSubmitting}
            className="pr-btn-primary"
           >
-            {step === 6 ? "Complete Registration" : "Next"}
+            {step === 6 ? (isSubmitting ? "Saving..." : "Complete Registration") : "Next"}
           </button>
         </div>
       </div>

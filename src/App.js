@@ -1,5 +1,6 @@
 import React from "react";
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { Toaster } from "react-hot-toast";
 
 // Pages & Components
 import Login from "./components/Login/login";
@@ -32,6 +33,7 @@ function App() {
 
   return (
     <Router>
+      <Toaster position="top-right" />
       <PatientProvider>
         <StudiesProvider>
           <Routes>
