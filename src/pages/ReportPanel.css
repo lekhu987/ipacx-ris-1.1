@@ -643,6 +643,68 @@
   padding: 6px 0 !important;
 }
 
+/* Deterministic list rendering: keeps preview and print closer with bullets/numbers. */
+#reportPanel [data-editor] ul,
+#reportPanel [data-editor] ol,
+.preview-sheet-clone [data-editor] ul,
+.preview-sheet-clone [data-editor] ol,
+.report-sheet [data-editor] ul,
+.report-sheet [data-editor] ol {
+  list-style: none !important;
+  margin: 0 0 6px 18px !important;
+  padding-left: 24px !important;
+}
+
+#reportPanel [data-editor] li,
+.preview-sheet-clone [data-editor] li,
+.report-sheet [data-editor] li {
+  position: relative;
+  margin: 0 0 2px 0 !important;
+  padding: 0 !important;
+  line-height: 1.35 !important;
+}
+
+#reportPanel [data-editor] li > p,
+.preview-sheet-clone [data-editor] li > p,
+.report-sheet [data-editor] li > p {
+  margin: 0 !important;
+  display: inline !important;
+}
+
+#reportPanel [data-editor] ul > li::before,
+.preview-sheet-clone [data-editor] ul > li::before,
+.report-sheet [data-editor] ul > li::before {
+  content: "\2022";
+  position: absolute;
+  left: -16px;
+  top: 0;
+  width: 12px;
+  text-align: center;
+}
+
+#reportPanel [data-editor] ol,
+.preview-sheet-clone [data-editor] ol,
+.report-sheet [data-editor] ol {
+  counter-reset: rp-item;
+}
+
+#reportPanel [data-editor] ol > li,
+.preview-sheet-clone [data-editor] ol > li,
+.report-sheet [data-editor] ol > li {
+  counter-increment: rp-item;
+}
+
+#reportPanel [data-editor] ol > li::before,
+.preview-sheet-clone [data-editor] ol > li::before,
+.report-sheet [data-editor] ol > li::before {
+  content: counter(rp-item) ".";
+  position: absolute;
+  left: -22px;
+  top: 0;
+  width: 18px;
+  text-align: right;
+}
+
 @media print {
   .report-toolbar-wrapper,
   .top-row,
@@ -707,7 +769,6 @@
   }
 
   .report-sheet .print-keep-together,
-  .report-sheet .section,
   .report-sheet .section-key-images,
   .report-sheet .key-images,
   .report-sheet .key-image-item,
