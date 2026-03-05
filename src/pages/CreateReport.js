@@ -1,9 +1,9 @@
 // src/pages/ReportPanel.jsx 
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
-import "./ReportPanel.css";
+import "./CreateReport.css";
 import api from "../api/axios";
 import DigitalSignatureField from "../components/DigitalSignatureField"; // adjust path
 
@@ -17,8 +17,7 @@ function RichEditor({
   onSelectionChange,
   placeholder,
   disabled = false,
-  editorKey,
-  compact = false,
+  editorKey, 
 }) {
   const ref = useRef();
 
@@ -28,11 +27,8 @@ function RichEditor({
     }
   }, [value]);
 
-  const empty = isEmptyHtml(value);
-
   return (
     <div
-      className="rich-editor"
       ref={ref}
       data-editor={editorKey} 
       contentEditable={!disabled}
@@ -47,15 +43,11 @@ function RichEditor({
       onMouseUp={!disabled ? onSelectionChange : undefined}
       onKeyUp={!disabled ? onSelectionChange : undefined}
       style={{
-        minHeight: compact ? (empty ? 80 : 0) : 100,
-        padding: compact ? (empty ? 8 : 0) : 8,
-        border: editorKey === "history" || editorKey === "findings" || editorKey === "conclusion" ? "none" : "1px solid #aaa",
-        outline: "none",
-        boxShadow: "none",
+        minHeight: 100,
+        padding: 8,
+        border: "1px solid #aaa",
         backgroundColor: disabled ? "#f1f3f5" : "#fff",
         cursor: disabled ? "not-allowed" : "text",
-        textAlign: editorKey === "history" || editorKey === "findings" || editorKey === "conclusion" ? "justify" : "left",
-        textAlignLast: editorKey === "history" || editorKey === "findings" || editorKey === "conclusion" ? "left" : "auto",
       }}
       data-placeholder={placeholder}
     />
@@ -101,51 +93,65 @@ function setLineSpacing(spacing) {
   if (!selection.rangeCount) return;
 
   const range = selection.getRangeAt(0);
-  const selectedText = range.toString();
-  if (!selectedText) return;
+  const anchorEl =
+    selection.anchorNode?.nodeType === 1
+      ? selection.anchorNode
+      : selection.anchorNode?.parentElement;
+  const editor = anchorEl?.closest?.("[data-editor]");
+  if (!editor) return;
 
-  const p = document.createElement("div");
-  p.style.lineHeight = spacing;
-  p.textContent = selectedText;
+  const isBlock = (el) =>
+    !!el &&
+    el.nodeType === 1 &&
+    [
+      "P",
+      "DIV",
+      "LI",
+      "UL",
+      "OL",
+      "H1",
+      "H2",
+      "H3",
+      "H4",
+      "H5",
+      "H6",
+      "BLOCKQUOTE",
+      "PRE",
+    ].includes(el.tagName);
 
-  range.deleteContents();
-  range.insertNode(p);
-
-  // Keep cursor after inserted text
-  selection.removeAllRanges();
-  const newRange = document.createRange();
-  newRange.setStartAfter(p);
-  selection.addRange(newRange);
-}
-
-function htmlToBlocks(html) {
-  if (!html || !html.trim()) return [""];
-  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
-  const container = doc.body.firstChild;
-  if (!container) return [];
-  const nodes = Array.from(container.childNodes).filter((n) => {
-    if (n.nodeType === Node.TEXT_NODE) {
-      return n.textContent && n.textContent.trim();
+  // If no selection, apply to the current paragraph/block at cursor.
+  if (range.collapsed) {
+    let target = anchorEl;
+    while (target && target !== editor && !isBlock(target)) {
+      target = target.parentElement;
     }
-    return true;
+    (target && target !== editor ? target : editor).style.lineHeight = spacing;
+    return;
+  }
+
+  // Apply to all block elements touched by the selection.
+  const blocks = [];
+  const walker = document.createTreeWalker(editor, NodeFilter.SHOW_ELEMENT, null);
+  let node = walker.nextNode();
+  while (node) {
+    if (isBlock(node) && range.intersectsNode(node)) {
+      blocks.push(node);
+    }
+    node = walker.nextNode();
+  }
+
+  if (blocks.length === 0) {
+    editor.style.lineHeight = spacing;
+    return;
+  }
+
+  blocks.forEach((b) => {
+    b.style.lineHeight = spacing;
   });
-  if (nodes.length === 0) return [];
-  return nodes.map((n) => {
-    if (n.nodeType === Node.TEXT_NODE) {
-      return `<p>${n.textContent}</p>`;
-    }
-    return n.outerHTML || "";
-  }).filter(Boolean);
-}
-
-function isEmptyHtml(html) {
-  if (!html) return true;
-  const text = html.replace(/<[^>]*>/g, "").replace(/\u00a0/g, " ").trim();
-  return text.length === 0;
 }
 
 //reporttitle
-function ReportTitle({ value, onChange, onManualEdit, className = "" }) {
+function ReportTitle({ value, onChange, onManualEdit }) {
   const ref = useRef();
 
   useEffect(() => {
@@ -155,10 +161,9 @@ function ReportTitle({ value, onChange, onManualEdit, className = "" }) {
   }, [value]);
 
   return (
-  <div
-  ref={ref}
-  className={`report-title ${className}`}
-
+    <div
+      ref={ref}
+      className="report-title"
       contentEditable
       suppressContentEditableWarning
       onBlur={(e) => {
@@ -408,39 +413,44 @@ export default function CreateReport() {
   const [isManualTitle, setIsManualTitle] = useState(false);
   const [editRefDoctor, setEditRefDoctor] = useState(false);
   const [editBodyPart, setEditBodyPart] = useState(false);
+  const [editAccession, setEditAccession] = useState(false);
   const [templates, setTemplates] = useState([]);
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef(null);
   const recognitionRunningRef = useRef(false);
+  const reportSheetRef = useRef(null);
+  const previewMeasureRef = useRef(null);
+  const previewPaneRef = useRef(null);
+  const [previewHtml, setPreviewHtml] = useState("");
+  const [previewPageCount, setPreviewPageCount] = useState(1);
+  const [previewContentHeight, setPreviewContentHeight] = useState(0);
+  const [previewScale, setPreviewScale] = useState(0.31);
+  const [showPreviewPane, setShowPreviewPane] = useState(false);
 
   const location = useLocation(); // import from react-router-dom
 const [isAddendum, setIsAddendum] = useState(false);
 const [noteInput, setNoteInput] = useState("");
 const [parentReportId, setParentReportId] = useState(null);
 const [addendumConfirmed, setAddendumConfirmed] = useState(false);
-const [totalPages, setTotalPages] = useState(1);
-const headerRef = useRef(null);
-const measureRef = useRef(null);
-const firstBodyRef = useRef(null);
-const otherBodyRef = useRef(null);
-const [headerBlockMm, setHeaderBlockMm] = useState(30);
-const [bodyPxFirst, setBodyPxFirst] = useState(0);
-const [bodyPxOther, setBodyPxOther] = useState(0);
-const [pages, setPages] = useState([]);
-const HEADER_FOOTER_MM = 25.4; // 1 inch (letterhead-like)
-const PAGE_SIDE_PADDING_MM = 15;
-const CONTENT_HEIGHT_MM = 297 - (HEADER_FOOTER_MM * 2);
-const CONTENT_SAFE_HEIGHT_MM = CONTENT_HEIGHT_MM - 3;
-const OTHER_TOP_OFFSET_MM = 0;
-const PAGE_NUMBER_OFFSET_MM = 6;
-const firstPageBodyMm = Math.max(20, CONTENT_SAFE_HEIGHT_MM - headerBlockMm);
-const otherPageBodyMm = CONTENT_SAFE_HEIGHT_MM;
-
+const PX_PER_MM = 96 / 25.4;
+const PREVIEW_PAGE_HEIGHT_PX = 1122;
+const PREVIEW_HEADER_HEIGHT_PX = Math.round(30 * PX_PER_MM);
+const PREVIEW_FOOTER_HEIGHT_PX = Math.round(20 * PX_PER_MM);
+const PREVIEW_CONTENT_HEIGHT_PX =
+  PREVIEW_PAGE_HEIGHT_PX -
+  PREVIEW_HEADER_HEIGHT_PX -
+  PREVIEW_FOOTER_HEIGHT_PX;
+const PREVIEW_SCALED_PAGE_HEIGHT_PX = PREVIEW_PAGE_HEIGHT_PX * previewScale;
+const PREVIEW_SCALED_HEADER_HEIGHT_PX = PREVIEW_HEADER_HEIGHT_PX * previewScale;
+const PREVIEW_SCALED_CONTENT_HEIGHT_PX =
+  PREVIEW_CONTENT_HEIGHT_PX * previewScale;
+const PREVIEW_SCALED_FOOTER_HEIGHT_PX = PREVIEW_FOOTER_HEIGHT_PX * previewScale;
 const viewerRef = useRef(null);
 const arrowsRef = useRef(null);
 const [viewerMinimized, setViewerMinimized] = useState(false);
 const [reportMinimized, setReportMinimized] = useState(false);
+//report tile
 //report tile
 // Auto-update report title based on modality + body part
 useEffect(() => {
@@ -534,118 +544,7 @@ useEffect(() => {
     }
   };
 }, []);
-const blocks = useMemo(() => {
-  const items = [];
-  items.push({ type: "sectionTitle", text: "History" });
-  htmlToBlocks(history).forEach((html, i) =>
-    items.push({ type: "html", html, section: "history", blockIndex: i, key: `h-${i}` })
-  );
 
-  items.push({ type: "sectionTitle", text: "Findings" });
-  htmlToBlocks(findings).forEach((html, i) =>
-    items.push({ type: "html", html, section: "findings", blockIndex: i, key: `f-${i}` })
-  );
-
-  if (showKeyImages) {
-    items.push({ type: "keyImages", images: keyImages.slice(), key: "ki" });
-  }
-
-  items.push({ type: "sectionTitle", text: "Conclusion" });
-  htmlToBlocks(conclusion).forEach((html, i) =>
-    items.push({ type: "html", html, section: "conclusion", blockIndex: i, key: `c-${i}` })
-  );
-
-  return items;
-}, [history, findings, conclusion, showKeyImages, keyImages]);
-
-useEffect(() => {
-  setTotalPages(Math.max(1, pages.length));
-}, [pages]);
-
-useLayoutEffect(() => {
-  if (headerRef.current) {
-    const px = headerRef.current.getBoundingClientRect().height || 0;
-    const mm = px / 3.78;
-    if (mm > 10 && Math.abs(mm - headerBlockMm) > 0.5) {
-      setHeaderBlockMm(mm);
-    }
-  }
-}, [reportTitle, study, headerBlockMm]);
-
-useLayoutEffect(() => {
-  if (firstBodyRef.current) {
-    const h = firstBodyRef.current.getBoundingClientRect().height || 0;
-    if (h > 0 && Math.abs(h - bodyPxFirst) > 1) {
-      setBodyPxFirst(h);
-    }
-  }
-  if (otherBodyRef.current) {
-    const h = otherBodyRef.current.getBoundingClientRect().height || 0;
-    if (h > 0 && Math.abs(h - bodyPxOther) > 1) {
-      setBodyPxOther(h);
-    }
-  }
-}, [headerBlockMm, bodyPxFirst, bodyPxOther]);
-
-useLayoutEffect(() => {
-  if (!measureRef.current) return;
-  const container = measureRef.current;
-  container.innerHTML = "";
-
-  const measureBlock = (block) => {
-    const el = document.createElement("div");
-    el.className = "page-block";
-    if (block.type === "sectionTitle") {
-      el.innerHTML = `<h3 style="font-size:12px;margin:0 0 8px;">${block.text}</h3>`;
-    } else if (block.type === "keyImages") {
-      const wrap = document.createElement("div");
-      wrap.className = "key-images ghost-key-images";
-      block.images.forEach(() => {
-        const box = document.createElement("div");
-        box.style.width = "120px";
-        box.style.height = "120px";
-        wrap.appendChild(box);
-      });
-      el.appendChild(wrap);
-    } else {
-      el.classList.add("ghost-editor");
-      el.innerHTML = block.html || "<div><br/></div>";
-    }
-    container.appendChild(el);
-    const h = el.getBoundingClientRect().height || el.offsetHeight || 0;
-    return { el, h };
-  };
-
-  const heights = blocks.map((b) => measureBlock(b).h);
-  const firstPx = bodyPxFirst || (firstPageBodyMm * 3.78);
-  const otherPx = bodyPxOther || ((otherPageBodyMm - OTHER_TOP_OFFSET_MM) * 3.78);
-
-  const newPages = [];
-  let current = [];
-  let remaining = firstPx;
-  let pageIndex = 0;
-
-  const PAGE_BUFFER_PX = 12; // keep page flow consistent with on-screen
-
-  heights.forEach((h, i) => {
-    const block = blocks[i];
-    const nextH = i + 1 < heights.length ? heights[i + 1] : 0;
-    const needsTogether = block?.type === "sectionTitle";
-    const required = needsTogether ? h + nextH : h;
-    const fit = required <= (remaining - PAGE_BUFFER_PX) || current.length === 0;
-    if (!fit) {
-      newPages.push(current);
-      current = [];
-      pageIndex += 1;
-      remaining = otherPx;
-    }
-    current.push(i);
-    remaining -= h;
-  });
-  if (current.length > 0) newPages.push(current);
-
-  setPages(newPages);
-}, [blocks, bodyPxFirst, bodyPxOther, firstPageBodyMm, otherPageBodyMm]);
 
 // template
 useEffect(() => {
@@ -690,18 +589,6 @@ const applyTemplate = (template) => {
   setShowTemplateMenu(false);
 };
 
-const replaceSectionBlock = (section, blockIndex, html) => {
-  const get = (s) => (s === "history" ? history : s === "findings" ? findings : conclusion);
-  const set = (s, v) => (s === "history" ? setHistory(v) : s === "findings" ? setFindings(v) : setConclusion(v));
-  const blocks = htmlToBlocks(get(section));
-  if (blockIndex < 0 || blockIndex >= blocks.length) {
-    set(section, html);
-    return;
-  }
-  blocks[blockIndex] = html;
-  set(section, blocks.join(""));
-};
-
 useEffect(() => {
   if (refDoctorRef.current && refDoctorRef.current.innerText !== study.ReferringPhysicianName) {
     refDoctorRef.current.innerText = study.ReferringPhysicianName || "";
@@ -720,6 +607,75 @@ useEffect(() => {
     approvedByRef.current.textContent = study.ApprovedBy || "";
   }
 }, [study.ApprovedBy]);
+
+useEffect(() => {
+  const syncPreviewHtml = () => {
+    setPreviewHtml(reportSheetRef.current?.innerHTML || "");
+  };
+  syncPreviewHtml();
+  const timer = setTimeout(syncPreviewHtml, 0);
+  return () => clearTimeout(timer);
+}, [
+  study,
+  history,
+  findings,
+  conclusion,
+  showKeyImages,
+  keyImages,
+  reportTitle,
+]);
+
+useEffect(() => {
+  if (!showPreviewPane) return;
+  const measureEl = previewMeasureRef.current;
+  if (!measureEl) return;
+
+  const updatePageCount = () => {
+    const computed = window.getComputedStyle(measureEl);
+    const trailingBottomPadding = parseFloat(computed.paddingBottom || "0") || 0;
+    const contentHeight = Math.max(
+      0,
+      (measureEl.scrollHeight || 0) - trailingBottomPadding
+    );
+    setPreviewContentHeight(contentHeight);
+    const rawPages = Math.max(1, Math.ceil(contentHeight / PREVIEW_CONTENT_HEIGHT_PX));
+    setPreviewPageCount(rawPages);
+  };
+
+  updatePageCount();
+  const timer = setTimeout(updatePageCount, 0);
+  window.addEventListener("resize", updatePageCount);
+  return () => {
+    clearTimeout(timer);
+    window.removeEventListener("resize", updatePageCount);
+  };
+}, [
+  previewHtml,
+  showPreviewPane,
+]);
+
+useEffect(() => {
+  if (!showPreviewPane) return;
+  const measureEl = previewMeasureRef.current;
+  const paneEl = previewPaneRef.current;
+  if (!measureEl || !paneEl) return;
+
+  const updateScale = () => {
+    const pageWidth = measureEl.getBoundingClientRect().width || 0;
+    const availableWidth = Math.max(0, paneEl.clientWidth - 26); // pane padding + border safety
+    if (!pageWidth || !availableWidth) return;
+    const nextScale = Math.min(1, Math.max(0.2, availableWidth / pageWidth));
+    setPreviewScale(nextScale);
+  };
+
+  updateScale();
+  const timer = setTimeout(updateScale, 0);
+  window.addEventListener("resize", updateScale);
+  return () => {
+    clearTimeout(timer);
+    window.removeEventListener("resize", updateScale);
+  };
+}, [previewHtml, showPreviewPane]);
 
   /* ===========================
         Load report and prefill
@@ -1001,9 +957,9 @@ useEffect(() => {
   };
 
   /* ============
-     Selection utilities
-     ... (Selection utility functions remain unchanged) ...
-     ============ */
+     Selection utilities
+     ... (Selection utility functions remain unchanged) ...
+     ============ */
   const saveSelection = () => {
     const sel = window.getSelection();
     if (!sel) return;
@@ -1029,8 +985,91 @@ useEffect(() => {
     }
   };
 
+  const syncActiveEditorContent = () => {
+    if (!activeEditorRef.current) return;
+    const editorType = activeEditorRef.current.dataset.editor;
+    if (editorType === "history") setHistory(activeEditorRef.current.innerHTML);
+    if (editorType === "findings") setFindings(activeEditorRef.current.innerHTML);
+    if (editorType === "conclusion") setConclusion(activeEditorRef.current.innerHTML);
+  };
+
+  const applyJustifyFullFallback = () => {
+    const refreshPreviewFromDom = () => {
+      setPreviewHtml(reportSheetRef.current?.innerHTML || "");
+    };
+
+    restoreSelection();
+    const selection = window.getSelection();
+    if (!selection || !selection.rangeCount) return;
+
+    const range = selection.getRangeAt(0);
+    const anchorEl =
+      selection.anchorNode?.nodeType === 1
+        ? selection.anchorNode
+        : selection.anchorNode?.parentElement;
+    const editor = anchorEl?.closest?.("[data-editor]") || activeEditorRef.current;
+    if (!editor) return;
+
+    const isBlock = (el) =>
+      !!el &&
+      el.nodeType === 1 &&
+      [
+        "P",
+        "DIV",
+        "LI",
+        "UL",
+        "OL",
+        "H1",
+        "H2",
+        "H3",
+        "H4",
+        "H5",
+        "H6",
+        "BLOCKQUOTE",
+        "PRE",
+      ].includes(el.tagName);
+
+    if (range.collapsed) {
+      let target = anchorEl;
+      while (target && target !== editor && !isBlock(target)) {
+        target = target.parentElement;
+      }
+      (target && target !== editor ? target : editor).style.textAlign = "justify";
+      saveSelection();
+      syncActiveEditorContent();
+      refreshPreviewFromDom();
+      return;
+    }
+
+    const blocks = [];
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_ELEMENT, null);
+    let node = walker.nextNode();
+    while (node) {
+      if (isBlock(node) && range.intersectsNode(node)) {
+        blocks.push(node);
+      }
+      node = walker.nextNode();
+    }
+
+    if (blocks.length === 0) {
+      editor.style.textAlign = "justify";
+    } else {
+      blocks.forEach((block) => {
+        block.style.textAlign = "justify";
+      });
+    }
+
+    saveSelection();
+    syncActiveEditorContent();
+    refreshPreviewFromDom();
+  };
+
   // exec with selection restore (works for foreColor etc)
   const exec = (cmd, val = null) => {
+    if (cmd === "justifyFull") {
+      applyJustifyFullFallback();
+      return;
+    }
     // try to restore selection first
     restoreSelection();
     // ensure styleWithCSS so color uses inline style
@@ -1044,19 +1083,6 @@ useEffect(() => {
     }
     // after exec, update savedRangeRef (so future ops keep correct range)
     saveSelection();
-    if (activeEditorRef.current) {
-      activeEditorRef.current.dispatchEvent(new Event("input", { bubbles: true }));
-    }
-  };
-
-  const syncActiveEditorToState = () => {
-    if (!activeEditorRef.current) return;
-    activeEditorRef.current.dispatchEvent(new Event("input", { bubbles: true }));
-  };
-
-  const handlePrint = () => {
-    syncActiveEditorToState();
-    window.requestAnimationFrame(() => window.print());
   };
 
   // toolbar definition
@@ -1069,8 +1095,8 @@ useEffect(() => {
   ];
 
   /* ================
-     Active editor handlers passed to RichEditor
-     ================ */
+     Active editor handlers passed to RichEditor
+     ================ */
  const handleEditorFocus = (domNode) => {
   activeEditorRef.current = domNode; // store actual DOM node
   saveSelection();                   // save cursor
@@ -1105,8 +1131,8 @@ const insertTextAtCursor = (text) => {
 };
 
   /* ====================
-     Color picker apply handler
-     ==================== */
+     Color picker apply handler
+     ==================== */
   const applyColor = (color) => {
     // restore selection and apply
     restoreSelection();
@@ -1130,17 +1156,6 @@ const insertTextAtCursor = (text) => {
     study.PatientAge,
     study.PatientSex
   );
-const getViewerWidth = () => {
-  if (viewerMinimized) return "10%";
-  if (reportMinimized) return "90%";
-  return "50%";
-};
-
-const getReportWidth = () => {
-  if (reportMinimized) return "10%";
-  if (viewerMinimized) return "90%";
-  return "50%";
-};
 
   const applyPixelFontSize = (size) => {
   restoreSelection();
@@ -1168,15 +1183,128 @@ const getReportWidth = () => {
   }
   saveSelection();
 };
+
+const renderPreviewSheet = (attachRef = false) => (
+  <div
+    className={`preview-sheet preview-sheet-clone ${attachRef ? "preview-sheet-measure" : ""}`}
+    ref={attachRef ? previewMeasureRef : null}
+    dangerouslySetInnerHTML={{ __html: previewHtml }}
+  />
+);
+const getViewerWidth = () => {
+  if (viewerMinimized) return "10%";
+  if (reportMinimized) return "90%";
+  return "50%";
+};
+
+const getReportWidth = () => {
+  if (reportMinimized) return "10%";
+  if (viewerMinimized) return "90%";
+  return "50%";
+};
+const isSplitMode = !viewerMinimized && !reportMinimized;
+
   return (
-    
-    <div className="split-layout" style={{ display: "flex", height: "100vh", position: "relative", fontFamily: "'Times New Roman', Times, serif" }}>
-    {/* Viewer Panel */}
-     <div
-  id="viewerPanel"
+  <div
+    className={`create-report-layout ${showPreviewPane ? "" : "preview-hidden"}`}
+    style={{ display: "flex", height: "100vh", position: "relative" }}
+  >
+    {showPreviewPane && (
+    <aside className="left-preview-pane" ref={previewPaneRef}>
+      <div className="preview-header">Print Preview</div>
+
+      {/* Hidden measurement copy */}
+      <div className="preview-hidden-measure">
+        {renderPreviewSheet(true)}
+      </div>
+
+      {Array.from({ length: previewPageCount })
+        .map((_, pageIndex) => pageIndex)
+        .filter((pageIndex) => {
+          const remainingHeight =
+            previewContentHeight -
+            pageIndex * PREVIEW_CONTENT_HEIGHT_PX;
+
+          if (pageIndex === 0) return true;
+          return remainingHeight > 2;
+        })
+        .map((pageIndex) => (
+          <div
+            className="preview-page-card"
+            key={`p-${pageIndex}`}
+          >
+            <div className="preview-page-label">
+              Page {pageIndex + 1}
+            </div>
+
+            <div
+              className="preview-page-box"
+              style={{
+                height: PREVIEW_SCALED_PAGE_HEIGHT_PX,
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden"
+              }}
+            >
+              {/* HEADER RESERVED SPACE */}
+              <div
+                className="preview-page-header"
+                style={{
+                  height: PREVIEW_SCALED_HEADER_HEIGHT_PX,
+                  flexShrink: 0
+                }}
+              />
+              {/* CONTENT WINDOW */}
+              <div
+                className="preview-page-content-window"
+                style={{
+                  height: PREVIEW_SCALED_CONTENT_HEIGHT_PX,
+                  overflow: "hidden",
+                  position: "relative"
+                }}
+              >
+                <div
+                  className="preview-page-shift"
+                  style={{
+                    transform: `scale(${previewScale})`,
+                    transformOrigin: "top left"
+                  }}
+                >
+                  <div
+                    className="preview-page-translate"
+                    style={{
+                      transform: `translateY(-${
+                        pageIndex * PREVIEW_CONTENT_HEIGHT_PX
+                      }px)`,
+                      transformOrigin: "top left"
+                    }}
+                  >
+                    {renderPreviewSheet(false)}
+                  </div>
+                </div>
+              </div>
+
+              {/* FOOTER */}
+              {PREVIEW_SCALED_FOOTER_HEIGHT_PX > 0 && (
+                <div
+                  className="preview-page-footer"
+                  style={{
+                    height: PREVIEW_SCALED_FOOTER_HEIGHT_PX,
+                    flexShrink: 0
+                  }}
+                />
+              )}
+            </div>
+          </div>
+        ))}
+    </aside>
+    )}
+    <div
+  id="createViewerPanel"
   ref={viewerRef}
   style={{
     width: getViewerWidth(),
+    flex: `0 0 ${getViewerWidth()}`,
     transition: "width 0.3s ease",
     height: "100%",
     borderRight: "2px solid #ccc",
@@ -1196,7 +1324,7 @@ const getReportWidth = () => {
       </div>
       {/* Middle controls (arrows) - left here but you told you moved focus to KeyImages so can hide or keep */}
      <div
-  className="panel-arrows no-print"
+  className="create-report-arrows no-print"
 
   ref={arrowsRef}
   style={{
@@ -1218,16 +1346,30 @@ const getReportWidth = () => {
 {/* Report Panel */}
 
 <div
-  id="reportPanel"
+  ref={reportRef}
+  id="createReportPanel"
+  className="report-work-area"
   style={{
     width: getReportWidth(),
-    padding: 12,
+    flex: `0 0 ${getReportWidth()}`,
+    padding: 0,
     boxSizing: "border-box",
     height: "100%",
     overflowY: "auto",
+    overflowX: "hidden",
     position: "relative", // needed for overlay
   }}
 >
+  {/* ====================== */}
+  {/* PRINT HEADER */}
+  {/* ====================== */}
+  <div className="print-header" style={{ display: "none", textAlign: "center", fontWeight: "bold", fontSize: 18, marginBottom: 12 }}>
+    Hospital Name
+  </div>
+
+  
+
+  
 {/* Addendum Section */}
 {/* ====================== */}
 {isAddendum && (
@@ -1297,40 +1439,59 @@ const getReportWidth = () => {
   className="report-toolbar-wrapper" 
   style={{
     display: "flex", 
-    alignItems: "center", 
-    justifyContent: "space-between", 
-    gap: "8px", 
-    padding: "4px 12px", 
+    flexDirection: isSplitMode ? "column" : "row",
+    alignItems: isSplitMode ? "stretch" : "center",
+    justifyContent: isSplitMode ? "flex-start" : "space-between",
+    gap: isSplitMode ? "4px" : "8px",
+    padding: isSplitMode ? "4px 12px 8px 12px" : "3px 12px",
     marginBottom: "10px", 
     backgroundColor: "#587dbc", 
     borderRadius: "25px", // Professional round-shape rectangle
     border: "1px solid #d1d9e0", // Subtle highlight border
     boxShadow: "0 2px 8px rgba(0,0,0,0.06)", // Fit-to-text shadow
-    height: "42px", // Fixed height to prevent shaking
+    height: "auto",
+    minHeight: isSplitMode ? "78px" : "42px",
     width: "100%",
-    boxSizing: "border-box"
+    boxSizing: "border-box",
+    overflow: "visible"
   }}
 >
   {/* LEFT: EDITING TOOLS */}
-  <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: "6px",
+      flexShrink: 1,
+      flexWrap: isSplitMode ? "wrap" : "nowrap",
+      flex: "0 0 auto",
+      minWidth: 0,
+      width: isSplitMode ? "100%" : "auto",
+      overflowX: "visible",
+      rowGap: isSplitMode ? "6px" : 0
+    }}
+  >
     
-    <select 
-  title="Font Size" 
-  onChange={(e) => applyPixelFontSize(e.target.value)} 
-  defaultValue="14"
-  style={{ 
-    height: "28px", 
-    width: "50px", 
-    borderRadius: "15px", 
-    border: "1px solid #ccc", 
-    paddingLeft: "4px", 
-    cursor: "pointer" 
-  }}
->
-  {[8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72].map(size => (
-    <option key={size} value={size}>{size}</option>
-  ))}
-</select>
+   {/* 🔢 Font Size: 8-72px (Word Style) */}
+<div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-start" }}>
+  <select
+    title="Font Size"
+    onChange={(e) => applyPixelFontSize(e.target.value)}
+    defaultValue="14"
+    style={{
+      height: "28px",
+      width: "50px",
+      borderRadius: "15px",
+      border: "1px solid #ccc",
+      paddingLeft: "4px",
+      cursor: "pointer"
+    }}
+  >
+    {[8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72].map(size => (
+      <option key={size} value={size}>{size}</option>
+    ))}
+  </select>
+</div>
 
     {/* 🔤 Small Font Family */}
     <select 
@@ -1377,6 +1538,38 @@ const getReportWidth = () => {
       <option value="justifyRight">Right</option>
       <option value="justifyFull">Justify</option>
     </select>
+
+<select
+  title="Change Case"
+  onChange={(e) => {
+    const val = e.target.value;
+    if (!val) return;
+    changeCase(val); // ✅ call your working function
+    e.target.value = "";
+  }}
+  style={{ height: "28px", width: "90px", borderRadius: "15px", border: "1px solid #ccc", cursor: "pointer", fontSize: "11px" }}
+>
+  <option value="">Case</option>
+  <option value="uppercase">UPPERCASE</option>
+  <option value="lowercase">lowercase</option>
+  <option value="capitalize">Capitalize</option>
+</select>
+<select
+  title="Line Spacing"
+  onChange={(e) => {
+    const spacing = e.target.value;
+    if (!spacing) return;
+    setLineSpacing(spacing); // ✅ call your working function
+    e.target.value = "";
+  }}
+  style={{ height: "28px", width: "90px", borderRadius: "15px", border: "1px solid #ccc", cursor: "pointer", fontSize: "11px" }}
+>
+  <option value="">Line Spacing</option>
+  <option value="1">1.0</option>
+  <option value="1.15">1.15</option>
+  <option value="1.5">1.5</option>
+  <option value="2">2.0</option>
+</select>
 
     {/* 🎨 Color Palette */}
     <div style={{ position: "relative" }}>
@@ -1435,10 +1628,31 @@ const getReportWidth = () => {
     >
       Key Images
     </button>
+    <button
+      type="button"
+      onClick={() => navigate("/pacspage")}
+      style={{ display: isSplitMode ? "inline-flex" : "none", height: "28px", width: "28px", borderRadius: "50%", border: "none", background: "#343a40", color: "#fff", cursor: "pointer", fontWeight: "bold", alignItems: "center", justifyContent: "center" }}
+    >
+      X
+    </button>
   </div>
 
   {/* RIGHT: VOICE & ACTIONS */}
-  <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: "10px",
+      flexShrink: 0,
+      flex: "0 0 auto",
+      width: isSplitMode ? "100%" : "auto",
+      justifyContent: "flex-start",
+      backgroundColor: "transparent",
+      borderTop: "none",
+      borderRadius: 0,
+      padding: isSplitMode ? "2px 0 0 0" : 0
+    }}
+  >
     
     {/* 🎙 Dictation (Icon Only) */}
     <button
@@ -1446,20 +1660,66 @@ const getReportWidth = () => {
       onClick={() => {
         const rec = recognitionRef.current;
         if (!rec) return;
-        listening ? rec.stop() : rec.start();
-        setListening(!listening);
+        // Guard against InvalidStateError when start() is called twice.
+        if (recognitionRunningRef.current || listening) {
+          try {
+            rec.stop();
+          } catch (err) {
+            console.warn("SpeechRecognition stop ignored:", err);
+          }
+          return;
+        }
+
+        try {
+          rec.start();
+        } catch (err) {
+          // Some browsers throw if already started; keep UI stable.
+          console.warn("SpeechRecognition start ignored:", err);
+        }
       }}
       style={{
         height: "30px", width: "30px", borderRadius: "50%", border: "none",
         background: listening ? "#dc3545" : "#f1f3f5",
         color: listening ? "#fff" : "#444",
-        cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center"
+        cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+        marginLeft: isSplitMode ? "2px" : 0
       }}
     >
       {listening ? "⏹" : "🎙️"}
     </button>
 
-    <div style={{ display: "flex", gap: "6px" }}>
+    <div style={{ display: "flex", gap: "6px", flexWrap: "nowrap", marginLeft: "6px" }}>
+      <button
+        type="button"
+        onClick={() => setShowPreviewPane((prev) => !prev)}
+        style={{
+          padding: "4px 12px",
+          borderRadius: "15px",
+          border: "none",
+          cursor: "pointer",
+          background: "#6c757d",
+          color: "#fff",
+          fontWeight: "bold",
+          fontSize: "11px",
+        }}
+      >
+        {showPreviewPane ? "PREVIEW OFF" : "PREVIEW ON"}
+      </button>
+      <button
+        onClick={() => window.print()}
+        style={{
+          padding: "4px 12px",
+          borderRadius: "15px",
+          border: "none",
+          cursor: "pointer",
+          background: "#0d6efd",
+          color: "#fff",
+          fontWeight: "bold",
+          fontSize: "11px",
+        }}
+      >
+        PRINT
+      </button>
       {!isAddendum ? (
         <>
           {/* 🟡 Highlighted Draft */}
@@ -1499,7 +1759,7 @@ const getReportWidth = () => {
       {/* ✕ Close */}
       <button 
         onClick={() => navigate("/pacspage")} 
-        style={{ height: "28px", width: "28px", borderRadius: "50%", border: "none", background: "#343a40", color: "#fff", cursor: "pointer", fontWeight: "bold" }}
+        style={{ display: isSplitMode ? "none" : "inline-flex", height: "28px", width: "28px", borderRadius: "50%", border: "none", background: "#343a40", color: "#fff", cursor: "pointer", fontWeight: "bold", alignItems: "center", justifyContent: "center" }}
       >
         ✕
       </button>
@@ -1507,282 +1767,310 @@ const getReportWidth = () => {
   </div>
 
         </div>
-{/* ===================== */}
-{/* A4 CONTAINER */}
-{/* ===================== */}
-<div
-  className="a4-container"
-  style={{
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    padding: "30px 0",
-    background: "#e6e9ebd6", // Darker background to simulate PDF viewer
-    minHeight: "100vh",
-    gap: "20px"
-  }}
->
-  {/* Hidden measurement container */}
-  <div
-    ref={measureRef}
-    className="page-measure"
-    style={{
-      position: "absolute",
-      top: "-9999px",
-      width: `calc(210mm - ${PAGE_SIDE_PADDING_MM * 2}mm)`,
-      visibility: "hidden",
-      pointerEvents: "none",
-      boxSizing: "border-box",
-    }}
-  />
 
-  {/* RENDERED A4 PAGES */}
-  {Array.from({ length: totalPages }).map((_, index) => (
-    <div
-      key={index}
-      className="a4-page"
-      ref={index === 0 ? reportRef : null} // Keep ref for page 1
-      style={{
-        width: "210mm",
-        height: "297mm",
-        background: "#fff",
-        padding: `${HEADER_FOOTER_MM}mm ${PAGE_SIDE_PADDING_MM}mm`,
-        boxShadow: "0 0 12px rgba(0,0,0,0.15)",
-        position: "relative",
-        overflow: "hidden", // Important: Keeps content inside current sheet
-        boxSizing: "border-box",
-      }}
-    >
-      {index === 0 && (
+
         <div
-          ref={headerRef}
-          className="page-header"
-          style={{ minHeight: `${headerBlockMm}mm` }}
-        >
-          <>
-            <table className="data-table" style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12 }}>
-              <tbody>
-                <tr>
-                  <td style={{ padding: 6, border: "1px solid #000" }}>
-                    <strong>Patient Name:</strong> {cleanPatientName(patientName)}
-                  </td>
-                  <td style={{ padding: 6, border: "1px solid #000" }}>
-                    <strong>Age/Gender:</strong> {age}/{gender}
-                  </td>
-                  <td style={{ padding: 6, border: "1px solid #000" }}>
-                    <strong>Patient ID:</strong> {study.PatientID}
-                  </td>
-                </tr>
-                <tr>
-                  <td style={{ padding: 6, border: "1px solid #000" }}>
-                    <strong>Study Date/Time:</strong> {formatDicomDateTime(study.StudyDate, study.StudyTime)}
-                  </td>
-                  <td style={{ padding: 6, border: "1px solid #000" }}>
-                    <strong>Ref. Doctor:</strong>{" "}
-                    {editRefDoctor ? (
-                      <input
-                        autoFocus
-                        value={study.ReferringPhysicianName || ""}
-                        onChange={(e) => setStudy((p) => ({ ...p, ReferringPhysicianName: e.target.value }))}
-                        onBlur={() => setEditRefDoctor(false)}
-                        onKeyDown={(e) => e.key === "Enter" && setEditRefDoctor(false)}
-                        style={{ width: "70%" }}
-                      />
-                    ) : (
-                      <span onClick={() => setEditRefDoctor(true)} style={{ cursor: 'pointer' }}>
-                        {study.ReferringPhysicianName || "—"}
-                      </span>
-                    )}
-                  </td>
-                  <td style={{ padding: 6, border: "1px solid #000" }}>
-                    <strong>Accession No:</strong> {study.AccessionNumber}
-                  </td>
-                </tr>
-                <tr>
-                  <td style={{ padding: 6, border: "1px solid #000" }}>
-                    <strong>Reported Date/Time:</strong> {formatDateTime(new Date())}
-                  </td>
-                  <td style={{ padding: 6, border: "1px solid #000" }}>
-                    <strong>Modality:</strong> {study.Modality}
-                  </td>
-                  <td style={{ padding: 6, border: "1px solid #000" }}>
-                    <strong>Body Part:</strong>{" "}
-                    {editBodyPart ? (
-                      <input
-                        autoFocus
-                        value={study.BodyPartExamined || ""}
-                        onChange={(e) => setStudy((p) => ({ ...p, BodyPartExamined: e.target.value }))}
-                        onBlur={() => setEditBodyPart(false)}
-                        onKeyDown={(e) => e.key === "Enter" && setEditBodyPart(false)}
-                        style={{ width: "70%" }}
-                      />
-                    ) : (
-                      <span onClick={() => setEditBodyPart(true)} style={{ cursor: 'pointer' }}>
-                        {study.BodyPartExamined || "—"}
-                      </span>
-                    )}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-
-            <ReportTitle
-  value={reportTitle}
-  onChange={setReportTitle}
-  onManualEdit={() => setIsManualTitle(true)}
-  className="report-title no-print-border"
-/>
-
-          </>
-        </div>
-      )}
-
-      <div
-        ref={index === 0 ? firstBodyRef : (index === 1 ? otherBodyRef : null)}
-        style={{
-          height: index === 0
-            ? (bodyPxFirst ? `${bodyPxFirst}px` : `${firstPageBodyMm}mm`)
-            : (bodyPxOther ? `${bodyPxOther}px` : `${otherPageBodyMm}mm`),
-          overflow: "hidden",
-        }}
-      >
-        <div
-          className="page-flow"
+          className="report-sheet"
+          ref={reportSheetRef}
           style={{
-            position: "relative",
-            paddingTop: index === 0 ? 0 : `${OTHER_TOP_OFFSET_MM}mm`,
+            width: "210mm",
+            minHeight: "297mm",
+            height: "auto",
+            background: "#fff",
+            border: "1px solid #c7d0dc",
+            padding: "30mm 15mm 20mm 15mm",
+            boxSizing: "border-box",
+            display: "flow-root",
           }}
         >
-          {(pages[index] || []).map((blockIdx) => {
-            const block = blocks[blockIdx];
-            if (!block) return null;
-            if (block.type === "sectionTitle") {
-              return (
-                <section key={`t-${blockIdx}`} className="section" style={{ marginBottom: 20 }}>
-                  <h3 style={{ fontSize: 12, marginBottom: 8 }}>{block.text}</h3>
-                </section>
-              );
-            }
-            if (block.type === "keyImages") {
-              return (
-                <section key={`k-${blockIdx}`} className="section" style={{ marginBottom: 20 }}>
-                  <h3 style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12 }}>
-                    Key Images
-                    <button
-                      className="no-print"
-                      style={{ background: "transparent", border: "none", fontSize: 12, cursor: "pointer", color: "#555" }}
-                      onClick={(e) => { e.stopPropagation(); setShowKeyImages(false); }}
-                    >
-                      ✕
-                    </button>
-                  </h3>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    style={{ display: "none" }}
-                    onChange={(e) => handleFiles(e.target.files)}
-                  />
-                  <div
-                    className="key-images"
-                    onClick={() => fileInputRef.current?.click()}
-                    onDrop={(e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
-                    onDragOver={(e) => e.preventDefault()}
-                    style={{
-                      border: "2px dashed #aaa",
-                      minHeight: 120,
-                      padding: 10,
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: 8,
-                    }}
-                  >
-                    {keyImages.length === 0 && <div style={{ color: "#666", fontSize: 11 }}>Click to add images or drag & drop</div>}
-                    {keyImages.map((src, i) => (
-                      <div key={i} style={{ position: "relative", width: 120, height: 120 }}>
-                        <img src={src} alt={`ki-${i}`} style={{ width: "100%", height: "100%", objectFit: "contain", border: "1px solid #ddd", borderRadius: 6 }} />
-                        <button
-                          className="remove-btn no-print"
-                          onClick={(e) => { e.stopPropagation(); setKeyImages((prev) => prev.filter((_, idx) => idx !== i)); }}
-                          style={{ position: "absolute", top: 4, right: 4, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "50%", width: 22, height: 22, cursor: "pointer" }}
-                        >✕</button>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              );
-            }
+        {/* Patient table */}
+        <table className="data-table print-keep-together" style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12 }}>
+          <tbody>
+            <tr>
+              <td style={{ padding: 6, border: "1px solid #000" }}>
+                <strong>Patient Name:</strong> {cleanPatientName(patientName)}
+              </td>
+              <td style={{ padding: 6, border: "1px solid #000" }}>
+                <strong>Age/Gender:</strong> {age}/{gender}
+              </td>
+              <td style={{ padding: 6, border: "1px solid #000" }}>
+                <strong>Patient ID:</strong> {study.PatientID}
+              </td>
+            </tr>
 
-            const placeholderText =
-              block.section === "history"
-                ? "Enter history..."
-                : block.section === "findings"
-                ? "Enter findings..."
-                : "Enter conclusion...";
-
-            return (
-              <section key={`b-${blockIdx}`} className="section" style={{ marginBottom: 20 }}>
-                <RichEditor
-                  value={block.html}
-                  onChange={(html) => replaceSectionBlock(block.section, block.blockIndex, html)}
-                  onFocus={handleEditorFocus}
-                  onSelectionChange={handleEditorSelectionChange}
-                  placeholder={block.blockIndex === 0 ? placeholderText : ""}
-                  disabled={isAddendum && !addendumConfirmed}
-                  editorKey={block.section}
-                  compact
-                />
-              </section>
-            );
-          })}
-
-          {/* Footer (Only on the Last Page) */}
-          {index === totalPages - 1 && (
-            <footer className="footer-row" style={{ display: "flex", justifyContent: "space-between", marginTop: 30 }}>
-              <div style={{ fontWeight: "bold", fontSize: 11 }}>
-                Reported By:
-                <DigitalSignatureField
-                  type="reported"
-                  value={study.ReportedBy}
-                  onSelect={(data) => setStudy((prev) => ({ ...prev, ReportedBy: data }))}
-                />
-              </div>
-              <div style={{ fontWeight: "bold", fontSize: 11 }}>
-                Approved By:
-                <DigitalSignatureField
-                  type="approved"
-                  value={study.ApprovedBy}
-                  onSelect={(data) => setStudy((prev) => ({ ...prev, ApprovedBy: data }))}
-                />
-              </div>
-            </footer>
-          )}
-        </div>
-      </div>
-
-      {/* Page Number (Bottom Center) */}
-      <div style={{ position: "absolute", bottom: `${Math.max(4, HEADER_FOOTER_MM - PAGE_NUMBER_OFFSET_MM)}mm`, left: 0, right: 0, textAlign: "center", fontSize: "10px", color: "#999" }}>
-        Page {index + 1} of {totalPages}
-      </div>
-    </div>
-  ))}
-
-  {/* Toolbar Buttons (Bottom) */}
-  <div className="buttons toolbar no-print" style={{ marginTop: 12 }}>
-    <button 
-      onClick={handlePrint} 
-      style={{ padding: "8px 20px", background: "#007bff", color: "#fff", border: "none", borderRadius: "4px", cursor: "pointer" }}
+            <tr>
+              <td style={{ padding: 6, border: "1px solid #000" }}>
+                <strong>Study Date/Time:</strong>{" "}
+                {formatDicomDateTime(study.StudyDate, study.StudyTime)}
+              </td>
+      <td style={{ padding: 6, border: "1px solid #000" }}>
+  <strong>Ref. Doctor:</strong>{" "}
+  {editRefDoctor ? (
+    <input
+      autoFocus
+      value={study.ReferringPhysicianName || ""}
+      onChange={(e) =>
+        setStudy((p) => ({ ...p, ReferringPhysicianName: e.target.value }))
+      }
+      onBlur={() => setEditRefDoctor(false)}
+      onKeyDown={(e) => e.key === "Enter" && setEditRefDoctor(false)}
+      style={{ width: "70%" }}
+    />
+  ) : (
+    <span
+      onClick={() => setEditRefDoctor(true)}
+      
     >
-      Print Final Report
+      {study.ReferringPhysicianName || "—"}
+    </span>
+  )}
+</td>
+
+
+              <td style={{ padding: 6, border: "1px solid #000" }}>
+                <strong>Accession No:</strong>{" "}
+                {editAccession ? (
+                  <input
+                    autoFocus
+                    value={study.AccessionNumber || ""}
+                    onChange={(e) =>
+                      setStudy((p) => ({ ...p, AccessionNumber: e.target.value }))
+                    }
+                    onBlur={() => setEditAccession(false)}
+                    onKeyDown={(e) => e.key === "Enter" && setEditAccession(false)}
+                    style={{ width: "70%" }}
+                  />
+                ) : (
+                  <span onClick={() => setEditAccession(true)}>
+                    {study.AccessionNumber || "-"}
+                  </span>
+                )}
+              </td>
+            </tr>
+
+            <tr>
+              <td style={{ padding: 6, border: "1px solid #000" }}>
+                <strong>Reported Date/Time:</strong> {formatDateTime(new Date())}
+              </td>
+              <td style={{ padding: 6, border: "1px solid #000" }}>
+                <strong>Modality:</strong> {study.Modality}
+              </td>
+             <td style={{ padding: 6, border: "1px solid #000" }}>
+  <strong>Body Part:</strong>{" "}
+  {editBodyPart ? (
+    <input
+      autoFocus
+      value={study.BodyPartExamined || ""}
+      onChange={(e) =>
+        setStudy((p) => ({ ...p, BodyPartExamined: e.target.value }))
+      }
+      onBlur={() => setEditBodyPart(false)}
+      onKeyDown={(e) => e.key === "Enter" && setEditBodyPart(false)}
+      style={{ width: "70%" }}
+    />
+  ) : (
+    <span
+      onClick={() => setEditBodyPart(true)}
+      
+    >
+      {study.BodyPartExamined || "—"}
+    </span>
+  )}
+</td>
+            </tr>
+          </tbody>
+        </table>
+
+       <div
+         className="report-title-inline"
+         contentEditable
+         suppressContentEditableWarning
+         onBlur={(e) => {
+           setReportTitle(e.currentTarget.innerText);
+           setIsManualTitle(true);
+         }}
+       >
+         {reportTitle}
+       </div>
+
+
+
+
+        {/* History */}
+        <section className="section" style={{ marginBottom: 20 }}>
+          <h3 style={{ fontSize: 12, marginBottom: 8 }}>History</h3>
+         <RichEditor
+  value={history}
+  onChange={setHistory}
+  onFocus={handleEditorFocus}
+  onSelectionChange={handleEditorSelectionChange}
+  placeholder="Enter history..."
+  disabled={isAddendum && !addendumConfirmed}
+  editorKey="history" 
+/>
+
+        </section>
+
+        {/* Findings */}
+       <section className="section" style={{ marginBottom: 20 }}>
+  <h3 style={{ fontSize: 12, marginBottom: 8 }}>Findings</h3>
+  <RichEditor
+    value={findings}
+    onChange={setFindings}
+    onFocus={handleEditorFocus}
+    onSelectionChange={handleEditorSelectionChange}
+    placeholder="Enter findings..."
+    disabled={isAddendum && !addendumConfirmed}
+   editorKey="findings"
+  />
+</section>
+
+
+        {/* Key Images */}
+        {showKeyImages && (
+          <section className="section section-key-images" style={{ marginBottom: 20 }}>
+            <h3 style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              Key Images
+              <button
+                style={{ background: "transparent", border: "none", fontSize: 12, cursor: "pointer", color: "#555" }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowKeyImages(false);
+                  // keep current images or clear them depending on desired behaviour
+                }}
+              >
+                ✕
+              </button>
+            </h3>
+
+            {/* hidden input (will open when container clicked or "Key Images" clicked) */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              style={{ display: "none" }}
+              onChange={(e) => handleFiles(e.target.files)}
+            />
+
+            <div
+              className="key-images"
+              onClick={() => fileInputRef.current?.click()}
+              onDrop={(e) => {
+                e.preventDefault();
+                handleFiles(e.dataTransfer.files);
+              }}
+              onDragOver={(e) => e.preventDefault()}
+              style={{
+                border: "none",
+                minHeight: 120,
+                padding: 10,
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+                alignItems: "flex-start",
+              }}
+            >
+              {keyImages.length === 0 && <div style={{ color: "#666" }}>Click to add images or drag & drop</div>}
+           {keyImages.map((src, i) => (
+  <div
+    key={i}
+    className="key-image-item"
+    style={{ position: "relative", width: 120, height: 120 }}
+  >
+   <img
+  src={src}
+  alt={`ki-${i}`}
+  style={{
+    width: "100%",
+    height: "100%",
+    objectFit: "contain",
+    border: "none",
+    borderRadius: 6,
+  }}
+/>
+
+    <button
+      className="remove-btn"
+      onClick={(e) => {
+        e.stopPropagation();
+        setKeyImages((prev) => prev.filter((_, idx) => idx !== i));
+      }}
+      style={{
+        position: "absolute",
+        top: 4,
+        right: 4,
+        background: "rgba(0,0,0,0.6)",
+        color: "#fff",
+        border: "none",
+        borderRadius: "50%",
+        width: 22,
+        height: 22,
+        cursor: "pointer",
+      }}
+    >
+      ✕
     </button>
   </div>
-</div>
-    </div>
-</div>
+))}
 
+            </div>
+          </section>
+        )}
+
+        {/* Conclusion */}
+        <section className="section" style={{ marginBottom: 20 }}>
+          <h3 style={{ fontSize: 12, marginBottom: 8 }}>Conclusion</h3>
+          <RichEditor
+  value={conclusion}
+  onChange={setConclusion}
+  onFocus={handleEditorFocus}
+  onSelectionChange={handleEditorSelectionChange}
+  placeholder="Enter conclusion..."
+  disabled={isAddendum && !addendumConfirmed}
+ editorKey="conclusion"
+/>
+        </section>
+
+   {/* ====================== */}
+{/* Footer */}
+{/* ====================== */}
+<footer
+  className="footer-row print-keep-together"
+  style={{ display: "flex", justifyContent: "space-between", marginTop: 30 }}
+>
+  <div style={{ fontWeight: "bold", fontSize: 11 }}>
+    Reported By:
+    <DigitalSignatureField
+  type="reported"
+  value={study.ReportedBy}
+  onSelect={(data) =>
+    setStudy((prev) => ({ ...prev, ReportedBy: data }))
+  }
+/>
+  </div>
+
+  <div style={{ fontWeight: "bold", fontSize: 11 }}>
+    Approved By:
+    <DigitalSignatureField
+  type="approved"
+  value={study.ApprovedBy}
+  onSelect={(data) =>
+    setStudy((prev) => ({ ...prev, ApprovedBy: data }))
+  }
+/>
+  </div>
+</footer>
+        </div>
+      </div>
+  {/* ====================== */}
+  {/* PRINT FOOTER */}
+  {/* ====================== */}
+  <div className="print-footer" style={{ display: "none", textAlign: "center", fontSize: 12, marginTop: 20 }}>
+    123 Main Street, City, State, ZIP | Phone: 123-456-7890
+  </div>
+  <div className="print-page-number" style={{ display: "none" }} />
+    </div>
     
   );
 }
-
-

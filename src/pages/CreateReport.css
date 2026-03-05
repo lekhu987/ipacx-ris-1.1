@@ -1,11 +1,11 @@
 
-.split-layout {
+.create-report-layout {
   min-height: 100vh;
   font-family: "Times New Roman", Times, serif;
   color: #000;
 }
 
-.panel-arrows {
+.create-report-arrows {
   position: absolute;
   top: 50%;
              /* stick outside viewer panel */
@@ -103,7 +103,7 @@
 }
 
 
-.panel-arrows .arrow {
+.create-report-arrows .arrow {
   pointer-events: all; /* enable clicks */
   font-size: 8px;
   padding: 4px 4px;
@@ -113,10 +113,10 @@
   border-radius: 2px;
   line-height: 0.8;
 }
-.split-layout .panel-arrows {
+.create-report-layout .create-report-arrows {
   transition: top 0.2s, left 0.2s;
 }
-#reportPanel {
+#createReportPanel {
   width: 100%;
   padding: 6px 12px;
   box-sizing: border-box;
@@ -124,7 +124,7 @@
 
 
 /* RIGHT — Report Panel */
-#reportPanel {
+#createReportPanel {
   width: 100%;
   height: 100%;
   overflow-y: auto;
@@ -132,7 +132,7 @@
   box-sizing: border-box;
   transition: width 0.18s ease;
 }
-#reportPanel.expanded {
+#createReportPanel.expanded {
   width: 0;
   overflow: hidden;
   padding: 0;
@@ -180,15 +180,15 @@
   margin-bottom: 0 !important;
 }
 
-#reportPanel .report-toolbar-wrapper {
+#createReportPanel .report-toolbar-wrapper {
   position: sticky;
   top: 0;
   z-index: 800;
 }
 
-#reportPanel [data-editor="history"],
-#reportPanel [data-editor="findings"],
-#reportPanel [data-editor="conclusion"] {
+#createReportPanel [data-editor="history"],
+#createReportPanel [data-editor="findings"],
+#createReportPanel [data-editor="conclusion"] {
   border: none !important;
   outline: none !important;
   box-shadow: none !important;
@@ -197,7 +197,7 @@
   line-height: 1.4;
 }
 
-#reportPanel .ghost-editor {
+#createReportPanel .ghost-editor {
   min-height: 100px;
   padding: 8px;
   box-sizing: border-box;
@@ -206,30 +206,30 @@
   line-height: 1.4;
 }
 
-#reportPanel .ghost-key-images {
+#createReportPanel .ghost-key-images {
   min-height: 120px;
 }
 
-#reportPanel .page-flow {
+#createReportPanel .page-flow {
   display: flow-root;
   padding-top: 0.1px; /* prevent top margin collapse on new pages */
   box-sizing: border-box;
 }
 
-#reportPanel .page-header {
+#createReportPanel .page-header {
   box-sizing: border-box;
 }
 
-#reportPanel .page-measure {
+#createReportPanel .page-measure {
   line-height: 1.4;
 }
 
-#reportPanel .page-measure p,
-#reportPanel .page-measure div {
+#createReportPanel .page-measure p,
+#createReportPanel .page-measure div {
   margin: 0;
 }
 
-#reportPanel .key-images {
+#createReportPanel .key-images {
   border: none !important;
 }
 
@@ -393,7 +393,7 @@
   color: #fff;
   border-radius: 4px;
 }
-#reportPanel,
+#createReportPanel,
 .section div,
 [contenteditable] {
   direction: ltr !important;
@@ -423,7 +423,7 @@
   }
 
   /* Hide UI */
-  #viewerPanel,
+  #createViewerPanel,
   iframe,
   .top-row,
   .editor-toolbar,
@@ -433,7 +433,7 @@
     display: none !important;
   }
 
-  #reportPanel {
+  #createReportPanel {
     display: block !important;
     width: 100% !important;
     margin: 0 !important;
@@ -459,21 +459,21 @@
     transform: none !important;
   }
 
-  #reportPanel .page-flow {
+  #createReportPanel .page-flow {
     font-family: "Times New Roman", Times, serif !important;
     font-size: 14px !important;
     line-height: 1.5 !important;
   }
 
-  #reportPanel .page-flow p,
-  #reportPanel .page-flow div {
+  #createReportPanel .page-flow p,
+  #createReportPanel .page-flow div {
     text-align: justify !important;
     text-justify: inter-word !important;
   }
 
-  #reportPanel .page-flow h1,
-  #reportPanel .page-flow h2,
-  #reportPanel .page-flow h3 {
+  #createReportPanel .page-flow h1,
+  #createReportPanel .page-flow h2,
+  #createReportPanel .page-flow h3 {
     text-align: left !important;
   }
 
@@ -493,7 +493,7 @@
 
   /* Hide arrows completely */
   /* Force hide arrows in print */
-.split-layout .panel-arrows {
+.create-report-layout .create-report-arrows {
   display: none !important;
   visibility: hidden !important;
   opacity: 0 !important;
@@ -502,7 +502,7 @@
   overflow: hidden !important;
   position: absolute !important;
 }
-body .panel-arrows {
+body .create-report-arrows {
   display: none !important;
 }
  .no-print {
@@ -523,7 +523,7 @@ body .panel-arrows {
     border: none !important;
   }
    /* REMOVE REPORT TITLE BORDER COMPLETELY */
-  #reportPanel .report-title,
+  #createReportPanel .report-title,
   .a4-page .report-title {
     border: none !important;
     outline: none !important;
@@ -532,7 +532,7 @@ body .panel-arrows {
     background: transparent !important;
   }
 
-  #reportPanel .report-title:focus {
+  #createReportPanel .report-title:focus {
     border: none !important;
     outline: none !important;
   }
