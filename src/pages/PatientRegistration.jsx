@@ -45,7 +45,7 @@ const STEPS = [
   { id: 6, title: "Consent" },
 ];
 
-export default function PatientRegistration({ onClose, onSave }) {
+export default function PatientRegistration({ onClose, onSave, initialData = null }) {
   const [step, setStep] = useState(1);
   const canvasRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
@@ -96,6 +96,8 @@ export default function PatientRegistration({ onClose, onSave }) {
         current_medications: "",
         medical_history: "",
         isPregnant: false, // Female only
+        isFormFLocked: false,
+        husband_name: "",
         menstrual_status: "", // e.g. Regular, Irregular, Menopause
         lmp_date: "", // Female only
         edd: "", // Calculated
@@ -103,6 +105,7 @@ export default function PatientRegistration({ onClose, onSave }) {
         creatinine_level: "",
         contrast_safety_flag: true,
         modalities: [], // e.g. ["CT", "MRI"]
+        study_type: "",
 
         // Workflow
         patient_type: "OPD",
@@ -124,6 +127,111 @@ export default function PatientRegistration({ onClose, onSave }) {
         digital_signature: "",
         indication_for_scan: "",
     });
+
+    useEffect(() => {
+        if (!initialData) return;
+        const pick = (...vals) => vals.find((v) => v !== undefined && v !== null && String(v).trim() !== "");
+        const isNumericOnly = (v) => /^\d+$/.test(String(v || "").trim());
+        const fullName = pick(initialData.full_name, initialData.patient_name, initialData.name, "");
+        const modalitiesFromDb = pick(initialData.modality, initialData.modalities, "");
+        const prefetchedIdNumber = pick(initialData.id_number, initialData.idNumber, initialData.id_proof, initialData.voter_id, "");
+        const prefetchedOccupation = pick(initialData.occupation, "");
+        const sanitizedOccupation =
+          prefetchedOccupation &&
+          prefetchedIdNumber &&
+          String(prefetchedOccupation).trim() === String(prefetchedIdNumber).trim() &&
+          isNumericOnly(prefetchedOccupation)
+            ? ""
+            : prefetchedOccupation;
+        setFormData((prev) => ({
+            ...prev,
+            phone: pick(initialData.mobile, initialData.phone, prev.phone),
+            abha_number: pick(initialData.abha_number, prev.abha_number),
+            abha_address: pick(initialData.abha_address, prev.abha_address),
+            voter_id: pick(initialData.voter_id, prev.voter_id),
+            idType: pick(initialData.id_type, initialData.idType, prev.idType),
+            idNumber: pick(initialData.id_number, initialData.idNumber, initialData.id_proof, initialData.voter_id, prev.idNumber),
+            registration_channel: pick(initialData.registration_channel, prev.registration_channel),
+            title: pick(initialData.title, prev.title),
+            firstName: pick(initialData.first_name, fullName.split(" ")[0], prev.firstName),
+            lastName: pick(initialData.last_name, fullName.split(" ").slice(1).join(" "), prev.lastName),
+            gender: pick(initialData.gender, prev.gender),
+            dob: initialData.dob ? dayjs(initialData.dob).format("YYYY-MM-DD") : prev.dob,
+            age: pick(initialData.age, prev.age),
+            relationship_type: pick(initialData.relationship_type, prev.relationship_type),
+            relationship_name: pick(initialData.relationship_name, prev.relationship_name),
+            marital_status: pick(initialData.marital_status, prev.marital_status),
+            occupation: pick(sanitizedOccupation, prev.occupation),
+            nationality: pick(initialData.nationality, prev.nationality),
+            language_preference: pick(initialData.language_preference, prev.language_preference),
+            email: pick(initialData.email, initialData.email_address, prev.email),
+            address: pick(
+                initialData.address,
+                initialData.address_line1,
+                [initialData.city, initialData.district, initialData.state, initialData.pincode].filter(Boolean).join(", "),
+                prev.address
+            ),
+            emergency_contact_name: pick(initialData.emergency_contact_name, prev.emergency_contact_name),
+            emergency_contact_phone: pick(initialData.emergency_contact_phone, prev.emergency_contact_phone),
+            emergency_contact_relation: pick(initialData.emergency_contact_relation, prev.emergency_contact_relation),
+            secondaryContactName: pick(initialData.secondaryContactName, initialData.secondary_contact_name, prev.secondaryContactName),
+            secondaryContactPhone: pick(initialData.secondaryContactPhone, initialData.secondary_contact_phone, prev.secondaryContactPhone),
+            biometric_flag: typeof initialData.biometric_flag === "boolean" ? initialData.biometric_flag : prev.biometric_flag,
+            blood_group: (() => {
+                const bg = pick(initialData.blood_group, initialData.bloodGroup, prev.blood_group);
+                return String(bg || "").toUpperCase() === "UNK" ? "" : bg;
+            })(),
+            height_cm: pick(initialData.height_cm, prev.height_cm),
+            weight_kg: pick(initialData.weight_kg, prev.weight_kg),
+            allergies: pick(initialData.allergies, prev.allergies),
+            current_medications: pick(initialData.current_medications, prev.current_medications),
+            medical_history: pick(initialData.medical_history, initialData.clinical_history, prev.medical_history),
+            isPregnant: typeof initialData.isPregnant === "boolean" ? initialData.isPregnant : prev.isPregnant,
+            menstrual_status: pick(initialData.menstrual_status, prev.menstrual_status),
+            lmp_date: initialData.lmp_date ? dayjs(initialData.lmp_date).format("YYYY-MM-DD") : prev.lmp_date,
+            edd: initialData.edd ? dayjs(initialData.edd).format("YYYY-MM-DD") : prev.edd,
+            gestational_age: pick(initialData.gestational_age, prev.gestational_age),
+            creatinine_level: pick(initialData.creatinine_level, prev.creatinine_level),
+            contrast_safety_flag: typeof initialData.contrast_safety_flag === "boolean"
+              ? initialData.contrast_safety_flag
+              : (typeof initialData.contrast === "boolean" ? initialData.contrast : prev.contrast_safety_flag),
+            modalities: modalitiesFromDb
+              ? String(modalitiesFromDb).split(",").map((m) => m.trim()).filter(Boolean)
+              : prev.modalities,
+            study_type: pick(initialData.study_type, initialData.study, initialData.indication_for_scan, prev.study_type),
+            patient_type: pick(initialData.patient_type, prev.patient_type),
+            visit_type: pick(initialData.visit_type, prev.visit_type),
+            department: pick(initialData.department, prev.department),
+            attending_physician: pick(initialData.attending_physician, initialData.referring_doctor, prev.attending_physician),
+            referring_doctor: pick(initialData.referring_doctor, initialData.attending_physician, prev.referring_doctor),
+            ward_room_bed: pick(initialData.ward_room_bed, prev.ward_room_bed),
+            billing_category: pick(initialData.billing_category, initialData.billing_type, prev.billing_category),
+            insurance_provider: pick(initialData.insurance_provider, prev.insurance_provider),
+            insurance_id: pick(initialData.insurance_id, prev.insurance_id),
+            data_privacy_accepted: typeof initialData.data_privacy_accepted === "boolean" ? initialData.data_privacy_accepted : prev.data_privacy_accepted,
+            consent_image_sharing: typeof initialData.consent_image_sharing === "boolean" ? initialData.consent_image_sharing : prev.consent_image_sharing,
+            consent_telemedicine: typeof initialData.consent_telemedicine === "boolean" ? initialData.consent_telemedicine : prev.consent_telemedicine,
+            consent_research_ai: typeof initialData.consent_research_ai === "boolean" ? initialData.consent_research_ai : prev.consent_research_ai,
+            digital_signature: pick(initialData.digital_signature, initialData.signature_file, prev.digital_signature),
+            photo_url: pick(initialData.photo_url, prev.photo_url),
+            indication_for_scan: pick(initialData.indication_for_scan, initialData.study, prev.indication_for_scan),
+        }));
+    }, [initialData]);
+
+    useEffect(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        if (!formData.digital_signature) return;
+        const img = new Image();
+        img.onload = () => {
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        };
+        img.src = formData.digital_signature;
+    }, [formData.digital_signature]);
 
     // Calculate Age from DOB
     useEffect(() => {
@@ -200,7 +308,17 @@ export default function PatientRegistration({ onClose, onSave }) {
     const handleSubmit = async () => {
         // Construct full name
         const fullName = `${formData.firstName} ${formData.lastName}`.trim();
-        const finalData = { ...formData, name: fullName };
+        const isNumericOnly = (v) => /^\d+$/.test(String(v || "").trim());
+        const occupationLooksLikeId =
+          formData.occupation &&
+          formData.idNumber &&
+          String(formData.occupation).trim() === String(formData.idNumber).trim() &&
+          isNumericOnly(formData.occupation);
+        const finalData = {
+          ...formData,
+          name: fullName,
+          occupation: occupationLooksLikeId ? "" : formData.occupation,
+        };
 
         if (!finalData.name || !finalData.phone || !finalData.gender) {
             toast.error("Please fill mandatory fields (Name, Phone, Gender)");
@@ -208,9 +326,16 @@ export default function PatientRegistration({ onClose, onSave }) {
         }
 
         // PCPNDT Compliance Check
-        if (finalData.isPregnant && (!finalData.relationship_name || finalData.relationship_name.length < 3)) {
+        const effectiveHusbandName = (finalData.husband_name || finalData.relationship_name || "").trim();
+        if (finalData.isPregnant && effectiveHusbandName.length < 3) {
             toast.error("PCPNDT Compliance: Husband's Name is mandatory for pregnant patients.");
             // Optionally jump to Step 3
+            setStep(3);
+            return;
+        }
+
+        if (finalData.isPregnant && !finalData.indication_for_scan) {
+            toast.error("PCPNDT Compliance: Indication for scan is mandatory for pregnant patients.");
             setStep(3);
             return;
         }
@@ -285,6 +410,75 @@ export default function PatientRegistration({ onClose, onSave }) {
             setFormData((prev) => ({ ...prev, digital_signature: "" }));
         }
     }
+
+    const generatePregnancyCertificate = () => {
+        const patientName = `${formData.firstName || ""} ${formData.lastName || ""}`.trim() || "N/A";
+        const guardian = formData.husband_name || formData.relationship_name || "N/A";
+        const dob = formData.dob ? dayjs(formData.dob).format("DD MMM YYYY") : "N/A";
+        const lmp = formData.lmp_date ? dayjs(formData.lmp_date).format("DD MMM YYYY") : "N/A";
+        const edd = formData.edd ? dayjs(formData.edd).format("DD MMM YYYY") : "N/A";
+        const now = dayjs().format("DD MMM YYYY, hh:mm A");
+        const age = formData.age || "N/A";
+        const indication = formData.indication_for_scan || "N/A";
+        const doctorName = formData.attending_physician || "Radiology Consultant";
+
+        const printWindow = window.open("", "_blank", "width=900,height=700");
+        if (!printWindow) {
+            toast.error("Popup blocked. Please allow popups to print certificate.");
+            return;
+        }
+
+        const html = `
+          <!doctype html>
+          <html>
+          <head>
+            <title>Pregnancy Certificate</title>
+            <style>
+              body { font-family: Arial, sans-serif; padding: 24px; color: #111827; }
+              .card { border: 1px solid #d1d5db; border-radius: 10px; padding: 20px; }
+              h1 { margin: 0 0 8px 0; font-size: 24px; }
+              h2 { margin: 0 0 18px 0; font-size: 14px; color: #4b5563; font-weight: 600; }
+              .grid { display: grid; grid-template-columns: 220px 1fr; row-gap: 8px; column-gap: 8px; margin-top: 12px; }
+              .label { font-weight: 700; color: #374151; }
+              .footer { margin-top: 36px; display: flex; justify-content: space-between; }
+              .sign { border-top: 1px solid #6b7280; padding-top: 6px; width: 240px; text-align: center; font-size: 12px; }
+              @media print { body { padding: 8px; } }
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <h1>Pregnancy Certificate</h1>
+              <h2>Generated from Patient Registration</h2>
+              <div class="grid">
+                <div class="label">Patient Name</div><div>${patientName}</div>
+                <div class="label">Age / Gender</div><div>${age} / ${formData.gender || "N/A"}</div>
+                <div class="label">DOB</div><div>${dob}</div>
+                <div class="label">Husband/Guardian Name</div><div>${guardian}</div>
+                <div class="label">LMP</div><div>${lmp}</div>
+                <div class="label">EDD</div><div>${edd}</div>
+                <div class="label">Gestational Age</div><div>${formData.gestational_age || "N/A"}</div>
+                <div class="label">Indication</div><div>${indication}</div>
+                <div class="label">Generated On</div><div>${now}</div>
+              </div>
+              <div class="footer">
+                <div class="sign">Patient / Guardian Signature</div>
+                <div class="sign">${doctorName}</div>
+              </div>
+            </div>
+            <script>
+              window.onload = function () {
+                window.focus();
+                window.print();
+              };
+            </script>
+          </body>
+          </html>
+        `;
+
+        printWindow.document.open();
+        printWindow.document.write(html);
+        printWindow.document.close();
+    };
 
   /* ================== STEP CONTENT ================== */
   const renderStep = () => {
@@ -396,6 +590,7 @@ export default function PatientRegistration({ onClose, onSave }) {
       onChange={handleChange}
       placeholder="Enter ID Number"
       className="pr-input"
+      autoComplete="off"
     />
   </div>
 
@@ -569,6 +764,7 @@ export default function PatientRegistration({ onClose, onSave }) {
             onChange={handleChange}
             placeholder="e.g. Engineer, Farmer"
             className="pr-input"
+            autoComplete="organization-title"
           />
         </div>
       </div>
@@ -717,6 +913,17 @@ export default function PatientRegistration({ onClose, onSave }) {
               <option value="DEXA">BMD / DEXA</option>
             </select>
             <p style={{ fontSize: "10px", color: "#4338ca", marginTop: "0.25rem" }}>Hold Ctrl/Cmd to select multiple</p>
+
+            <div style={{ marginTop: "0.75rem" }}>
+              <label className="pr-label" style={{ color: "#4338ca" }}>Study Type</label>
+              <input
+                name="study_type"
+                value={formData.study_type}
+                onChange={handleChange}
+                placeholder="e.g. Abdomen with Contrast"
+                className="pr-input"
+              />
+            </div>
           </div>
 
         <div className="pr-grid pr-grid-2 pr-grid-gap">
@@ -778,6 +985,7 @@ export default function PatientRegistration({ onClose, onSave }) {
                             ...(prev.relationship_type !== 'W/O' ? { relationship_type: 'H/O' } : {}),
                             relationship_name: e.target.value
                           }))}
+                          disabled={formData.isFormFLocked}
                           className="pr-input"
                           style={{ backgroundColor: "#fdf2f8", borderColor: "#fbcfe8" }}
                         />
@@ -789,6 +997,7 @@ export default function PatientRegistration({ onClose, onSave }) {
                           name="indication_for_scan"
                           value={formData.indication_for_scan || ''}
                           onChange={(e) => setFormData(prev => ({ ...prev, indication_for_scan: e.target.value }))}
+                          disabled={formData.isFormFLocked}
                           className="pr-select"
                           style={{ backgroundColor: "#fdf2f8", borderColor: "#fbcfe8" }}
                         >
@@ -803,6 +1012,83 @@ export default function PatientRegistration({ onClose, onSave }) {
                           <option value="Discrepancy between uterine size and period of amenorrhea">Size/Date Discrepancy</option>
                           <option value="Any other (Specify)">Any other</option>
                         </select>
+                      </div>
+
+                      <div style={{ marginTop: "0.75rem" }}>
+                        <button
+                          type="button"
+                          className="pr-btn-primary"
+                          onClick={generatePregnancyCertificate}
+                        >
+                          Generate Pregnancy Certificate
+                        </button>
+                      </div>
+
+                      <div style={{ marginTop: "0.5rem" }}>
+                        {(() => {
+                          const effectiveHusbandName =
+                            (formData.husband_name || (['W/O', 'H/O'].includes(formData.relationship_type) ? formData.relationship_name : '') || "").trim();
+                          const isReady = Boolean(effectiveHusbandName && formData.indication_for_scan);
+
+                          return (
+                            <>
+                              <button
+                                type="button"
+                                className="pr-btn-primary"
+                                style={{
+                                  width: "100%",
+                                  backgroundColor: formData.isFormFLocked ? "#475569" : (isReady ? "#dc2626" : "#94a3b8"),
+                                  cursor: formData.isFormFLocked || !isReady ? "not-allowed" : "pointer",
+                                }}
+                                disabled={formData.isFormFLocked || !isReady}
+                                onClick={() => {
+                                  if (!isReady) {
+                                    toast.error("Please fill Husband Name and Indication first");
+                                    return;
+                                  }
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    isFormFLocked: true,
+                                    husband_name: effectiveHusbandName,
+                                  }));
+                                  toast.success("Form F generated and record locked");
+                                }}
+                              >
+                                {formData.isFormFLocked
+                                  ? "Record Locked (Form F Generated)"
+                                  : isReady
+                                  ? "Generate Form F & Lock"
+                                  : `Missing: ${!effectiveHusbandName ? "Husband Name" : "Indication"}`}
+                              </button>
+
+                              {formData.isFormFLocked && (
+                                <button
+                                  type="button"
+                                  style={{
+                                    marginTop: "8px",
+                                    width: "100%",
+                                    border: "1px solid #fecaca",
+                                    background: "#fff1f2",
+                                    color: "#be123c",
+                                    borderRadius: "8px",
+                                    padding: "8px 12px",
+                                    fontSize: "12px",
+                                    fontWeight: 600,
+                                    cursor: "pointer",
+                                  }}
+                                  onClick={() => {
+                                    const ok = window.confirm("Confirm unlock and delete Form F?");
+                                    if (!ok) return;
+                                    setFormData((prev) => ({ ...prev, isFormFLocked: false }));
+                                    toast.success("Record unlocked");
+                                  }}
+                                >
+                                  Unlock / Delete Form F (Admin)
+                                </button>
+                              )}
+                            </>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}
@@ -946,36 +1232,48 @@ export default function PatientRegistration({ onClose, onSave }) {
                             <div className="space-y-4">
                                 <h4 className="font-bold text-slate-800 border-b pb-2">Consent Declarations</h4>
 
-                               <label className="flex items-center gap-3 p-3 border rounded-lg hover:bg-slate-50 cursor-pointer">
-  <input
-    type="checkbox"
-    name="data_privacy_accepted"
-    checked={formData.data_privacy_accepted}
-    onChange={handleChange}
-    className="h-4 w-4 shrink-0"
-  />
-  <div>
-    <span className="font-semibold text-sm block">
-      Data Privacy Acceptance
-    </span>
-    <span className="text-xs text-slate-500">
-      I agree to the collection and storage of my medical data as per ABDM norms.
-    </span>
-  </div>
-</label>
+                               <label className="pr-consent-item">
+                                  <input
+                                    type="checkbox"
+                                    name="data_privacy_accepted"
+                                    checked={formData.data_privacy_accepted}
+                                    onChange={handleChange}
+                                    className="pr-consent-checkbox"
+                                  />
+                                  <div className="pr-consent-text">
+                                    <span className="pr-consent-title">Data Privacy Acceptance</span>
+                                    <span className="pr-consent-desc">
+                                      I agree to the collection and storage of my medical data as per ABDM norms.
+                                    </span>
+                                  </div>
+                                </label>
 
 
-                                <label className="flex items-center gap-3 p-3 border rounded-lg hover:bg-slate-50 cursor-pointer">
-                                    <input type="checkbox" name="consent_image_sharing" checked={formData.consent_image_sharing} onChange={handleChange} className="mt-1" />
-                                    <div>
-                                        <span className="font-semibold text-sm block">Image Sharing Consent</span>
-                                        <span className="text-xs text-slate-500">I allow sharing of anonymized scans for tele-reporting or AI analysis.</span>
+                                <label className="pr-consent-item">
+                                    <input
+                                      type="checkbox"
+                                      name="consent_image_sharing"
+                                      checked={formData.consent_image_sharing}
+                                      onChange={handleChange}
+                                      className="pr-consent-checkbox"
+                                    />
+                                    <div className="pr-consent-text">
+                                        <span className="pr-consent-title">Image Sharing Consent</span>
+                                        <span className="pr-consent-desc">I allow sharing of anonymized scans for tele-reporting or AI analysis.</span>
                                     </div>
                                 </label>
 
-                                <label className="flex items-center gap-3 p-3 border rounded-lg hover:bg-slate-50 cursor-pointer">
-                                    <input type="checkbox" name="consent_telemedicine" checked={formData.consent_telemedicine} onChange={handleChange} className="mt-1" />
-                                    <span className="font-semibold text-sm">Consent for Telemedicine Services</span>
+                                <label className="pr-consent-item">
+                                    <input
+                                      type="checkbox"
+                                      name="consent_telemedicine"
+                                      checked={formData.consent_telemedicine}
+                                      onChange={handleChange}
+                                      className="pr-consent-checkbox"
+                                    />
+                                    <div className="pr-consent-text">
+                                      <span className="pr-consent-title">Consent for Telemedicine Services</span>
+                                    </div>
                                 </label>
                             </div>
 

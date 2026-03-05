@@ -25,6 +25,13 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
   const doctors = ["Dr. Smith", "Dr. Johnson", "Dr. Rakesh", "Dr. Priya", "Dr. Karthik"];
   const statuses = ["Pending", "Accepted", "Completed"];
 
+  const modalityOptions = form.modality && !modalities.includes(form.modality)
+    ? [form.modality, ...modalities]
+    : modalities;
+  const doctorOptions = form.doctor && !doctors.includes(form.doctor)
+    ? [form.doctor, ...doctors]
+    : doctors;
+
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
@@ -87,7 +94,7 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
           <label>Modality</label>
           <select name="modality" value={form.modality} onChange={handleChange}>
             <option value="">Select</option>
-            {modalities.map((m) => <option key={m}>{m}</option>)}
+            {modalityOptions.map((m) => <option key={m}>{m}</option>)}
           </select>
         </div>
 
@@ -95,7 +102,7 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
           <label>Doctor</label>
           <select name="doctor" value={form.doctor} onChange={handleChange}>
             <option value="">Select</option>
-            {doctors.map((d) => <option key={d}>{d}</option>)}
+            {doctorOptions.map((d) => <option key={d}>{d}</option>)}
           </select>
         </div>
       </div>

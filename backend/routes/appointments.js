@@ -1,9 +1,7 @@
-// routes/appointments.js
 const express = require("express");
 const router = express.Router();
 const { Pool } = require("pg");
 
-// PostgreSQL pool (make sure to use same config or pass pool from server.js)
 const pool = new Pool({
   host: process.env.POSTGRES_HOST || "localhost",
   port: process.env.POSTGRES_PORT || 5432,
@@ -12,25 +10,306 @@ const pool = new Pool({
   database: process.env.POSTGRES_DB || "RIS",
 });
 
-// ======================================================
-// Get appointments by date
-// ======================================================
+async function getAppointmentColumns() {
+  const result = await pool.query(
+    `
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'appointments'
+    `
+  );
+  return new Set(result.rows.map((r) => r.column_name));
+}
+
+function pickFromRow(row, keys, fallback = "") {
+  for (const key of keys) {
+    if (row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== "") {
+      return row[key];
+    }
+  }
+  return fallback;
+}
+
+function normalizeDateForDb(input) {
+  if (input === undefined || input === null) return null;
+  const raw = String(input).trim();
+  if (!raw) return null;
+
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    const y = parsed.getFullYear();
+    const mo = String(parsed.getMonth() + 1).padStart(2, "0");
+    const d = String(parsed.getDate()).padStart(2, "0");
+    return `${y}-${mo}-${d}`;
+  }
+  return raw;
+}
+
+function formatDateForUi(value) {
+  if (!value) return "";
+  if (typeof value === "string") {
+    const m = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  }
+  const d = new Date(value);
+  if (!Number.isNaN(d.getTime())) {
+    const y = d.getFullYear();
+    const mo = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${mo}-${day}`;
+  }
+  return String(value);
+}
+
+function mapAppointmentRow(row) {
+  return {
+    id: pickFromRow(row, ["id", "appointment_id"], ""),
+    patientId: String(pickFromRow(row, ["patient_id", "patientid", "uhid"], "")),
+    date: formatDateForUi(pickFromRow(row, ["appointment_date", "date"], "")),
+    patientName: String(pickFromRow(row, ["patient_name", "name", "full_name"], "")),
+    contact: String(pickFromRow(row, ["contact", "contact_number", "mobile", "phone"], "")),
+    time: String(pickFromRow(row, ["appointment_time", "time"], "")),
+    modality: String(pickFromRow(row, ["modality"], "")),
+    doctor: String(pickFromRow(row, ["doctor", "referring_doctor", "attending_physician"], "")),
+    status: String(pickFromRow(row, ["status"], "Pending")),
+  };
+}
+
+function setFirstAvailable(record, columns, candidates, value) {
+  for (const c of candidates) {
+    if (columns.has(c)) {
+      record[c] = value;
+      return c;
+    }
+  }
+  return null;
+}
+
+function normalizeTimeForDb(input) {
+  if (input === undefined || input === null) return null;
+  const raw = String(input).trim();
+  if (!raw) return null;
+
+  const m = raw.match(/^(\d{1,2})(?:[:.](\d{1,2}))?\s*(am|pm)?$/i);
+  if (m) {
+    let h = Number(m[1]);
+    const mm = Number(m[2] || "0");
+    const mer = (m[3] || "").toLowerCase();
+
+    if (Number.isNaN(h) || Number.isNaN(mm) || h > 23 || mm > 59) return raw;
+
+    if (mer === "am") {
+      if (h === 12) h = 0;
+    } else if (mer === "pm") {
+      if (h < 12) h += 12;
+    }
+
+    return `${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}:00`;
+  }
+
+  const m24 = raw.match(/^([01]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/);
+  if (m24) {
+    return `${String(Number(m24[1])).padStart(2, "0")}:${m24[2]}:${m24[3] || "00"}`;
+  }
+
+  return raw;
+}
+
+router.get("/scheduled-ids", async (req, res) => {
+  try {
+    const columns = await getAppointmentColumns();
+    const patientIdCol = ["patient_id", "patientid", "uhid"].find((c) => columns.has(c));
+
+    if (!patientIdCol) {
+      return res.json({ success: true, ids: [] });
+    }
+
+    const statusCol = columns.has("status") ? "status" : null;
+    const query = statusCol
+      ? `SELECT DISTINCT ${patientIdCol}::text AS patient_id FROM appointments WHERE COALESCE(${statusCol}, '') <> ''`
+      : `SELECT DISTINCT ${patientIdCol}::text AS patient_id FROM appointments`;
+
+    const result = await pool.query(query);
+    const ids = result.rows
+      .map((r) => String(r.patient_id || "").trim())
+      .filter(Boolean);
+
+    return res.json({ success: true, ids });
+  } catch (err) {
+    console.error("Error fetching scheduled ids:", err.message);
+    return res.status(500).json({ success: false, error: "Failed to fetch scheduled ids" });
+  }
+});
+
 router.get("/", async (req, res) => {
   const { date } = req.query;
 
-  if (!date) {
-    return res.status(400).json({ error: "Date query parameter is required" });
-  }
-
   try {
-    const result = await pool.query(
-      "SELECT * FROM appointments WHERE appointment_date = $1 ORDER BY appointment_time ASC",
-      [date]
+    const columns = await getAppointmentColumns();
+    const dateCol = ["appointment_date", "date"].find((c) => columns.has(c));
+    const timeCol = ["appointment_time", "time"].find((c) => columns.has(c));
+
+    let query = "SELECT * FROM appointments";
+    const params = [];
+
+    if (date && dateCol) {
+      params.push(date);
+      query += ` WHERE ${dateCol}::text = $1`;
+    }
+
+    if (timeCol) {
+      query += ` ORDER BY ${timeCol} ASC`;
+    } else {
+      query += " ORDER BY 1 ASC";
+    }
+
+    const result = await pool.query(query, params);
+    const rows = result.rows.map(mapAppointmentRow);
+
+    const withContacts = await Promise.all(
+      rows.map(async (r) => {
+        if (String(r.contact || "").trim() || !String(r.patientId || "").trim()) return r;
+        try {
+          const patientRes = await pool.query(
+            `
+            SELECT mobile, phone
+            FROM patients
+            WHERE uhid::text = $1 OR patient_id::text = $1 OR mrn::text = $1
+            LIMIT 1
+            `,
+            [String(r.patientId)]
+          );
+          if (patientRes.rowCount > 0) {
+            return { ...r, contact: patientRes.rows[0].mobile || patientRes.rows[0].phone || "" };
+          }
+          return r;
+        } catch {
+          return r;
+        }
+      })
     );
-    res.json(result.rows);
+
+    return res.json(withContacts);
   } catch (err) {
     console.error("Error fetching appointments:", err.message);
-    res.status(500).json({ error: "Failed to fetch appointments" });
+    return res.status(500).json({ error: "Failed to fetch appointments" });
+  }
+});
+
+router.post("/", async (req, res) => {
+  try {
+    const {
+      patientId,
+      patientName,
+      contact,
+      time,
+      modality,
+      doctor,
+      status,
+      date,
+    } = req.body || {};
+
+    if (!patientId || !date) {
+      return res.status(400).json({ success: false, error: "patientId and date are required" });
+    }
+
+    const columns = await getAppointmentColumns();
+    const patientIdCol = ["patient_id", "patientid", "uhid"].find((c) => columns.has(c));
+    const idCol = ["id", "appointment_id"].find((c) => columns.has(c));
+
+    if (!patientIdCol) {
+      return res.status(500).json({
+        success: false,
+        error: "appointments table is missing patient id column",
+      });
+    }
+
+    const existing = await pool.query(
+      `SELECT * FROM appointments WHERE ${patientIdCol}::text = $1 LIMIT 1`,
+      [String(patientId)]
+    );
+
+    const payload = {};
+    let contactValue = contact || null;
+    let patientNameValue = patientName || null;
+
+    if (!contactValue || !patientNameValue) {
+      try {
+        const patientRes = await pool.query(
+          `
+          SELECT *
+          FROM patients
+          WHERE uhid::text = $1 OR patient_id::text = $1 OR mrn::text = $1
+          LIMIT 1
+          `,
+          [String(patientId)]
+        );
+        if (patientRes.rowCount > 0) {
+          const p = patientRes.rows[0];
+          if (!contactValue) {
+            contactValue = p.mobile || p.phone || null;
+          }
+          if (!patientNameValue) {
+            patientNameValue =
+              `${p.first_name || ""} ${p.last_name || ""}`.trim() ||
+              p.full_name ||
+              null;
+          }
+        }
+      } catch (lookupErr) {
+        console.error("Appointment patient lookup failed:", lookupErr.message);
+      }
+    }
+
+    setFirstAvailable(payload, columns, [patientIdCol], String(patientId));
+    setFirstAvailable(payload, columns, ["patient_name", "name", "full_name"], patientNameValue);
+    setFirstAvailable(
+      payload,
+      columns,
+      ["contact", "contact_number", "contact_no", "mobile", "phone"],
+      contactValue
+    );
+    setFirstAvailable(payload, columns, ["appointment_date", "date"], normalizeDateForDb(date));
+    setFirstAvailable(payload, columns, ["appointment_time", "time"], normalizeTimeForDb(time));
+    setFirstAvailable(payload, columns, ["modality"], modality || null);
+    setFirstAvailable(payload, columns, ["doctor", "referring_doctor", "attending_physician"], doctor || null);
+    setFirstAvailable(payload, columns, ["status"], status || "Pending");
+    setFirstAvailable(payload, columns, ["updated_at"], new Date());
+
+    let saved;
+    if (existing.rowCount > 0) {
+      const row = existing.rows[0];
+      const whereCol = idCol && row[idCol] !== undefined ? idCol : patientIdCol;
+      const whereValue = whereCol === patientIdCol ? String(patientId) : row[whereCol];
+      const setCols = Object.keys(payload);
+      const setClause = setCols.map((c, i) => `${c} = $${i + 1}`).join(", ");
+      const values = setCols.map((c) => payload[c]);
+      values.push(whereValue);
+
+      const updated = await pool.query(
+        `UPDATE appointments SET ${setClause} WHERE ${whereCol} = $${values.length} RETURNING *`,
+        values
+      );
+      saved = updated.rows[0];
+    } else {
+      setFirstAvailable(payload, columns, ["created_at"], new Date());
+      const cols = Object.keys(payload);
+      const placeholders = cols.map((_, i) => `$${i + 1}`).join(", ");
+      const values = cols.map((c) => payload[c]);
+      const inserted = await pool.query(
+        `INSERT INTO appointments (${cols.join(", ")}) VALUES (${placeholders}) RETURNING *`,
+        values
+      );
+      saved = inserted.rows[0];
+    }
+
+    return res.json({ success: true, appointment: mapAppointmentRow(saved) });
+  } catch (err) {
+    console.error("Error saving appointment:", err.message);
+    return res.status(500).json({ success: false, error: "Failed to save appointment" });
   }
 });
 

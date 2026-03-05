@@ -29,6 +29,7 @@
 .patient-table {
   width: 100%;
   border-collapse: collapse;
+  min-width: 1100px;
 }
 
 .patient-table th,
@@ -88,10 +89,19 @@
 .schedule-btn {
   border: 0;
   color: #fff;
-  border-radius: 6px;
-  padding: 6px 12px;
+  border-radius: 5px;
+  padding: 0;
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
   cursor: pointer;
-  font-weight: 600;
+  font-weight: 700;
+  font-size: 10px;
+  line-height: 1;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .schedule-btn.not-scheduled {
@@ -101,3 +111,71 @@
 .schedule-btn.scheduled {
   background-color: #16a34a;
 }
+
+.action-wrap {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: nowrap !important;
+  white-space: nowrap;
+}
+
+.schedule-btn.edit-action {
+  background-color: #2563eb;
+}
+
+.schedule-btn.print-action {
+  background-color: #334155;
+}
+
+.patient-table td:last-child,
+.patient-table th:last-child {
+  min-width: 96px;
+  width: 96px;
+}
+
+.patient-table td:last-child {
+  white-space: nowrap;
+}
+
+.patient-table .col-sno {
+  width: 42px;
+  min-width: 42px;
+  max-width: 42px;
+  text-align: center;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+.patient-table .col-gender {
+  width: 72px;
+  min-width: 72px;
+  max-width: 72px;
+}
+
+.patient-table .col-mobile {
+  width: 108px;
+  min-width: 108px;
+  max-width: 108px;
+  white-space: nowrap;
+}
+
+.table-wrapper {
+  overflow-x: auto;
+}
+
+
+@media (max-width: 768px) {
+  .schedule-btn {
+    padding: 2px 5px;
+    min-width: 30px;
+    height: 22px;
+    font-size: 10px;
+  }
+
+  .action-wrap {
+    gap: 3px;
+  }
+}
+
+

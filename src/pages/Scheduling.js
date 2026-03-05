@@ -1,32 +1,59 @@
 import React, { useState, useEffect } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import MainLayout from "../layout/MainLayout";
 import AddScheduler from "./AddScheduler";
+import api from "../api/axios";
 import "./Scheduling.css";
 
-const APPOINTMENTS_KEY = "appointments";
-const SCHEDULED_PATIENT_IDS_KEY = "scheduledPatientIds";
-
 function Scheduling() {
+  const toLocalISODate = (d = new Date()) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
   const location = useLocation();
+  const navigate = useNavigate();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [showForm, setShowForm] = useState(false);
   const [appointments, setAppointments] = useState([]);
   const [prefillData, setPrefillData] = useState(null);
 
-  useEffect(() => {
+  const loadAppointmentsByDate = async (dateObj) => {
     try {
-      const raw = localStorage.getItem(APPOINTMENTS_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
-      setAppointments(Array.isArray(parsed) ? parsed : []);
-    } catch {
+      const date = toLocalISODate(dateObj);
+      const res = await api.get("/api/appointments", { params: { date } });
+      const rows = Array.isArray(res.data) ? res.data : res?.data?.appointments || [];
+      const normalized = rows.map((a) => ({
+        ...a,
+        status: a.status || "Pending",
+      }));
+      setAppointments(normalized);
+    } catch (err) {
+      console.error("Failed to load appointments:", err);
       setAppointments([]);
     }
-  }, []);
+  };
+
+  useEffect(() => {
+    loadAppointmentsByDate(currentDate);
+  }, [currentDate]);
 
   useEffect(() => {
     const patient = location.state?.patient;
     if (!patient) return;
+
+    const normalizeModality = (value) => {
+      const raw = String(value || "").trim().toUpperCase();
+      const modalityMap = {
+        USG: "Ultrasound",
+        "X-RAY": "X-Ray",
+        XRAY: "X-Ray",
+        MR: "MRI",
+      };
+      return modalityMap[raw] || (value || "");
+    };
 
     const patientName =
       `${patient.first_name || ""} ${patient.last_name || ""}`.trim() ||
@@ -35,17 +62,21 @@ function Scheduling() {
       patient.name ||
       "";
     const patientId = patient.uhid || patient.patient_id || patient.mrn || "";
-    const today = new Date().toISOString().split("T")[0];
+    const today = toLocalISODate(new Date());
 
     setPrefillData({
       patientId: String(patientId),
       patientName,
       contact: patient.mobile || patient.phone || "",
-      modality: patient.modality || "",
+      modality: normalizeModality(patient.modality),
+      doctor: patient.referring_doctor || patient.attending_physician || "",
       date: today,
       status: "Pending",
     });
     setShowForm(true);
+
+    // Clear consumed navigation state so refresh/back doesn't reopen the modal.
+    navigate(location.pathname, { replace: true, state: {} });
   }, [location.state]);
 
   const handleAddScheduler = () => {
@@ -53,32 +84,62 @@ function Scheduling() {
     setShowForm(true);
   };
 
-  const saveSchedule = (newData) => {
-    setAppointments((prev) => {
-      const next = [...prev, newData];
-      localStorage.setItem(APPOINTMENTS_KEY, JSON.stringify(next));
-      return next;
-    });
-
-    const patientId = String(newData.patientId || "");
-    if (patientId) {
-      const raw = localStorage.getItem(SCHEDULED_PATIENT_IDS_KEY);
-      const parsed = raw ? JSON.parse(raw) : [];
-      const ids = Array.isArray(parsed) ? parsed : [];
-      if (!ids.includes(patientId)) {
-        localStorage.setItem(SCHEDULED_PATIENT_IDS_KEY, JSON.stringify([...ids, patientId]));
-      }
+  const saveSchedule = async (newData) => {
+    try {
+      await api.post("/api/appointments", {
+        patientId: newData.patientId,
+        patientName: newData.patientName,
+        contact: newData.contact,
+        time: newData.time,
+        modality: newData.modality,
+        doctor: newData.doctor,
+        status: newData.status || "Pending",
+        date: newData.date,
+      });
+      setPrefillData(null);
+      setShowForm(false);
+      await loadAppointmentsByDate(currentDate);
+    } catch (err) {
+      console.error("Failed to save appointment:", err);
+      alert("Failed to save appointment");
     }
-
-    setPrefillData(null);
-    setShowForm(false);
   };
 
-  const formatDate = (d) => d.toISOString().split("T")[0]; // yyyy-mm-dd
+  const updateAppointmentStatus = async (index, status) => {
+    const appt = appointments[index];
+    if (!appt) return;
+    try {
+      await api.post("/api/appointments", {
+        patientId: appt.patientId,
+        patientName: appt.patientName,
+        contact: appt.contact,
+        time: appt.time,
+        modality: appt.modality,
+        doctor: appt.doctor,
+        status,
+        date: appt.date,
+      });
+      await loadAppointmentsByDate(currentDate);
+    } catch (err) {
+      console.error("Failed to update appointment status:", err);
+    }
+  };
 
-  const filteredAppointments = appointments.filter(
-    (appt) => appt.date === formatDate(currentDate)
-  );
+  const statusClass = (status) => {
+    const s = String(status || "").toLowerCase();
+    if (s === "completed") return "status-pill completed";
+    if (s === "accepted") return "status-pill accepted";
+    return "status-pill pending";
+  };
+
+  const cycleStatus = (index, currentStatus) => {
+    const order = ["Pending", "Accepted", "Completed"];
+    const currentIndex = order.findIndex((s) => s.toLowerCase() === String(currentStatus || "").toLowerCase());
+    const nextStatus = order[(currentIndex + 1) % order.length];
+    updateAppointmentStatus(index, nextStatus);
+  };
+
+  const filteredAppointments = appointments;
 
   const changeDay = (days) => {
     setCurrentDate(
@@ -152,8 +213,9 @@ function Scheduling() {
               </td>
             </tr>
           ) : (
-            filteredAppointments.map((appt, idx) => (
-              <tr key={`${appt.patientId}-${appt.date}-${appt.time}-${idx}`}>
+            filteredAppointments.map((appt, idx) => {
+              return (
+              <tr key={`${appt.patientId}-${appt.date}-${appt.time}-${appt.doctor}`}>
                 <td>{appt.patientId}</td>
                 <td>{appt.date}</td>
                 <td>{appt.patientName}</td>
@@ -161,9 +223,24 @@ function Scheduling() {
                 <td>{appt.time}</td>
                 <td>{appt.modality}</td>
                 <td>{appt.doctor}</td>
-                <td>{appt.status}</td>
+                <td>
+                  {String(appt.status || "").toLowerCase() === "completed" ? (
+                    <span className={statusClass(appt.status)}>{appt.status || "Completed"}</span>
+                  ) : (
+                    <label className="status-toggle-wrap" title="Click to change status">
+                      <input
+                        type="checkbox"
+                        className="status-toggle-input"
+                        checked={String(appt.status || "").toLowerCase() !== "pending"}
+                        onChange={() => cycleStatus(idx, appt.status)}
+                      />
+                      <span className={statusClass(appt.status)}>{appt.status || "Pending"}</span>
+                    </label>
+                  )}
+                </td>
               </tr>
-            ))
+              );
+            })
           )}
         </tbody>
       </table>

@@ -981,8 +981,149 @@ useEffect(() => {
     }
   };
 
+  const syncActiveEditorContent = () => {
+    if (!activeEditorRef.current) return;
+    const editorType = activeEditorRef.current.dataset.editor;
+    if (editorType === "history") setHistory(activeEditorRef.current.innerHTML);
+    if (editorType === "findings") setFindings(activeEditorRef.current.innerHTML);
+    if (editorType === "conclusion") setConclusion(activeEditorRef.current.innerHTML);
+  };
+
+  const applyJustifyFullFallback = () => {
+    const refreshPreviewFromDom = () => {
+      setPreviewHtml(reportSheetRef.current?.innerHTML || "");
+    };
+
+    restoreSelection();
+    const selection = window.getSelection();
+    if (!selection || !selection.rangeCount) return;
+
+    const range = selection.getRangeAt(0);
+    const anchorEl =
+      selection.anchorNode?.nodeType === 1
+        ? selection.anchorNode
+        : selection.anchorNode?.parentElement;
+    const editor = anchorEl?.closest?.("[data-editor]") || activeEditorRef.current;
+    if (!editor) return;
+
+    const isBlock = (el) =>
+      !!el &&
+      el.nodeType === 1 &&
+      [
+        "P",
+        "DIV",
+        "LI",
+        "UL",
+        "OL",
+        "H1",
+        "H2",
+        "H3",
+        "H4",
+        "H5",
+        "H6",
+        "BLOCKQUOTE",
+        "PRE",
+      ].includes(el.tagName);
+
+    const getTopLevelBlocks = () => {
+      const topLevelBlocks = [];
+      const children = Array.from(editor.childNodes);
+
+      children.forEach((child) => {
+        if (child.nodeType === Node.TEXT_NODE) {
+          const text = child.textContent || "";
+          if (text.trim()) {
+            const wrapper = document.createElement("div");
+            wrapper.textContent = text;
+            editor.replaceChild(wrapper, child);
+            topLevelBlocks.push(wrapper);
+          }
+          return;
+        }
+
+        if (child.nodeType !== Node.ELEMENT_NODE) return;
+        const el = child;
+        if (isBlock(el)) {
+          topLevelBlocks.push(el);
+          return;
+        }
+
+        const wrapper = document.createElement("div");
+        editor.replaceChild(wrapper, el);
+        wrapper.appendChild(el);
+        topLevelBlocks.push(wrapper);
+      });
+
+      return topLevelBlocks;
+    };
+
+    if (range.collapsed) {
+      let target = anchorEl;
+      while (target && target !== editor && !isBlock(target)) {
+        target = target.parentElement;
+      }
+      if (target && target !== editor) {
+        target.style.textAlign = "justify";
+      } else {
+        const blocks = getTopLevelBlocks();
+        if (blocks.length === 0) {
+          const wrapper = document.createElement("div");
+          wrapper.innerHTML = editor.innerHTML;
+          wrapper.style.textAlign = "justify";
+          editor.innerHTML = "";
+          editor.appendChild(wrapper);
+        } else {
+          blocks.forEach((block) => {
+            block.style.textAlign = "justify";
+          });
+        }
+      }
+      saveSelection();
+      syncActiveEditorContent();
+      refreshPreviewFromDom();
+      return;
+    }
+
+    const blocks = [];
+    const walker = document.createTreeWalker(editor, NodeFilter.SHOW_ELEMENT, null);
+    let node = walker.nextNode();
+    while (node) {
+      if (isBlock(node) && range.intersectsNode(node)) {
+        blocks.push(node);
+      }
+      node = walker.nextNode();
+    }
+
+    if (blocks.length === 0) {
+      const topLevelBlocks = getTopLevelBlocks();
+      if (topLevelBlocks.length === 0) {
+        const wrapper = document.createElement("div");
+        wrapper.innerHTML = editor.innerHTML;
+        wrapper.style.textAlign = "justify";
+        editor.innerHTML = "";
+        editor.appendChild(wrapper);
+      } else {
+        topLevelBlocks.forEach((block) => {
+          block.style.textAlign = "justify";
+        });
+      }
+    } else {
+      blocks.forEach((block) => {
+        block.style.textAlign = "justify";
+      });
+    }
+
+    saveSelection();
+    syncActiveEditorContent();
+    refreshPreviewFromDom();
+  };
+
   // exec with selection restore (works for foreColor etc)
   const exec = (cmd, val = null) => {
+    if (cmd === "justifyFull") {
+      applyJustifyFullFallback();
+      return;
+    }
     // try to restore selection first
     restoreSelection();
     // ensure styleWithCSS so color uses inline style
@@ -996,6 +1137,8 @@ useEffect(() => {
     }
     // after exec, update savedRangeRef (so future ops keep correct range)
     saveSelection();
+    syncActiveEditorContent();
+    setPreviewHtml(reportSheetRef.current?.innerHTML || "");
   };
 
   // toolbar definition

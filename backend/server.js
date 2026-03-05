@@ -97,15 +97,16 @@ pool.connect()
   .then(client => {
     console.log("🟢 Connected to PostgreSQL database");
     client.release();
-    const buildPath = path.join(__dirname, "../build"); 
-    if (fs.existsSync(buildPath)) {
+    const buildPath = path.join(__dirname, "../build");
+    const indexPath = path.join(buildPath, "index.html");
+    if (fs.existsSync(buildPath) && fs.existsSync(indexPath)) {
       console.log("✅ React build folder found. Serving frontend...");
       app.use(express.static(buildPath));
       app.get(/^\/(?!api).*/, (req, res) => {
-        res.sendFile(path.join(buildPath, "index.html"));
+        res.sendFile(indexPath);
       });
     } else {
-      console.warn("⚠️ React build folder not found. Please run 'npm run build' in frontend.");
+      console.warn("⚠️ React build/index.html not found. Run 'npm run build' (or use frontend dev server).");
     }
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on port ${PORT}`);

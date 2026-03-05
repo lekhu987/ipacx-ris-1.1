@@ -320,3 +320,49 @@ input[type="radio"] {
   height: 16px;
   margin-top: 4px;   /* 🔥 THIS fixes vertical alignment */
 }
+.pr-consent-item {
+  display: grid !important;
+  grid-template-columns: 18px 1fr !important;
+  align-items: start !important;
+  justify-items: start !important;
+  column-gap: 12px !important;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.pr-consent-item:hover {
+  background: #f8fafc;
+}
+
+.pr-consent-checkbox {
+  width: 16px;
+  height: 16px;
+  margin: 3px 0 0 0 !important;
+  justify-self: start !important;
+  align-self: start !important;
+  position: static !important;
+}
+
+.pr-consent-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 !important;
+  text-align: left !important;
+}
+
+.pr-consent-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+  line-height: 1.35;
+}
+
+.pr-consent-desc {
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.45;
+}

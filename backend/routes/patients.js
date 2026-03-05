@@ -5,6 +5,7 @@ const router = express.Router();
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const PDFDocument = require("pdfkit");
 const { Pool } = require("pg");
 
 // =============================
@@ -59,6 +60,41 @@ function generateMRN() {
   return `MRN${Date.now()}${Math.floor(100 + Math.random() * 900)}`;
 }
 
+function pad3(n) {
+  return String(n).padStart(3, "0");
+}
+
+function buildPatientId(year, month, seq) {
+  return `${year}/${String(month).padStart(2, "0")}/${pad3(seq)}`;
+}
+
+async function generateNextPatientId() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const prefix = `${year}/${String(month).padStart(2, "0")}/`;
+
+  const result = await pool.query(
+    `
+    SELECT patient_id
+    FROM patients
+    WHERE patient_id LIKE $1
+    ORDER BY patient_id DESC
+    LIMIT 1
+    `,
+    [`${prefix}%`]
+  );
+
+  let nextSeq = 1;
+  if (result.rowCount > 0 && result.rows[0]?.patient_id) {
+    const parts = String(result.rows[0].patient_id).split("/");
+    const last = Number(parts[2]);
+    if (!Number.isNaN(last)) nextSeq = last + 1;
+  }
+
+  return buildPatientId(year, month, nextSeq);
+}
+
 async function getPatientColumns() {
   const result = await pool.query(
     `
@@ -68,6 +104,21 @@ async function getPatientColumns() {
     `
   );
   return new Set(result.rows.map((r) => r.column_name));
+}
+
+async function findPatientByIdentifier(identifier) {
+  const patientColumns = await getPatientColumns();
+  const searchableColumns = ["uhid", "patient_id", "mrn", "id"].filter((col) =>
+    patientColumns.has(col)
+  );
+
+  if (searchableColumns.length === 0) {
+    return null;
+  }
+
+  const where = searchableColumns.map((col) => `${col}::text = $1`).join(" OR ");
+  const result = await pool.query(`SELECT * FROM patients WHERE ${where} LIMIT 1`, [String(identifier)]);
+  return result.rows[0] || null;
 }
 
 // =============================
@@ -91,6 +142,17 @@ router.post("/", upload.single("id_proof_path"), async (req, res) => {
       consent_image_sharing,
       consent_telemedicine,
       digital_signature,
+      photo_url,
+      referring_doctor,
+      attending_physician,
+      visit_type,
+      modality,
+      modalities,
+      study_type,
+      study,
+      address_line1,
+      consent_signed,
+      signature_file,
     } = req.body;
 
     // Basic validation
@@ -101,11 +163,19 @@ router.post("/", upload.single("id_proof_path"), async (req, res) => {
       });
     }
 
-    const uhid = generateUHID();
-    const patientId = `HIS${Date.now()}`;
+    const patientId = await generateNextPatientId();
+    const uhid = patientId;
     const mrn = generateMRN();
     const fullName = [first_name, last_name].filter(Boolean).join(" ").trim();
     const idProofPath = req.file ? `/uploads/patient_docs/${req.file.filename}` : null;
+    const rawOccupation = String(req.body.occupation || "").trim();
+    const rawIdNumber = String(idNumber || req.body.id_number || "").trim();
+    const normalizedOccupation =
+      rawOccupation && rawIdNumber && rawOccupation === rawIdNumber && /^\d+$/.test(rawOccupation)
+        ? null
+        : rawOccupation || null;
+    const signatureRaw = digital_signature || signature_file || "";
+    const signatureValue = signatureRaw && String(signatureRaw).length <= 255 ? signatureRaw : null;
     const patientColumns = await getPatientColumns();
 
     const record = {
@@ -120,15 +190,90 @@ router.post("/", upload.single("id_proof_path"), async (req, res) => {
       age: age || null,
       mobile: mobile || null,
       email: email || null,
-      address: address || null,
+      address: address || address_line1 || null,
+      address_line1: address || address_line1 || null,
+      city: req.body.city || null,
+      district: req.body.district || null,
+      state: req.body.state || null,
+      pincode: req.body.pincode || null,
       id_type: idType || null,
       id_number: idNumber || null,
       biometric_flag: biometric_flag === "true" || biometric_flag === true,
       id_proof_path: idProofPath,
+      id_proof: idProofPath,
+      patient_type: req.body.patient_type || null,
+      clinical_history: req.body.medical_history || req.body.clinical_history || null,
+      provisional_diagnosis:
+        req.body.indication_for_scan || req.body.provisional_diagnosis || study_type || study || null,
       data_privacy_accepted: data_privacy_accepted === "true" || data_privacy_accepted === true,
+      consent_signed:
+        consent_signed === "true" ||
+        consent_signed === true ||
+        data_privacy_accepted === "true" ||
+        data_privacy_accepted === true,
       consent_image_sharing: consent_image_sharing === "true" || consent_image_sharing === true,
       consent_telemedicine: consent_telemedicine === "true" || consent_telemedicine === true,
-      digital_signature: digital_signature || null,
+      digital_signature: signatureValue,
+      signature_file: signatureValue,
+      photo_url: photo_url || null,
+      referring_doctor: referring_doctor || attending_physician || null,
+      attending_physician: attending_physician || null,
+      visit_type: visit_type || null,
+      modality: modality || modalities || null,
+      study_type: study_type || study || null,
+      study: study_type || study || null,
+      contrast:
+        req.body.contrast_safety_flag === "true" ||
+        req.body.contrast_safety_flag === true ||
+        req.body.contrast === "true" ||
+        req.body.contrast === true,
+      urgency: req.body.urgency || null,
+      billing_type: req.body.billing_category || req.body.billing_type || null,
+      insurance_id: req.body.insurance_id || null,
+      abha_number: req.body.abha_number || null,
+      abha_address: req.body.abha_address || null,
+      voter_id: req.body.voter_id || null,
+      registration_channel: req.body.registration_channel || null,
+      title: req.body.title || null,
+      relationship_type: req.body.relationship_type || null,
+      relationship_name: req.body.relationship_name || null,
+      marital_status: req.body.marital_status || null,
+      occupation: normalizedOccupation,
+      nationality: req.body.nationality || null,
+      language_preference: req.body.language_preference || null,
+      emergency_contact_name: req.body.emergency_contact_name || null,
+      emergency_contact_phone: req.body.emergency_contact_phone || null,
+      emergency_contact_relation: req.body.emergency_contact_relation || null,
+      secondary_contact_name: req.body.secondary_contact_name || req.body.secondaryContactName || null,
+      secondary_contact_phone: req.body.secondary_contact_phone || req.body.secondaryContactPhone || null,
+      blood_group: req.body.blood_group || null,
+      height_cm: req.body.height_cm || null,
+      weight_kg: req.body.weight_kg || null,
+      allergies: req.body.allergies || null,
+      current_medications: req.body.current_medications || null,
+      medical_history: req.body.medical_history || null,
+      is_pregnant:
+        req.body.is_pregnant === "true" ||
+        req.body.is_pregnant === true ||
+        req.body.isPregnant === "true" ||
+        req.body.isPregnant === true,
+      menstrual_status: req.body.menstrual_status || null,
+      lmp_date: req.body.lmp_date || null,
+      edd: req.body.edd || null,
+      gestational_age: req.body.gestational_age || null,
+      creatinine_level: req.body.creatinine_level || null,
+      contrast_safety_flag:
+        req.body.contrast_safety_flag === "true" ||
+        req.body.contrast_safety_flag === true,
+      modalities: req.body.modalities || null,
+      department: req.body.department || null,
+      ward_room_bed: req.body.ward_room_bed || null,
+      billing_category: req.body.billing_category || null,
+      insurance_provider: req.body.insurance_provider || null,
+      consent_research_ai:
+        req.body.consent_research_ai === "true" ||
+        req.body.consent_research_ai === true,
+      indication_for_scan: req.body.indication_for_scan || null,
     };
 
     const insertCols = Object.keys(record).filter((col) => patientColumns.has(col));
@@ -163,6 +308,94 @@ router.post("/", upload.single("id_proof_path"), async (req, res) => {
 });
 
 // =============================
+// RESEQUENCE EXISTING PATIENT IDS
+// =============================
+router.post("/resequence-ids", async (req, res) => {
+  try {
+    const patientColumns = await getPatientColumns();
+    const hasPatientId = patientColumns.has("patient_id");
+    const hasUhid = patientColumns.has("uhid");
+    const hasCreatedAt = patientColumns.has("created_at");
+    const hasId = patientColumns.has("id");
+
+    if (!hasPatientId && !hasUhid) {
+      return res.status(400).json({
+        success: false,
+        message: "Neither patient_id nor uhid column exists in patients table",
+      });
+    }
+
+    const keyColumn = hasId ? "id" : hasUhid ? "uhid" : "patient_id";
+    const orderExpr = hasCreatedAt
+      ? "created_at ASC, id ASC"
+      : hasId
+      ? "id ASC"
+      : "patient_id ASC NULLS LAST";
+
+    const rows = await pool.query(
+      `
+      SELECT ${keyColumn} AS row_key${hasCreatedAt ? ", created_at" : ""}
+      FROM patients
+      ORDER BY ${orderExpr}
+      `
+    );
+
+    if (rows.rowCount === 0) {
+      return res.json({
+        success: true,
+        message: "No patients found to resequence",
+        updated: 0,
+      });
+    }
+
+    const counters = new Map();
+    let updated = 0;
+
+    for (const row of rows.rows) {
+      const d = hasCreatedAt && row.created_at ? new Date(row.created_at) : new Date();
+      const year = d.getFullYear();
+      const month = d.getMonth() + 1;
+      const key = `${year}/${String(month).padStart(2, "0")}`;
+      const next = (counters.get(key) || 0) + 1;
+      counters.set(key, next);
+
+      const newId = buildPatientId(year, month, next);
+
+      if (hasPatientId && hasUhid) {
+        await pool.query(`UPDATE patients SET patient_id = $1, uhid = $1 WHERE ${keyColumn}::text = $2`, [
+          newId,
+          String(row.row_key),
+        ]);
+      } else if (hasPatientId) {
+        await pool.query(`UPDATE patients SET patient_id = $1 WHERE ${keyColumn}::text = $2`, [
+          newId,
+          String(row.row_key),
+        ]);
+      } else {
+        await pool.query(`UPDATE patients SET uhid = $1 WHERE ${keyColumn}::text = $2`, [
+          newId,
+          String(row.row_key),
+        ]);
+      }
+      updated += 1;
+    }
+
+    return res.json({
+      success: true,
+      message: "Patient IDs resequenced successfully",
+      updated,
+    });
+  } catch (error) {
+    console.error("Resequence Patient IDs Error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to resequence patient IDs",
+      error: error.message,
+    });
+  }
+});
+
+// =============================
 // GET ALL PATIENTS
 // =============================
 router.get("/", async (req, res) => {
@@ -190,6 +423,363 @@ router.get("/", async (req, res) => {
     res.status(500).json({
       success: false,
       message: "Failed to fetch patients",
+      error: error.message,
+    });
+  }
+});
+
+// =============================
+// PRINT PATIENT REGISTRATION SLIP
+// =============================
+router.get("/print/:identifier", async (req, res) => {
+  try {
+    const { identifier } = req.params;
+    const patient = await findPatientByIdentifier(identifier);
+
+    if (!patient) {
+      return res.status(404).json({
+        success: false,
+        message: "Patient not found for printing",
+      });
+    }
+
+    const patientId = patient.uhid || patient.patient_id || patient.mrn || identifier;
+    const fullName =
+      `${patient.first_name || ""} ${patient.last_name || ""}`.trim() ||
+      patient.full_name ||
+      patient.patient_name ||
+      "N/A";
+    const dob = patient.dob ? new Date(patient.dob).toLocaleDateString() : "N/A";
+    const createdAt = patient.created_at ? new Date(patient.created_at).toLocaleString() : new Date().toLocaleString();
+    const printedAt = new Date().toLocaleString();
+    const idType = patient.id_type || "-";
+    const idNumber = patient.id_number || "-";
+    const addressText = patient.address || patient.address_line1 || "-";
+    const secondaryContact =
+      [patient.secondary_contact_name, patient.secondary_contact_phone].filter(Boolean).join(" / ") || "-";
+    const occupationText = patient.occupation || "-";
+    const patientType = patient.patient_type || "-";
+    const studyType = patient.study_type || patient.study || patient.indication_for_scan || "-";
+    const billingType = patient.billing_category || patient.billing_type || "-";
+    const hospitalName = process.env.HOSPITAL_NAME || "iPacx RIS";
+    const hospitalAddress = process.env.HOSPITAL_ADDRESS || "Radiology & Diagnostic Center";
+    const hospitalContact = process.env.HOSPITAL_CONTACT || "Phone: +91-XXXXXXXXXX";
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `inline; filename=patient_registration_${patientId}.pdf`);
+
+    const doc = new PDFDocument({ size: "A4", margin: 40 });
+    doc.pipe(res);
+
+    const pageWidth = doc.page.width;
+    const contentWidth = pageWidth - 80;
+    const leftX = 40;
+    let y = 44;
+
+    const drawKVRow = (label, value, x, rowY, labelWidth = 125) => {
+      doc.font("Helvetica-Bold").fontSize(10).fillColor("#374151").text(label, x, rowY, { width: labelWidth });
+      doc.font("Helvetica").fontSize(10).fillColor("#111827").text(value || "N/A", x + labelWidth, rowY, {
+        width: 220,
+      });
+    };
+
+    const sectionTitle = (title, topY) => {
+      doc.roundedRect(leftX, topY, contentWidth, 22, 4).fillAndStroke("#eef2ff", "#c7d2fe");
+      doc.font("Helvetica-Bold").fontSize(11).fillColor("#1e3a8a").text(title, leftX + 10, topY + 6);
+    };
+
+    // Header
+    doc.roundedRect(leftX, y, contentWidth, 86, 8).fillAndStroke("#f8fafc", "#e5e7eb");
+    doc.font("Helvetica-Bold").fontSize(20).fillColor("#0f172a").text(hospitalName, leftX + 14, y + 12);
+    doc.font("Helvetica").fontSize(10).fillColor("#475569").text(hospitalAddress, leftX + 14, y + 40);
+    doc.font("Helvetica").fontSize(10).fillColor("#475569").text(hospitalContact, leftX + 14, y + 56);
+
+    const rightHeaderX = leftX + 230;
+    const rightHeaderWidth = 235;
+    doc.font("Helvetica-Bold").fontSize(11).fillColor("#111827").text("PATIENT REGISTRATION FORM", rightHeaderX, y + 20, {
+      width: rightHeaderWidth,
+      align: "right",
+    });
+    doc.font("Helvetica").fontSize(9).fillColor("#6b7280").text(`Printed: ${printedAt}`, rightHeaderX, y + 46, {
+      width: rightHeaderWidth,
+      align: "right",
+    });
+    doc.font("Helvetica").fontSize(9).fillColor("#6b7280").text(`Registered: ${createdAt}`, rightHeaderX, y + 60, {
+      width: rightHeaderWidth,
+      align: "right",
+    });
+
+    y += 102;
+
+    // Section: Identity
+    sectionTitle("Patient Identity", y);
+    y += 30;
+    drawKVRow("Patient ID", patientId, leftX, y);
+    drawKVRow("MRN", patient.mrn || "-", leftX + 300, y, 80);
+    y += 16;
+    drawKVRow("Full Name", fullName, leftX, y);
+    drawKVRow("Gender", patient.gender || "-", leftX + 300, y, 80);
+    y += 16;
+    drawKVRow("Date of Birth", dob, leftX, y);
+    drawKVRow("Age", patient.age ? String(patient.age) : "-", leftX + 300, y, 80);
+    y += 16;
+    drawKVRow("Mobile", patient.mobile || patient.phone || "-", leftX, y);
+    drawKVRow("ABHA", patient.abha_number || "-", leftX + 300, y, 80);
+    y += 16;
+    drawKVRow("Govt ID Type", idType, leftX, y);
+    drawKVRow("ID Number", idNumber, leftX + 300, y, 80);
+    y += 16;
+    drawKVRow("Blood Group", patient.blood_group || "-", leftX, y);
+    drawKVRow("Pincode", patient.pincode || "-", leftX + 300, y, 80);
+    y += 16;
+    drawKVRow("Email", patient.email || "-", leftX, y);
+    drawKVRow("Occupation", occupationText, leftX + 300, y, 80);
+    y += 16;
+    drawKVRow("Secondary Contact", secondaryContact, leftX, y);
+    y += 16;
+    doc.font("Helvetica-Bold").fontSize(10).fillColor("#374151").text("Address", leftX, y, { width: 125 });
+    doc.font("Helvetica").fontSize(10).fillColor("#111827").text(addressText, leftX + 125, y, {
+      width: 430,
+    });
+
+    y += 34;
+
+    // Section: Visit Details
+    sectionTitle("Visit & Clinical Details", y);
+    y += 30;
+    drawKVRow("Visit Type", patient.visit_type || "-", leftX, y);
+    drawKVRow("Patient Type", patientType, leftX + 300, y, 80);
+    y += 16;
+    drawKVRow("Referring Doctor", patient.referring_doctor || patient.attending_physician || "-", leftX, y);
+    drawKVRow("Modality", patient.modality || "-", leftX + 300, y, 80);
+    y += 16;
+    drawKVRow("Study Type", studyType, leftX, y);
+    drawKVRow("Department", patient.department || "-", leftX + 300, y, 80);
+    y += 26;
+
+    // Section: Billing & Consent
+    sectionTitle("Billing & Consent", y);
+    y += 30;
+    drawKVRow("Billing Category", billingType, leftX, y);
+    drawKVRow("Insurance ID", patient.insurance_id || "-", leftX + 300, y, 80);
+    y += 16;
+    drawKVRow("Data Privacy", patient.data_privacy_accepted ? "Accepted" : "Not Accepted", leftX, y);
+    drawKVRow("Telemedicine", patient.consent_telemedicine ? "Accepted" : "Not Accepted", leftX + 300, y, 80);
+    y += 16;
+    drawKVRow("Image Sharing", patient.consent_image_sharing ? "Accepted" : "Not Accepted", leftX, y);
+
+    y += 44;
+    doc.moveTo(leftX, y).lineTo(leftX + 220, y).strokeColor("#9ca3af").stroke();
+    doc.moveTo(leftX + 335, y).lineTo(leftX + contentWidth, y).strokeColor("#9ca3af").stroke();
+    doc.font("Helvetica").fontSize(9).fillColor("#4b5563").text("Patient / Guardian Signature", leftX, y + 6, { width: 220, align: "center" });
+    doc.font("Helvetica").fontSize(9).fillColor("#4b5563").text("Authorized Staff Signature", leftX + 335, y + 6, { width: 225, align: "center" });
+
+    y += 36;
+    doc.font("Helvetica-Oblique").fontSize(8).fillColor("#64748b").text(
+      "This is a computer-generated patient registration form. No physical seal is required unless mandated by local policy.",
+      leftX,
+      y,
+      { width: contentWidth, align: "center" }
+    );
+
+    doc.end();
+  } catch (error) {
+    console.error("Print Patient Error:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Failed to generate patient print",
+      error: error.message,
+    });
+  }
+});
+
+// =============================
+// UPDATE PATIENT
+// =============================
+router.put("/:identifier", upload.single("id_proof_path"), async (req, res) => {
+  try {
+    const { identifier } = req.params;
+    const existing = await findPatientByIdentifier(identifier);
+    if (!existing) {
+      return res.status(404).json({
+        success: false,
+        message: "Patient not found",
+      });
+    }
+
+    const {
+      first_name,
+      last_name,
+      gender,
+      dob,
+      age,
+      mobile,
+      email,
+      address,
+      idType,
+      idNumber,
+      biometric_flag,
+      data_privacy_accepted,
+      consent_image_sharing,
+      consent_telemedicine,
+      digital_signature,
+      photo_url,
+      referring_doctor,
+      attending_physician,
+      visit_type,
+      modality,
+      modalities,
+      study_type,
+      study,
+      address_line1,
+      consent_signed,
+      signature_file,
+    } = req.body;
+
+    const patientColumns = await getPatientColumns();
+    const idProofPath = req.file ? `/uploads/patient_docs/${req.file.filename}` : undefined;
+    const fullName = [first_name, last_name].filter(Boolean).join(" ").trim();
+    const rawOccupation = String(req.body.occupation || "").trim();
+    const rawIdNumber = String(idNumber || req.body.id_number || "").trim();
+    const normalizedOccupation =
+      rawOccupation && rawIdNumber && rawOccupation === rawIdNumber && /^\d+$/.test(rawOccupation)
+        ? null
+        : rawOccupation || null;
+    const signatureRaw = digital_signature || signature_file || "";
+    const signatureValue = signatureRaw && String(signatureRaw).length <= 255 ? signatureRaw : null;
+
+    const updates = {
+      full_name: fullName || undefined,
+      first_name,
+      last_name: last_name || null,
+      gender,
+      dob: dob || null,
+      age: age || null,
+      mobile: mobile || null,
+      email: email || null,
+      address: address || address_line1 || null,
+      address_line1: address || address_line1 || null,
+      city: req.body.city || null,
+      district: req.body.district || null,
+      state: req.body.state || null,
+      pincode: req.body.pincode || null,
+      id_type: idType || null,
+      id_number: idNumber || null,
+      biometric_flag: biometric_flag === "true" || biometric_flag === true,
+      id_proof_path: idProofPath,
+      id_proof: idProofPath,
+      patient_type: req.body.patient_type || null,
+      clinical_history: req.body.medical_history || req.body.clinical_history || null,
+      provisional_diagnosis:
+        req.body.indication_for_scan || req.body.provisional_diagnosis || study_type || study || null,
+      data_privacy_accepted: data_privacy_accepted === "true" || data_privacy_accepted === true,
+      consent_signed:
+        consent_signed === "true" ||
+        consent_signed === true ||
+        data_privacy_accepted === "true" ||
+        data_privacy_accepted === true,
+      consent_image_sharing: consent_image_sharing === "true" || consent_image_sharing === true,
+      consent_telemedicine: consent_telemedicine === "true" || consent_telemedicine === true,
+      digital_signature: signatureValue,
+      signature_file: signatureValue,
+      photo_url: photo_url || null,
+      referring_doctor: referring_doctor || attending_physician || null,
+      attending_physician: attending_physician || null,
+      visit_type: visit_type || null,
+      modality: modality || modalities || null,
+      study_type: study_type || study || null,
+      study: study_type || study || null,
+      contrast:
+        req.body.contrast_safety_flag === "true" ||
+        req.body.contrast_safety_flag === true ||
+        req.body.contrast === "true" ||
+        req.body.contrast === true,
+      urgency: req.body.urgency || null,
+      billing_type: req.body.billing_category || req.body.billing_type || null,
+      insurance_id: req.body.insurance_id || null,
+      abha_number: req.body.abha_number || null,
+      abha_address: req.body.abha_address || null,
+      voter_id: req.body.voter_id || null,
+      registration_channel: req.body.registration_channel || null,
+      title: req.body.title || null,
+      relationship_type: req.body.relationship_type || null,
+      relationship_name: req.body.relationship_name || null,
+      marital_status: req.body.marital_status || null,
+      occupation: normalizedOccupation,
+      nationality: req.body.nationality || null,
+      language_preference: req.body.language_preference || null,
+      emergency_contact_name: req.body.emergency_contact_name || null,
+      emergency_contact_phone: req.body.emergency_contact_phone || null,
+      emergency_contact_relation: req.body.emergency_contact_relation || null,
+      secondary_contact_name: req.body.secondary_contact_name || req.body.secondaryContactName || null,
+      secondary_contact_phone: req.body.secondary_contact_phone || req.body.secondaryContactPhone || null,
+      blood_group: req.body.blood_group || null,
+      height_cm: req.body.height_cm || null,
+      weight_kg: req.body.weight_kg || null,
+      allergies: req.body.allergies || null,
+      current_medications: req.body.current_medications || null,
+      medical_history: req.body.medical_history || null,
+      is_pregnant:
+        req.body.is_pregnant === "true" ||
+        req.body.is_pregnant === true ||
+        req.body.isPregnant === "true" ||
+        req.body.isPregnant === true,
+      menstrual_status: req.body.menstrual_status || null,
+      lmp_date: req.body.lmp_date || null,
+      edd: req.body.edd || null,
+      gestational_age: req.body.gestational_age || null,
+      creatinine_level: req.body.creatinine_level || null,
+      contrast_safety_flag:
+        req.body.contrast_safety_flag === "true" ||
+        req.body.contrast_safety_flag === true,
+      modalities: req.body.modalities || null,
+      department: req.body.department || null,
+      ward_room_bed: req.body.ward_room_bed || null,
+      billing_category: req.body.billing_category || null,
+      insurance_provider: req.body.insurance_provider || null,
+      consent_research_ai:
+        req.body.consent_research_ai === "true" ||
+        req.body.consent_research_ai === true,
+      indication_for_scan: req.body.indication_for_scan || null,
+    };
+
+    const setCols = Object.keys(updates).filter((col) => patientColumns.has(col) && updates[col] !== undefined);
+    if (setCols.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "No valid fields provided for update",
+      });
+    }
+
+    const values = setCols.map((col) => updates[col]);
+    const setClause = setCols.map((col, i) => `${col} = $${i + 1}`).join(", ");
+    const where = ["uhid", "patient_id", "mrn", "id"]
+      .filter((col) => patientColumns.has(col))
+      .map((col) => `${col}::text = $${setCols.length + 1}`)
+      .join(" OR ");
+
+    const result = await pool.query(
+      `UPDATE patients SET ${setClause} WHERE ${where} RETURNING *`,
+      [...values, String(identifier)]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Patient not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      message: "Patient updated successfully",
+      patient: result.rows[0],
+    });
+  } catch (error) {
+    console.error("Patient Update Error:", error.message);
+    res.status(500).json({
+      success: false,
+      message: "Failed to update patient",
       error: error.message,
     });
   }
