@@ -112,6 +112,9 @@ app.use("/api/pacs", pacsRoutes);
 const modalitiesRoutes = require("./routes/modalities");
 app.use("/api", modalitiesRoutes);
 
+const speechRoutes = require("./routes/speech");
+app.use("/api/speech", speechRoutes);
+
 //const studiesRoutes = require("./routes/studies");
 //app.use("/api/studies", studiesRoutes);
 

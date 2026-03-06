@@ -90,3 +90,30 @@
   color: #166534;
   border: 1px solid #86efac;
 }
+
+.sch-actions {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.sch-actions button {
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #fff;
+  cursor: pointer;
+}
+
+.sch-btn-edit {
+  background: #2563eb;
+}
+
+.sch-btn-delete {
+  background: #dc2626;
+}
+
+.sch-btn-mwl {
+  background: #7c3aed;
+}

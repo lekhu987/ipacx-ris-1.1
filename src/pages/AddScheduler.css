@@ -36,6 +36,27 @@
   border: 1px solid #aaa;
 }
 
+.time-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.time-select-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.time-select-wrap select {
+  min-width: 72px;
+}
+
+.time-select-wrap span {
+  font-weight: 700;
+  color: #333;
+}
+
 .btn-area {
   margin-top: 20px;
   display: flex;
@@ -49,4 +70,9 @@
   border-radius: 6px;
   border: none;
   cursor: pointer;
+}
+
+.save-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }

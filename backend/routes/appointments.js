@@ -313,4 +313,80 @@ router.post("/", async (req, res) => {
   }
 });
 
+router.put("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      patientId,
+      patientName,
+      contact,
+      time,
+      modality,
+      doctor,
+      status,
+      date,
+    } = req.body || {};
+
+    const columns = await getAppointmentColumns();
+    const idCol = ["id", "appointment_id"].find((c) => columns.has(c));
+    const patientIdCol = ["patient_id", "patientid", "uhid"].find((c) => columns.has(c));
+    if (!idCol) {
+      return res.status(500).json({ success: false, error: "appointments table is missing id column" });
+    }
+
+    const payload = {};
+    if (patientIdCol && patientId !== undefined) setFirstAvailable(payload, columns, [patientIdCol], String(patientId));
+    if (patientName !== undefined) setFirstAvailable(payload, columns, ["patient_name", "name", "full_name"], patientName || null);
+    if (contact !== undefined) setFirstAvailable(payload, columns, ["contact", "contact_number", "contact_no", "mobile", "phone"], contact || null);
+    if (date !== undefined) setFirstAvailable(payload, columns, ["appointment_date", "date"], normalizeDateForDb(date));
+    if (time !== undefined) setFirstAvailable(payload, columns, ["appointment_time", "time"], normalizeTimeForDb(time));
+    if (modality !== undefined) setFirstAvailable(payload, columns, ["modality"], modality || null);
+    if (doctor !== undefined) setFirstAvailable(payload, columns, ["doctor", "referring_doctor", "attending_physician"], doctor || null);
+    if (status !== undefined) setFirstAvailable(payload, columns, ["status"], status || "Pending");
+    setFirstAvailable(payload, columns, ["updated_at"], new Date());
+
+    const setCols = Object.keys(payload);
+    if (!setCols.length) {
+      return res.status(400).json({ success: false, error: "No fields to update" });
+    }
+    const setClause = setCols.map((c, i) => `${c} = $${i + 1}`).join(", ");
+    const values = setCols.map((c) => payload[c]);
+    values.push(id);
+
+    const updated = await pool.query(
+      `UPDATE appointments SET ${setClause} WHERE ${idCol}::text = $${values.length} RETURNING *`,
+      values
+    );
+    if (updated.rowCount === 0) {
+      return res.status(404).json({ success: false, error: "Appointment not found" });
+    }
+    return res.json({ success: true, appointment: mapAppointmentRow(updated.rows[0]) });
+  } catch (err) {
+    console.error("Error updating appointment:", err.message);
+    return res.status(500).json({ success: false, error: "Failed to update appointment" });
+  }
+});
+
+router.delete("/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const columns = await getAppointmentColumns();
+    const idCol = ["id", "appointment_id"].find((c) => columns.has(c));
+    if (!idCol) {
+      return res.status(500).json({ success: false, error: "appointments table is missing id column" });
+    }
+    const result = await pool.query(
+      `DELETE FROM appointments WHERE ${idCol}::text = $1 RETURNING *`,
+      [String(id)]
+    );
+    if (result.rowCount === 0) {
+      return res.status(404).json({ success: false, error: "Appointment not found" });
+    }
+    return res.json({ success: true, deleted: mapAppointmentRow(result.rows[0]) });
+  } catch (err) {
+    console.error("Error deleting appointment:", err.message);
+    return res.status(500).json({ success: false, error: "Failed to delete appointment" });
+  }
+});
+
 module.exports = router;

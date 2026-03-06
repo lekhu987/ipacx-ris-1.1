@@ -2,29 +2,65 @@ import React, { useEffect, useState } from "react";
 import "./AddScheduler.css";
 
 export default function AddScheduler({ onSave, onClose, initialData }) {
+  const formatTime12 = (hour, minute, period) => `${hour}:${minute} ${period}`;
+  const parseTo12Hour = (input) => {
+    const raw = String(input || "").trim();
+    if (!raw) return { hour: "10", minute: "00", period: "AM" };
+
+    const ampm = raw.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (ampm) {
+      let hour = Number(ampm[1]);
+      if (hour === 0) hour = 12;
+      if (hour > 12) hour = ((hour - 1) % 12) + 1;
+      return {
+        hour: String(hour),
+        minute: ampm[2],
+        period: ampm[3].toUpperCase(),
+      };
+    }
+
+    const m24 = raw.match(/^(\d{1,2}):(\d{2})/);
+    if (m24) {
+      let h = Number(m24[1]);
+      const minute = m24[2];
+      const period = h >= 12 ? "PM" : "AM";
+      h = h % 12;
+      if (h === 0) h = 12;
+      return { hour: String(h), minute, period };
+    }
+
+    return { hour: "10", minute: "00", period: "AM" };
+  };
+
   const [form, setForm] = useState({
+    id: "",
     patientId: "",
     patientName: "",
     contact: "",
-    time: "",
+    time: "10:00 AM",
+    timeHour: "10",
+    timeMinute: "00",
+    timePeriod: "AM",
     modality: "",
     doctor: "",
-    status: "Pending",
     date: ""
   });
 
   useEffect(() => {
     if (!initialData) return;
+    const t = parseTo12Hour(initialData?.time);
     setForm((prev) => ({
       ...prev,
       ...initialData,
+      time: formatTime12(t.hour, t.minute, t.period),
+      timeHour: t.hour,
+      timeMinute: t.minute,
+      timePeriod: t.period,
     }));
   }, [initialData]);
 
   const modalities = ["CT", "MRI", "X-Ray", "Ultrasound", "DEXA"];
   const doctors = ["Dr. Smith", "Dr. Johnson", "Dr. Rakesh", "Dr. Priya", "Dr. Karthik"];
-  const statuses = ["Pending", "Accepted", "Completed"];
-
   const modalityOptions = form.modality && !modalities.includes(form.modality)
     ? [form.modality, ...modalities]
     : modalities;
@@ -36,8 +72,40 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
+  const handleTimePartChange = (e) => {
+    const { name, value } = e.target;
+    const next = { ...form, [name]: value };
+    const time12 = formatTime12(next.timeHour, next.timeMinute, next.timePeriod);
+    setForm({
+      ...next,
+      time: time12,
+    });
+  };
+
+  const handleManualTimeChange = (e) => {
+    const raw = e.target.value;
+    const parsed = parseTo12Hour(raw);
+    setForm((prev) => ({
+      ...prev,
+      time: raw,
+      timeHour: parsed.hour,
+      timeMinute: parsed.minute,
+      timePeriod: parsed.period,
+    }));
+  };
+
+  const isFormValid = () => {
+    const patientId = String(form.patientId || "").trim();
+    const patientName = String(form.patientName || "").trim();
+    const time = String(form.time || "").trim();
+    const modality = String(form.modality || "").trim();
+    const doctor = String(form.doctor || "").trim();
+    const date = String(form.date || "").trim();
+    return Boolean(patientId && patientName && time && modality && doctor && date);
+  };
+
   const submitForm = () => {
-    if (!form.patientId ||!form.patientName || !form.time || !form.modality || !form.doctor || !form.date) {
+    if (!isFormValid()) {
       alert("Please fill all fields including date");
       return;
     }
@@ -46,7 +114,7 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
 
   return (
     <div className="add-scheduler-box">
-      <h3>Add New Scheduler</h3>
+      <h3>{form.id ? "Edit Scheduler" : "Add New Scheduler"}</h3>
 
       {/* Row full width */}
       <div className="row">
@@ -80,12 +148,31 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
 
         <div className="row">
           <label>Time</label>
-          <input
-            name="time"
-            placeholder="10:30 AM / 14:00"
-            value={form.time}
-            onChange={handleChange}
-          />
+          <div className="time-wrap">
+            <div className="time-select-wrap">
+              <select name="timeHour" value={form.timeHour} onChange={handleTimePartChange}>
+                {[12,1,2,3,4,5,6,7,8,9,10,11].map((h) => (
+                  <option key={h} value={String(h)}>{h}</option>
+                ))}
+              </select>
+              <span>:</span>
+              <select name="timeMinute" value={form.timeMinute} onChange={handleTimePartChange}>
+                {["00","05","10","15","20","25","30","35","40","45","50","55"].map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+              <select name="timePeriod" value={form.timePeriod} onChange={handleTimePartChange}>
+                <option value="AM">AM</option>
+                <option value="PM">PM</option>
+              </select>
+            </div>
+            <input
+              name="time"
+              placeholder="e.g. 11:30 AM"
+              value={form.time}
+              onChange={handleManualTimeChange}
+            />
+          </div>
         </div>
       </div>
 
@@ -107,15 +194,10 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
         </div>
       </div>
 
-      <div className="row">
-        <label>Status</label>
-        <select name="status" value={form.status} onChange={handleChange}>
-          {statuses.map((s) => <option key={s}>{s}</option>)}
-        </select>
-      </div>
-
       <div className="btn-area">
-        <button className="save-btn" onClick={submitForm}>Save</button>
+        <button className="save-btn" onClick={submitForm} disabled={!isFormValid()}>
+          {form.id ? "Update" : "Save"}
+        </button>
         <button className="close-btn" onClick={onClose}>Cancel</button>
       </div>
     </div>

@@ -417,8 +417,13 @@ export default function CreateReport() {
   const [templates, setTemplates] = useState([]);
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [listening, setListening] = useState(false);
+  const [isUploadingDictation, setIsUploadingDictation] = useState(false);
+  const [dictationMode, setDictationMode] = useState("native");
   const recognitionRef = useRef(null);
   const recognitionRunningRef = useRef(false);
+  const mediaRecorderRef = useRef(null);
+  const mediaStreamRef = useRef(null);
+  const audioChunksRef = useRef([]);
   const reportSheetRef = useRef(null);
   const previewMeasureRef = useRef(null);
   const previewPaneRef = useRef(null);
@@ -471,77 +476,148 @@ useEffect(() => {
 }, [study.Modality, study.BodyPartExamined, isManualTitle]);
 
 // 🎙️ Voice based dictation (insert at cursor)
-useEffect(() => {
-  const SpeechRecognition =
-    window.SpeechRecognition || window.webkitSpeechRecognition;
+const insertTranscriptAtCursor = (transcript) => {
+  if (!transcript.trim()) return;
+  if (!activeEditorRef.current) return;
+  restoreSelection();
+  const sel = window.getSelection();
+  if (!sel || !sel.rangeCount) return;
+  const range = sel.getRangeAt(0);
+  range.deleteContents();
+  const textNode = document.createTextNode(" " + transcript.trim());
+  range.insertNode(textNode);
+  range.setStartAfter(textNode);
+  range.setEndAfter(textNode);
+  sel.removeAllRanges();
+  sel.addRange(range);
+  saveSelection();
+  const editorType = activeEditorRef.current.dataset.editor;
+  if (editorType === "history") setHistory(activeEditorRef.current.innerHTML);
+  if (editorType === "findings") setFindings(activeEditorRef.current.innerHTML);
+  if (editorType === "conclusion") setConclusion(activeEditorRef.current.innerHTML);
+};
 
-  if (!SpeechRecognition) {
-    console.warn("Speech recognition not supported");
+const cleanupRecorderStream = () => {
+  if (mediaStreamRef.current) {
+    mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+    mediaStreamRef.current = null;
+  }
+};
+
+const stopFallbackDictation = () => {
+  const recorder = mediaRecorderRef.current;
+  if (!recorder) {
+    cleanupRecorderStream();
+    recognitionRunningRef.current = false;
+    setListening(false);
     return;
   }
+  if (recorder.state !== "inactive") recorder.stop();
+  else {
+    cleanupRecorderStream();
+    recognitionRunningRef.current = false;
+    setListening(false);
+  }
+};
 
+const startFallbackDictation = async () => {
+  if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+    alert("This browser does not support microphone recording.");
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    mediaStreamRef.current = stream;
+    audioChunksRef.current = [];
+    const preferredMime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : MediaRecorder.isTypeSupported("audio/webm")
+      ? "audio/webm"
+      : "";
+    const recorder = preferredMime
+      ? new MediaRecorder(stream, { mimeType: preferredMime })
+      : new MediaRecorder(stream);
+    recorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) audioChunksRef.current.push(event.data);
+    };
+    recorder.onstop = async () => {
+      recognitionRunningRef.current = false;
+      setListening(false);
+      cleanupRecorderStream();
+      const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+      audioChunksRef.current = [];
+      mediaRecorderRef.current = null;
+      if (!blob.size) return;
+      setIsUploadingDictation(true);
+      try {
+        const fd = new FormData();
+        fd.append("audio", blob, "dictation.webm");
+        fd.append("language", "en");
+        const resp = await api.post("/api/speech/transcribe", fd, {
+          headers: { "Content-Type": "multipart/form-data" },
+        });
+        const text = String(resp?.data?.text || "").trim();
+        if (text) insertTranscriptAtCursor(text);
+      } catch (err) {
+        console.error("Fallback dictation failed:", err);
+        alert(err?.response?.data?.error || "Failed to transcribe audio.");
+      } finally {
+        setIsUploadingDictation(false);
+      }
+    };
+    mediaRecorderRef.current = recorder;
+    recognitionRunningRef.current = true;
+    setListening(true);
+    recorder.start(250);
+  } catch (err) {
+    console.error("Microphone permission/recording failed:", err);
+    cleanupRecorderStream();
+    recognitionRunningRef.current = false;
+    setListening(false);
+    alert("Microphone access failed. Please allow mic permission.");
+  }
+};
+
+useEffect(() => {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    setDictationMode("fallback");
+    return () => {
+      stopFallbackDictation();
+    };
+  }
+  setDictationMode("native");
   const recognition = new SpeechRecognition();
   recognition.continuous = true;
   recognition.interimResults = false;
   recognition.lang = "en-US";
-
   recognition.onstart = () => {
     recognitionRunningRef.current = true;
   };
-
   recognition.onend = () => {
     recognitionRunningRef.current = false;
     setListening(false);
   };
-
   recognition.onerror = (e) => {
     console.error("Speech recognition error:", e);
     recognitionRunningRef.current = false;
     setListening(false);
   };
-
   recognition.onresult = (event) => {
     let transcript = "";
-
     for (let i = event.resultIndex; i < event.results.length; i++) {
-      if (event.results[i].isFinal) {
-        transcript += event.results[i][0].transcript;
-      }
+      if (event.results[i].isFinal) transcript += event.results[i][0].transcript;
     }
-
-    if (!transcript.trim()) return;
-    if (!activeEditorRef.current) return;
-
-    restoreSelection();
-
-    const sel = window.getSelection();
-    if (!sel || !sel.rangeCount) return;
-
-    const range = sel.getRangeAt(0);
-    range.deleteContents();
-
-    const textNode = document.createTextNode(" " + transcript);
-    range.insertNode(textNode);
-
-    range.setStartAfter(textNode);
-    range.setEndAfter(textNode);
-    sel.removeAllRanges();
-    sel.addRange(range);
-
-    saveSelection();
-
-    const editorType = activeEditorRef.current.dataset.editor;
-    if (editorType === "history") setHistory(activeEditorRef.current.innerHTML);
-    if (editorType === "findings") setFindings(activeEditorRef.current.innerHTML);
-    if (editorType === "conclusion") setConclusion(activeEditorRef.current.innerHTML);
+    insertTranscriptAtCursor(transcript);
   };
-
   recognitionRef.current = recognition;
-
   return () => {
     if (recognitionRunningRef.current) {
-      recognition.stop();
+      try {
+        recognition.stop();
+      } catch {}
     }
+    stopFallbackDictation();
   };
 }, []);
 
@@ -889,7 +965,15 @@ useEffect(() => {
 
       // ✅ IMAGES
       if (Array.isArray(data.images)) {
-        const imgs = data.images;
+        const imgs = data.images
+          .map((img) => {
+            if (typeof img === "string") return img;
+            if (img && typeof img === "object") {
+              return img.image_path || img.path || img.url || "";
+            }
+            return "";
+          })
+          .filter(Boolean);
         setKeyImages(imgs);
         setShowKeyImages(imgs.length > 0);
       }
@@ -1658,9 +1742,14 @@ const isSplitMode = !viewerMinimized && !reportMinimized;
     <button
       type="button"
       onClick={() => {
+        if (isUploadingDictation) return;
+        if (dictationMode === "fallback") {
+          if (recognitionRunningRef.current || listening) stopFallbackDictation();
+          else startFallbackDictation();
+          return;
+        }
         const rec = recognitionRef.current;
         if (!rec) return;
-        // Guard against InvalidStateError when start() is called twice.
         if (recognitionRunningRef.current || listening) {
           try {
             rec.stop();
@@ -1669,23 +1758,22 @@ const isSplitMode = !viewerMinimized && !reportMinimized;
           }
           return;
         }
-
         try {
           rec.start();
         } catch (err) {
-          // Some browsers throw if already started; keep UI stable.
           console.warn("SpeechRecognition start ignored:", err);
         }
       }}
+      disabled={isUploadingDictation}
       style={{
         height: "30px", width: "30px", borderRadius: "50%", border: "none",
-        background: listening ? "#dc3545" : "#f1f3f5",
+        background: listening ? "#dc3545" : isUploadingDictation ? "#6c757d" : "#f1f3f5",
         color: listening ? "#fff" : "#444",
-        cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+        cursor: isUploadingDictation ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center",
         marginLeft: isSplitMode ? "2px" : 0
       }}
     >
-      {listening ? "⏹" : "🎙️"}
+      {isUploadingDictation ? "..." : listening ? "⏹" : "🎙️"}
     </button>
 
     <div style={{ display: "flex", gap: "6px", flexWrap: "nowrap", marginLeft: "6px" }}>
@@ -2074,3 +2162,5 @@ const isSplitMode = !viewerMinimized && !reportMinimized;
     
   );
 }
+
+

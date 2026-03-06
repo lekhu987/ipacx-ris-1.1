@@ -19,17 +19,14 @@ function Scheduling() {
   const [showForm, setShowForm] = useState(false);
   const [appointments, setAppointments] = useState([]);
   const [prefillData, setPrefillData] = useState(null);
+  const [editingAppointment, setEditingAppointment] = useState(null);
 
   const loadAppointmentsByDate = async (dateObj) => {
     try {
       const date = toLocalISODate(dateObj);
       const res = await api.get("/api/appointments", { params: { date } });
       const rows = Array.isArray(res.data) ? res.data : res?.data?.appointments || [];
-      const normalized = rows.map((a) => ({
-        ...a,
-        status: a.status || "Pending",
-      }));
-      setAppointments(normalized);
+      setAppointments(rows);
     } catch (err) {
       console.error("Failed to load appointments:", err);
       setAppointments([]);
@@ -71,7 +68,6 @@ function Scheduling() {
       modality: normalizeModality(patient.modality),
       doctor: patient.referring_doctor || patient.attending_physician || "",
       date: today,
-      status: "Pending",
     });
     setShowForm(true);
 
@@ -80,22 +76,29 @@ function Scheduling() {
   }, [location.state]);
 
   const handleAddScheduler = () => {
+    setEditingAppointment(null);
     setPrefillData(null);
     setShowForm(true);
   };
 
   const saveSchedule = async (newData) => {
     try {
-      await api.post("/api/appointments", {
+      const payload = {
+        id: newData.id || "",
         patientId: newData.patientId,
         patientName: newData.patientName,
         contact: newData.contact,
         time: newData.time,
         modality: newData.modality,
         doctor: newData.doctor,
-        status: newData.status || "Pending",
         date: newData.date,
-      });
+      };
+      if (editingAppointment?.id) {
+        await api.put(`/api/appointments/${encodeURIComponent(String(editingAppointment.id))}`, payload);
+      } else {
+        await api.post("/api/appointments", payload);
+      }
+      setEditingAppointment(null);
       setPrefillData(null);
       setShowForm(false);
       await loadAppointmentsByDate(currentDate);
@@ -105,38 +108,66 @@ function Scheduling() {
     }
   };
 
-  const updateAppointmentStatus = async (index, status) => {
-    const appt = appointments[index];
-    if (!appt) return;
+  const editAppointment = (appt) => {
+    setEditingAppointment(appt);
+    setPrefillData({ ...appt });
+    setShowForm(true);
+  };
+
+  const deleteAppointment = async (appt) => {
+    if (!appt?.id) {
+      alert("Unable to delete this appointment (missing id)");
+      return;
+    }
+    if (!window.confirm("Delete this appointment?")) return;
     try {
-      await api.post("/api/appointments", {
-        patientId: appt.patientId,
-        patientName: appt.patientName,
-        contact: appt.contact,
-        time: appt.time,
-        modality: appt.modality,
-        doctor: appt.doctor,
-        status,
-        date: appt.date,
-      });
+      await api.delete(`/api/appointments/${encodeURIComponent(String(appt.id))}`);
       await loadAppointmentsByDate(currentDate);
     } catch (err) {
-      console.error("Failed to update appointment status:", err);
+      console.error("Failed to delete appointment:", err);
+      alert("Failed to delete appointment");
     }
   };
 
-  const statusClass = (status) => {
-    const s = String(status || "").toLowerCase();
-    if (s === "completed") return "status-pill completed";
-    if (s === "accepted") return "status-pill accepted";
-    return "status-pill pending";
+  const moveToMwl = async (appt) => {
+    try {
+      await api.post("/api/mwl", {
+        PatientID: appt.patientId || "",
+        PatientName: appt.patientName || "",
+        Modality: appt.modality || "",
+        SchedulingDate: appt.date || toLocalISODate(new Date()),
+        StudyDescription: `Scheduled ${appt.modality || ""}`.trim(),
+        ReferringPhysician: appt.doctor || "",
+      });
+      alert("Moved to MWL successfully");
+    } catch (err) {
+      console.error("Move to MWL failed:", err);
+      alert(err?.response?.data?.error || "Failed to move to MWL");
+    }
   };
 
-  const cycleStatus = (index, currentStatus) => {
-    const order = ["Pending", "Accepted", "Completed"];
-    const currentIndex = order.findIndex((s) => s.toLowerCase() === String(currentStatus || "").toLowerCase());
-    const nextStatus = order[(currentIndex + 1) % order.length];
-    updateAppointmentStatus(index, nextStatus);
+  const formatDisplayTime = (value) => {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+
+    const ampm = raw.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    if (ampm) {
+      const h = Number(ampm[1]);
+      const hour = h === 0 ? 12 : h > 12 ? ((h - 1) % 12) + 1 : h;
+      return `${hour}:${ampm[2]} ${ampm[3].toUpperCase()}`;
+    }
+
+    const m24 = raw.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+    if (m24) {
+      let hour = Number(m24[1]);
+      const minute = m24[2];
+      const period = hour >= 12 ? "PM" : "AM";
+      hour = hour % 12;
+      if (hour === 0) hour = 12;
+      return `${hour}:${minute} ${period}`;
+    }
+
+    return raw;
   };
 
   const filteredAppointments = appointments;
@@ -181,6 +212,7 @@ function Scheduling() {
           onClose={() => {
             setShowForm(false);
             setPrefillData(null);
+            setEditingAppointment(null);
           }}
         />
       )}
@@ -201,7 +233,7 @@ function Scheduling() {
             <th>Time</th>
             <th>Modality</th>
             <th>Doctor</th>
-            <th>Status</th>
+            <th>Action</th>
           </tr>
         </thead>
 
@@ -220,23 +252,15 @@ function Scheduling() {
                 <td>{appt.date}</td>
                 <td>{appt.patientName}</td>
                 <td>{appt.contact}</td>
-                <td>{appt.time}</td>
+                <td>{formatDisplayTime(appt.time)}</td>
                 <td>{appt.modality}</td>
                 <td>{appt.doctor}</td>
                 <td>
-                  {String(appt.status || "").toLowerCase() === "completed" ? (
-                    <span className={statusClass(appt.status)}>{appt.status || "Completed"}</span>
-                  ) : (
-                    <label className="status-toggle-wrap" title="Click to change status">
-                      <input
-                        type="checkbox"
-                        className="status-toggle-input"
-                        checked={String(appt.status || "").toLowerCase() !== "pending"}
-                        onChange={() => cycleStatus(idx, appt.status)}
-                      />
-                      <span className={statusClass(appt.status)}>{appt.status || "Pending"}</span>
-                    </label>
-                  )}
+                  <div className="sch-actions">
+                    <button className="sch-btn-edit" onClick={() => editAppointment(appt)}>Edit</button>
+                    <button className="sch-btn-delete" onClick={() => deleteAppointment(appt)}>Delete</button>
+                    <button className="sch-btn-mwl" onClick={() => moveToMwl(appt)}>Move to MWL</button>
+                  </div>
                 </td>
               </tr>
               );

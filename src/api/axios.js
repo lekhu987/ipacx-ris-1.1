@@ -8,11 +8,18 @@ const inferredBaseURL =
 const baseURL = envBaseURL || inferredBaseURL;
 
 export const apiUrl = (path) => {
-  if (!path) return baseURL;
-  if (/^(https?:)?\/\//i.test(path) || path.startsWith("data:") || path.startsWith("blob:")) {
-    return path;
+  const raw =
+    typeof path === "string"
+      ? path
+      : path && typeof path === "object"
+      ? (path.image_path || path.path || path.url || "")
+      : "";
+
+  if (!raw) return baseURL;
+  if (/^(https?:)?\/\//i.test(raw) || raw.startsWith("data:") || raw.startsWith("blob:")) {
+    return raw;
   }
-  return `${baseURL}${path.startsWith("/") ? path : `/${path}`}`;
+  return `${baseURL}${raw.startsWith("/") ? raw : `/${raw}`}`;
 };
 
 const api = axios.create({
