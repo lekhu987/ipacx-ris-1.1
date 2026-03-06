@@ -175,7 +175,8 @@ router.post("/", upload.single("id_proof_path"), async (req, res) => {
         ? null
         : rawOccupation || null;
     const signatureRaw = digital_signature || signature_file || "";
-    const signatureValue = signatureRaw && String(signatureRaw).length <= 255 ? signatureRaw : null;
+    const signatureValue = signatureRaw ? String(signatureRaw) : null;
+    const safeSignatureValue = signatureValue && signatureValue.length > 255 ? null : signatureValue;
     const patientColumns = await getPatientColumns();
 
     const record = {
@@ -213,8 +214,8 @@ router.post("/", upload.single("id_proof_path"), async (req, res) => {
         data_privacy_accepted === true,
       consent_image_sharing: consent_image_sharing === "true" || consent_image_sharing === true,
       consent_telemedicine: consent_telemedicine === "true" || consent_telemedicine === true,
-      digital_signature: signatureValue,
-      signature_file: signatureValue,
+      digital_signature: safeSignatureValue,
+      signature_file: safeSignatureValue,
       photo_url: photo_url || null,
       referring_doctor: referring_doctor || attending_physician || null,
       attending_physician: attending_physician || null,
@@ -298,6 +299,35 @@ router.post("/", upload.single("id_proof_path"), async (req, res) => {
       patient: result.rows[0],
     });
   } catch (error) {
+    if (error?.code === "23505" && error?.constraint === "uq_patients_idtype_idnumber") {
+      const idType = String(req.body?.idType || "").trim();
+      const idNumber = String(req.body?.idNumber || req.body?.id_number || "").trim();
+      let existingPatient = null;
+      try {
+        if (idType && idNumber) {
+          const existing = await pool.query(
+            `
+            SELECT *
+            FROM patients
+            WHERE id_type = $1 AND id_number = $2
+            LIMIT 1
+            `,
+            [idType, idNumber]
+          );
+          existingPatient = existing.rows[0] || null;
+        }
+      } catch (lookupErr) {
+        console.error("Duplicate patient lookup failed:", lookupErr.message);
+      }
+
+      return res.status(409).json({
+        success: false,
+        message: "Patient already exists with this ID type and ID number",
+        conflict_field: "id_type+id_number",
+        patient: existingPatient,
+      });
+    }
+
     console.error("Patient Create Error:", error.message);
     res.status(500).json({
       success: false,
@@ -424,6 +454,149 @@ router.get("/", async (req, res) => {
       success: false,
       message: "Failed to fetch patients",
       error: error.message,
+    });
+  }
+});
+
+// =============================
+// LOOKUP PATIENTS (DB-backed suggestions)
+// =============================
+router.get("/lookup", async (req, res) => {
+  try {
+    const field = String(req.query.field || "").trim();
+    const q = String(req.query.q || "").trim();
+    const limit = Math.min(Math.max(Number(req.query.limit) || 10, 1), 25);
+
+    const allowed = new Set(["mobile", "abha_number", "id_number"]);
+    if (!allowed.has(field)) {
+      return res.status(400).json({ success: false, message: "Invalid lookup field" });
+    }
+    if (!q || q.length < 2) {
+      return res.json({ success: true, matches: [] });
+    }
+
+    const patientColumns = await getPatientColumns();
+    const orderBy = patientColumns.has("created_at")
+      ? "created_at DESC NULLS LAST, id DESC"
+      : patientColumns.has("id")
+      ? "id DESC"
+      : "uhid DESC NULLS LAST";
+
+    let queryText = "";
+    let queryParams = [];
+
+    if (field === "mobile") {
+      const digits = q.replace(/\D/g, "");
+      queryText = `
+        SELECT
+          id,
+          uhid,
+          patient_id,
+          mrn,
+          full_name,
+          first_name,
+          last_name,
+          gender,
+          dob,
+          mobile,
+          abha_number,
+          id_number
+        FROM patients
+        WHERE (
+          regexp_replace(COALESCE(mobile::text, ''), '\\D', '', 'g') LIKE $1
+          OR regexp_replace(COALESCE(phone::text, ''), '\\D', '', 'g') LIKE $1
+        )
+        ORDER BY ${orderBy}
+        LIMIT $2
+      `;
+      queryParams = [`%${digits}%`, limit];
+    } else if (field === "abha_number") {
+      queryText = `
+        SELECT
+          id,
+          uhid,
+          patient_id,
+          mrn,
+          full_name,
+          first_name,
+          last_name,
+          gender,
+          dob,
+          mobile,
+          abha_number,
+          id_number
+        FROM patients
+        WHERE COALESCE(abha_number::text, '') ILIKE $1
+        ORDER BY ${orderBy}
+        LIMIT $2
+      `;
+      queryParams = [`%${q}%`, limit];
+    } else {
+      queryText = `
+        SELECT
+          id,
+          uhid,
+          patient_id,
+          mrn,
+          full_name,
+          first_name,
+          last_name,
+          gender,
+          dob,
+          mobile,
+          abha_number,
+          id_number
+        FROM patients
+        WHERE (
+          COALESCE(id_number::text, '') ILIKE $1
+          OR COALESCE(voter_id::text, '') ILIKE $1
+        )
+        ORDER BY ${orderBy}
+        LIMIT $2
+      `;
+      queryParams = [`%${q}%`, limit];
+    }
+
+    const result = await pool.query(queryText, queryParams);
+
+    return res.json({
+      success: true,
+      matches: result.rows,
+    });
+  } catch (error) {
+    console.error("Patient lookup error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to lookup patients",
+      error: error.message,
+    });
+  }
+});
+
+// =============================
+// GET SINGLE PATIENT BY GENERIC IDENTIFIER
+// =============================
+router.get("/details/:identifier", async (req, res) => {
+  try {
+    const { identifier } = req.params;
+    const patient = await findPatientByIdentifier(identifier);
+
+    if (!patient) {
+      return res.status(404).json({
+        success: false,
+        message: "Patient not found",
+      });
+    }
+
+    return res.json({
+      success: true,
+      patient,
+    });
+  } catch (error) {
+    console.error("Get Patient Details Error:", error.message);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
     });
   }
 });
@@ -646,7 +819,9 @@ router.put("/:identifier", upload.single("id_proof_path"), async (req, res) => {
         ? null
         : rawOccupation || null;
     const signatureRaw = digital_signature || signature_file || "";
-    const signatureValue = signatureRaw && String(signatureRaw).length <= 255 ? signatureRaw : null;
+    const signatureValue = signatureRaw ? String(signatureRaw) : null;
+    const safeSignatureValue = signatureValue && signatureValue.length > 255 ? null : signatureValue;
+    const signatureForUpdate = signatureRaw ? safeSignatureValue : undefined;
 
     const updates = {
       full_name: fullName || undefined,
@@ -680,8 +855,8 @@ router.put("/:identifier", upload.single("id_proof_path"), async (req, res) => {
         data_privacy_accepted === true,
       consent_image_sharing: consent_image_sharing === "true" || consent_image_sharing === true,
       consent_telemedicine: consent_telemedicine === "true" || consent_telemedicine === true,
-      digital_signature: signatureValue,
-      signature_file: signatureValue,
+      digital_signature: signatureForUpdate,
+      signature_file: signatureForUpdate,
       photo_url: photo_url || null,
       referring_doctor: referring_doctor || attending_physician || null,
       attending_physician: attending_physician || null,

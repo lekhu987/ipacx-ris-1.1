@@ -3,6 +3,7 @@ import "./PatientRegistration.css";
 import dayjs from "dayjs";
 import cn from 'classnames';
 import { toast } from "react-hot-toast";
+import api from "../api/axios";
 
 
 import {
@@ -48,8 +49,13 @@ const STEPS = [
 export default function PatientRegistration({ onClose, onSave, initialData = null }) {
   const [step, setStep] = useState(1);
   const canvasRef = useRef(null);
+  const bodyRef = useRef(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [lookupField, setLookupField] = useState("");
+  const [lookupQuery, setLookupQuery] = useState("");
+  const [lookupMatches, setLookupMatches] = useState([]);
+  const [lookupLoading, setLookupLoading] = useState(false);
 // Form Data State
     const [formData, setFormData] = useState({
         // Identity
@@ -128,14 +134,47 @@ export default function PatientRegistration({ onClose, onSave, initialData = nul
         indication_for_scan: "",
     });
 
-    useEffect(() => {
-        if (!initialData) return;
+    const toBool = (v, fallback = false) => {
+      if (typeof v === "boolean") return v;
+      if (typeof v === "string") {
+        const s = v.trim().toLowerCase();
+        if (["true", "t", "1", "yes", "y"].includes(s)) return true;
+        if (["false", "f", "0", "no", "n"].includes(s)) return false;
+      }
+      if (typeof v === "number") return v !== 0;
+      return fallback;
+    };
+
+    const normalizeMediaSrc = (value) => {
+      const raw = String(value || "").trim();
+      if (!raw) return "";
+      if (/^(data:|blob:|https?:\/\/)/i.test(raw)) return raw;
+      const normalized = raw.replace(/\\/g, "/");
+      const hasImageExt = /\.(png|jpg|jpeg|webp|gif)$/i.test(normalized);
+      const base = String(api?.defaults?.baseURL || "").replace(/\/$/, "");
+
+      // Already points to uploads tree (with or without leading slash)
+      if (/^\/?uploads\//i.test(normalized)) {
+        const path = normalized.startsWith("/") ? normalized : `/${normalized}`;
+        return `${base}${path}`;
+      }
+
+      // Legacy case: only filename was stored, assume signatures folder
+      if (hasImageExt && !normalized.includes("/")) {
+        return `${base}/uploads/signatures/${normalized}`;
+      }
+
+      return normalized.startsWith("/") ? `${base}${normalized}` : `${base}/${normalized}`;
+    };
+
+    const applyPatientToForm = (source) => {
+        if (!source) return;
         const pick = (...vals) => vals.find((v) => v !== undefined && v !== null && String(v).trim() !== "");
         const isNumericOnly = (v) => /^\d+$/.test(String(v || "").trim());
-        const fullName = pick(initialData.full_name, initialData.patient_name, initialData.name, "");
-        const modalitiesFromDb = pick(initialData.modality, initialData.modalities, "");
-        const prefetchedIdNumber = pick(initialData.id_number, initialData.idNumber, initialData.id_proof, initialData.voter_id, "");
-        const prefetchedOccupation = pick(initialData.occupation, "");
+        const fullName = pick(source.full_name, source.patient_name, source.name, "");
+        const modalitiesFromDb = pick(source.modality, source.modalities, "");
+        const prefetchedIdNumber = pick(source.id_number, source.idNumber, source.id_proof, source.voter_id, "");
+        const prefetchedOccupation = pick(source.occupation, "");
         const sanitizedOccupation =
           prefetchedOccupation &&
           prefetchedIdNumber &&
@@ -145,78 +184,141 @@ export default function PatientRegistration({ onClose, onSave, initialData = nul
             : prefetchedOccupation;
         setFormData((prev) => ({
             ...prev,
-            phone: pick(initialData.mobile, initialData.phone, prev.phone),
-            abha_number: pick(initialData.abha_number, prev.abha_number),
-            abha_address: pick(initialData.abha_address, prev.abha_address),
-            voter_id: pick(initialData.voter_id, prev.voter_id),
-            idType: pick(initialData.id_type, initialData.idType, prev.idType),
-            idNumber: pick(initialData.id_number, initialData.idNumber, initialData.id_proof, initialData.voter_id, prev.idNumber),
-            registration_channel: pick(initialData.registration_channel, prev.registration_channel),
-            title: pick(initialData.title, prev.title),
-            firstName: pick(initialData.first_name, fullName.split(" ")[0], prev.firstName),
-            lastName: pick(initialData.last_name, fullName.split(" ").slice(1).join(" "), prev.lastName),
-            gender: pick(initialData.gender, prev.gender),
-            dob: initialData.dob ? dayjs(initialData.dob).format("YYYY-MM-DD") : prev.dob,
-            age: pick(initialData.age, prev.age),
-            relationship_type: pick(initialData.relationship_type, prev.relationship_type),
-            relationship_name: pick(initialData.relationship_name, prev.relationship_name),
-            marital_status: pick(initialData.marital_status, prev.marital_status),
+            phone: pick(source.mobile, source.phone, prev.phone),
+            abha_number: pick(source.abha_number, prev.abha_number),
+            abha_address: pick(source.abha_address, prev.abha_address),
+            voter_id: pick(source.voter_id, prev.voter_id),
+            idType: pick(source.id_type, source.idType, prev.idType),
+            idNumber: pick(source.id_number, source.idNumber, source.id_proof, source.voter_id, prev.idNumber),
+            registration_channel: pick(source.registration_channel, prev.registration_channel),
+            title: pick(source.title, prev.title),
+            firstName: pick(source.first_name, fullName.split(" ")[0], prev.firstName),
+            lastName: pick(source.last_name, fullName.split(" ").slice(1).join(" "), prev.lastName),
+            gender: pick(source.gender, prev.gender),
+            dob: source.dob ? dayjs(source.dob).format("YYYY-MM-DD") : prev.dob,
+            age: pick(source.age, prev.age),
+            relationship_type: pick(source.relationship_type, prev.relationship_type),
+            relationship_name: pick(source.relationship_name, prev.relationship_name),
+            marital_status: pick(source.marital_status, prev.marital_status),
             occupation: pick(sanitizedOccupation, prev.occupation),
-            nationality: pick(initialData.nationality, prev.nationality),
-            language_preference: pick(initialData.language_preference, prev.language_preference),
-            email: pick(initialData.email, initialData.email_address, prev.email),
+            nationality: pick(source.nationality, prev.nationality),
+            language_preference: pick(source.language_preference, prev.language_preference),
+            email: pick(source.email, source.email_address, prev.email),
             address: pick(
-                initialData.address,
-                initialData.address_line1,
-                [initialData.city, initialData.district, initialData.state, initialData.pincode].filter(Boolean).join(", "),
+                source.address,
+                source.address_line1,
+                [source.city, source.district, source.state, source.pincode].filter(Boolean).join(", "),
                 prev.address
             ),
-            emergency_contact_name: pick(initialData.emergency_contact_name, prev.emergency_contact_name),
-            emergency_contact_phone: pick(initialData.emergency_contact_phone, prev.emergency_contact_phone),
-            emergency_contact_relation: pick(initialData.emergency_contact_relation, prev.emergency_contact_relation),
-            secondaryContactName: pick(initialData.secondaryContactName, initialData.secondary_contact_name, prev.secondaryContactName),
-            secondaryContactPhone: pick(initialData.secondaryContactPhone, initialData.secondary_contact_phone, prev.secondaryContactPhone),
-            biometric_flag: typeof initialData.biometric_flag === "boolean" ? initialData.biometric_flag : prev.biometric_flag,
+            emergency_contact_name: pick(source.emergency_contact_name, prev.emergency_contact_name),
+            emergency_contact_phone: pick(source.emergency_contact_phone, prev.emergency_contact_phone),
+            emergency_contact_relation: pick(source.emergency_contact_relation, prev.emergency_contact_relation),
+            secondaryContactName: pick(source.secondaryContactName, source.secondary_contact_name, prev.secondaryContactName),
+            secondaryContactPhone: pick(source.secondaryContactPhone, source.secondary_contact_phone, prev.secondaryContactPhone),
+            biometric_flag: toBool(source.biometric_flag, prev.biometric_flag),
             blood_group: (() => {
-                const bg = pick(initialData.blood_group, initialData.bloodGroup, prev.blood_group);
+                const bg = pick(source.blood_group, source.bloodGroup, prev.blood_group);
                 return String(bg || "").toUpperCase() === "UNK" ? "" : bg;
             })(),
-            height_cm: pick(initialData.height_cm, prev.height_cm),
-            weight_kg: pick(initialData.weight_kg, prev.weight_kg),
-            allergies: pick(initialData.allergies, prev.allergies),
-            current_medications: pick(initialData.current_medications, prev.current_medications),
-            medical_history: pick(initialData.medical_history, initialData.clinical_history, prev.medical_history),
-            isPregnant: typeof initialData.isPregnant === "boolean" ? initialData.isPregnant : prev.isPregnant,
-            menstrual_status: pick(initialData.menstrual_status, prev.menstrual_status),
-            lmp_date: initialData.lmp_date ? dayjs(initialData.lmp_date).format("YYYY-MM-DD") : prev.lmp_date,
-            edd: initialData.edd ? dayjs(initialData.edd).format("YYYY-MM-DD") : prev.edd,
-            gestational_age: pick(initialData.gestational_age, prev.gestational_age),
-            creatinine_level: pick(initialData.creatinine_level, prev.creatinine_level),
-            contrast_safety_flag: typeof initialData.contrast_safety_flag === "boolean"
-              ? initialData.contrast_safety_flag
-              : (typeof initialData.contrast === "boolean" ? initialData.contrast : prev.contrast_safety_flag),
+            height_cm: pick(source.height_cm, prev.height_cm),
+            weight_kg: pick(source.weight_kg, prev.weight_kg),
+            allergies: pick(source.allergies, prev.allergies),
+            current_medications: pick(source.current_medications, prev.current_medications),
+            medical_history: pick(source.medical_history, source.clinical_history, prev.medical_history),
+            isPregnant: toBool(source.isPregnant ?? source.is_pregnant, prev.isPregnant),
+            menstrual_status: pick(source.menstrual_status, prev.menstrual_status),
+            lmp_date: source.lmp_date ? dayjs(source.lmp_date).format("YYYY-MM-DD") : prev.lmp_date,
+            edd: source.edd ? dayjs(source.edd).format("YYYY-MM-DD") : prev.edd,
+            gestational_age: pick(source.gestational_age, prev.gestational_age),
+            creatinine_level: pick(source.creatinine_level, prev.creatinine_level),
+            contrast_safety_flag: toBool(source.contrast_safety_flag ?? source.contrast, prev.contrast_safety_flag),
             modalities: modalitiesFromDb
               ? String(modalitiesFromDb).split(",").map((m) => m.trim()).filter(Boolean)
               : prev.modalities,
-            study_type: pick(initialData.study_type, initialData.study, initialData.indication_for_scan, prev.study_type),
-            patient_type: pick(initialData.patient_type, prev.patient_type),
-            visit_type: pick(initialData.visit_type, prev.visit_type),
-            department: pick(initialData.department, prev.department),
-            attending_physician: pick(initialData.attending_physician, initialData.referring_doctor, prev.attending_physician),
-            referring_doctor: pick(initialData.referring_doctor, initialData.attending_physician, prev.referring_doctor),
-            ward_room_bed: pick(initialData.ward_room_bed, prev.ward_room_bed),
-            billing_category: pick(initialData.billing_category, initialData.billing_type, prev.billing_category),
-            insurance_provider: pick(initialData.insurance_provider, prev.insurance_provider),
-            insurance_id: pick(initialData.insurance_id, prev.insurance_id),
-            data_privacy_accepted: typeof initialData.data_privacy_accepted === "boolean" ? initialData.data_privacy_accepted : prev.data_privacy_accepted,
-            consent_image_sharing: typeof initialData.consent_image_sharing === "boolean" ? initialData.consent_image_sharing : prev.consent_image_sharing,
-            consent_telemedicine: typeof initialData.consent_telemedicine === "boolean" ? initialData.consent_telemedicine : prev.consent_telemedicine,
-            consent_research_ai: typeof initialData.consent_research_ai === "boolean" ? initialData.consent_research_ai : prev.consent_research_ai,
-            digital_signature: pick(initialData.digital_signature, initialData.signature_file, prev.digital_signature),
-            photo_url: pick(initialData.photo_url, prev.photo_url),
-            indication_for_scan: pick(initialData.indication_for_scan, initialData.study, prev.indication_for_scan),
+            study_type: pick(source.study_type, source.study, source.indication_for_scan, prev.study_type),
+            patient_type: pick(source.patient_type, prev.patient_type),
+            visit_type: pick(source.visit_type, prev.visit_type),
+            department: pick(source.department, prev.department),
+            attending_physician: pick(source.attending_physician, source.referring_doctor, prev.attending_physician),
+            referring_doctor: pick(source.referring_doctor, source.attending_physician, prev.referring_doctor),
+            ward_room_bed: pick(source.ward_room_bed, prev.ward_room_bed),
+            billing_category: pick(source.billing_category, source.billing_type, prev.billing_category),
+            insurance_provider: pick(source.insurance_provider, prev.insurance_provider),
+            insurance_id: pick(source.insurance_id, prev.insurance_id),
+            data_privacy_accepted: toBool(source.data_privacy_accepted, prev.data_privacy_accepted),
+            consent_image_sharing: toBool(source.consent_image_sharing, prev.consent_image_sharing),
+            consent_telemedicine: toBool(source.consent_telemedicine, prev.consent_telemedicine),
+            consent_research_ai: toBool(source.consent_research_ai, prev.consent_research_ai),
+            digital_signature: normalizeMediaSrc(pick(source.digital_signature, source.signature_file, prev.digital_signature)),
+            photo_url: normalizeMediaSrc(pick(source.photo_url, prev.photo_url)),
+            indication_for_scan: pick(source.indication_for_scan, source.study, prev.indication_for_scan),
         }));
+    };
+
+    useEffect(() => {
+        if (!initialData) return;
+        applyPatientToForm(initialData);
     }, [initialData]);
+
+    const lookupFieldMap = {
+      phone: "mobile",
+      abha_number: "abha_number",
+      idNumber: "id_number",
+    };
+
+    const handleLookupSelect = async (match) => {
+      try {
+        const identifier = match?.id || match?.uhid || match?.patient_id || match?.mrn;
+        if (!identifier) return;
+        const res = await api.get(`/api/patients/details/${encodeURIComponent(String(identifier))}`);
+        if (res?.data?.patient) {
+          applyPatientToForm(res.data.patient);
+          toast.success("Existing patient data loaded");
+        }
+      } catch (err) {
+        console.error("Patient prefill failed:", err);
+      } finally {
+        setLookupMatches([]);
+        setLookupField("");
+        setLookupQuery("");
+      }
+    };
+
+    useEffect(() => {
+      const apiField = lookupFieldMap[lookupField];
+      const query = String(lookupQuery || "").trim();
+      if (!apiField || query.length < 2) {
+        setLookupMatches([]);
+        setLookupLoading(false);
+        return;
+      }
+
+      const timer = setTimeout(async () => {
+        try {
+          setLookupLoading(true);
+          const res = await api.get("/api/patients/lookup", {
+            params: { field: apiField, q: query, limit: 8 },
+          });
+          const matches = Array.isArray(res?.data?.matches) ? res.data.matches : [];
+          setLookupMatches(matches);
+
+          const normalizedQ = query.toLowerCase();
+          const exactMatches = matches.filter(
+            (m) => String(m?.[apiField] || "").trim().toLowerCase() === normalizedQ
+          );
+          if (exactMatches.length === 1) {
+            handleLookupSelect(exactMatches[0]);
+          }
+        } catch (err) {
+          console.error("Patient lookup failed:", err);
+          setLookupMatches([]);
+        } finally {
+          setLookupLoading(false);
+        }
+      }, 300);
+
+      return () => clearTimeout(timer);
+    }, [lookupField, lookupQuery]);
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -230,8 +332,24 @@ export default function PatientRegistration({ onClose, onSave, initialData = nul
         img.onload = () => {
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         };
+        img.onerror = () => {
+            console.warn("Digital signature preview failed to load:", formData.digital_signature);
+        };
         img.src = formData.digital_signature;
     }, [formData.digital_signature]);
+
+    useEffect(() => {
+      if (bodyRef.current) {
+        bodyRef.current.scrollTop = 0;
+      }
+      const modalEl = document.querySelector(".modal-content");
+      if (modalEl) {
+        modalEl.scrollTop = 0;
+      }
+      if (typeof window !== "undefined") {
+        window.scrollTo({ top: 0, behavior: "auto" });
+      }
+    }, [step]);
 
     // Calculate Age from DOB
     useEffect(() => {
@@ -274,7 +392,7 @@ export default function PatientRegistration({ onClose, onSave, initialData = nul
         // For now, let's just ensure the fields update correctly.
     }, [formData.modalities]);
 
-   const handleChange = (e) => {
+const handleChange = (e) => {
   const { name, value, type, checked } = e.target;
   const val = type === "checkbox" ? checked : value;
 
@@ -282,6 +400,11 @@ export default function PatientRegistration({ onClose, onSave, initialData = nul
     ...prev,
     [name]: val,
   }));
+
+  if (["phone", "abha_number", "idNumber"].includes(name)) {
+    setLookupField(name);
+    setLookupQuery(String(val || ""));
+  }
 };
 
     const handleMultiSelectChange = (e) => {
@@ -320,6 +443,27 @@ export default function PatientRegistration({ onClose, onSave, initialData = nul
           occupation: occupationLooksLikeId ? "" : formData.occupation,
         };
 
+        const uploadDataUrlImage = async (dataUrl, titleTag) => {
+          const raw = String(dataUrl || "").trim();
+          if (!raw || !raw.startsWith("data:image/")) return raw;
+
+          const resp = await fetch(raw);
+          const blob = await resp.blob();
+          const ext = (blob.type && blob.type.includes("/")) ? blob.type.split("/")[1] : "png";
+          const file = new File([blob], `${titleTag}_${Date.now()}.${ext}`, { type: blob.type || "image/png" });
+
+          const fd = new FormData();
+          fd.append("file", file);
+          fd.append("title", titleTag);
+          fd.append("username", `${formData.firstName || "PAT"}_${formData.lastName || "USER"}`);
+
+          const uploadRes = await api.post("/api/signatures", fd, {
+            headers: { "Content-Type": "multipart/form-data" },
+          });
+
+          return uploadRes?.data?.path || raw;
+        };
+
         if (!finalData.name || !finalData.phone || !finalData.gender) {
             toast.error("Please fill mandatory fields (Name, Phone, Gender)");
             return;
@@ -351,7 +495,10 @@ export default function PatientRegistration({ onClose, onSave, initialData = nul
 
         try {
             setIsSubmitting(true);
-            await onSave(finalData);
+            const payload = { ...finalData };
+            payload.digital_signature = await uploadDataUrlImage(payload.digital_signature, "SIGN");
+            payload.photo_url = await uploadDataUrlImage(payload.photo_url, "PHOTO");
+            await onSave(payload);
             toast.success("Patient registered successfully");
         } catch (error) {
             const message =
@@ -362,6 +509,63 @@ export default function PatientRegistration({ onClose, onSave, initialData = nul
         } finally {
             setIsSubmitting(false);
         }
+    };
+
+    const renderLookupDropdown = (fieldName) => {
+      if (lookupField !== fieldName) return null;
+      const q = String(lookupQuery || "").trim();
+      if (q.length < 2) return null;
+
+      return (
+        <div
+          style={{
+            position: "absolute",
+            zIndex: 50,
+            left: 0,
+            right: 0,
+            top: "100%",
+            marginTop: 4,
+            background: "#fff",
+            border: "1px solid #d1d5db",
+            borderRadius: 8,
+            boxShadow: "0 8px 20px rgba(0,0,0,0.12)",
+            maxHeight: 220,
+            overflowY: "auto",
+          }}
+        >
+          {lookupLoading && <div style={{ padding: 10, fontSize: 12 }}>Searching...</div>}
+          {!lookupLoading && lookupMatches.length === 0 && (
+            <div style={{ padding: 10, fontSize: 12 }}>No matching patient in database</div>
+          )}
+          {!lookupLoading &&
+            lookupMatches.map((m) => {
+              const name = [m.title, m.full_name || [m.first_name, m.last_name].filter(Boolean).join(" ")]
+                .filter(Boolean)
+                .join(" ");
+              return (
+                <button
+                  key={`${m.id || m.uhid || "p"}-${m.mobile || ""}-${m.abha_number || ""}-${m.id_number || ""}`}
+                  type="button"
+                  onClick={() => handleLookupSelect(m)}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    background: "#fff",
+                    border: "none",
+                    borderBottom: "1px solid #eef2f7",
+                    padding: "8px 10px",
+                    cursor: "pointer",
+                  }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: 600 }}>{name || "Unnamed Patient"}</div>
+                  <div style={{ fontSize: 11, color: "#4b5563" }}>
+                    Mobile: {m.mobile || "-"} | ABHA: {m.abha_number || "-"} | ID: {m.id_number || "-"}
+                  </div>
+                </button>
+              );
+            })}
+        </div>
+      );
     };
 
     // Signature Canvas Logic
@@ -534,7 +738,7 @@ export default function PatientRegistration({ onClose, onSave, initialData = nul
           <label className="pr-label">
             Mobile Number <span className="pr-required">*</span>
           </label>
-          <div className="pr-input-with-icon">
+          <div className="pr-input-with-icon" style={{ position: "relative" }}>
             <Phone className="pr-icon" size={16} />
             <input
               name="phone"
@@ -544,11 +748,12 @@ export default function PatientRegistration({ onClose, onSave, initialData = nul
               className="pr-input"
               maxLength={10}
             />
+            {renderLookupDropdown("phone")}
           </div>
         </div>
         <div>
           <label className="pr-label">ABHA Number</label>
-          <div className="pr-input-with-icon">
+          <div className="pr-input-with-icon" style={{ position: "relative" }}>
             <Activity className="pr-icon-orange" size={16} />
             <input
               name="abha_number"
@@ -557,6 +762,7 @@ export default function PatientRegistration({ onClose, onSave, initialData = nul
               placeholder="XX-XXXX-XXXX-XXXX"
               className="pr-input pr-input-with-padding"
             />
+            {renderLookupDropdown("abha_number")}
           </div>
         </div>
       </div>
@@ -584,14 +790,17 @@ export default function PatientRegistration({ onClose, onSave, initialData = nul
   {/* ID Number */}
   <div className="pr-field">
     <label className="pr-label">ID Number</label>
-    <input
-      name="idNumber"
-      value={formData.idNumber}
-      onChange={handleChange}
-      placeholder="Enter ID Number"
-      className="pr-input"
-      autoComplete="off"
-    />
+    <div style={{ position: "relative" }}>
+      <input
+        name="idNumber"
+        value={formData.idNumber}
+        onChange={handleChange}
+        placeholder="Enter ID Number"
+        className="pr-input"
+        autoComplete="off"
+      />
+      {renderLookupDropdown("idNumber")}
+    </div>
   </div>
 
   {/* Checkbox */}
@@ -1333,7 +1542,7 @@ export default function PatientRegistration({ onClose, onSave, initialData = nul
        {/* BODY */}
 {/* BODY */}
 {/* BODY */}
-<div className="pr-body flex-1 overflow-y-auto">
+<div className="pr-body flex-1 overflow-y-auto" ref={bodyRef}>
   <div className="pr-body-inner w-full h-full">
     {renderStep()}
   </div>

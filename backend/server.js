@@ -16,9 +16,11 @@ const allowedOrigins = [
   process.env.FRONTEND_URL,
   "http://localhost:3000",
   "http://127.0.0.1:3000",
+  "http://localhost:5000",
+  "http://127.0.0.1:5000",
 ].filter(Boolean);
 
-const lanOriginPattern = /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:3000$/;
+const lanOriginPattern = /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:(3000|5000)$/;
 
 const corsOptions = {
   origin(origin, callback) {
