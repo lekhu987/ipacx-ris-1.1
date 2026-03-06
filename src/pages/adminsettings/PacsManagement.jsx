@@ -204,48 +204,54 @@ function PacsManagement() {
             onChange={handleChange}
           />
 
-          <button onClick={handleSave} disabled={loading}>
-            {loading ? "Saving..." : "Save"}
-          </button>
-          <button onClick={() => setShowForm(false)}>Cancel</button>
+          <div className="pacs-form-actions">
+            <button className="pacs-save-btn" onClick={handleSave} disabled={loading}>
+              {loading ? "Saving..." : "Save"}
+            </button>
+            <button className="pacs-cancel-btn" onClick={() => setShowForm(false)}>
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 
       {/* TABLE */}
-      <table border="1" width="100%">
-        <thead>
-          <tr>
-            <th>Select</th>
-            <th>#</th>
-            <th>PACS Name</th>
-            <th>Type</th>
-            <th>AE Title</th>
-            <th>IP</th>
-            <th>Port</th>
-            <th>Status</th>
-          </tr>
-        </thead>
-        <tbody>
-          {pacsList.map((p, index) => (
-            <tr key={p.id}>
-              <td>
-                <input
-                  type="radio"
-                  checked={selectedPacsId === p.id}
-                  onChange={() => setSelectedPacsId(p.id)}
-                />
-              </td>
-              <td>{index + 1}</td>
-              <td>{p.pacs_name}</td>
-              <td>{p.pacs_type}</td>
-              <td>{p.ae_title}</td>
-              <td>{p.ip_address}</td>
-              <td>{p.port}</td>
-              <td>{p.is_active ? "Active" : "Inactive"}</td>
+      <div className="pacs-table-wrap">
+        <table className="pacs-table">
+          <thead>
+            <tr>
+              <th>Select</th>
+              <th>#</th>
+              <th>PACS Name</th>
+              <th>Type</th>
+              <th>AE Title</th>
+              <th>IP</th>
+              <th>Port</th>
+              <th>Status</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {pacsList.map((p, index) => (
+              <tr key={p.id}>
+                <td>
+                  <input
+                    type="radio"
+                    checked={selectedPacsId === p.id}
+                    onChange={() => setSelectedPacsId(p.id)}
+                  />
+                </td>
+                <td>{index + 1}</td>
+                <td>{p.pacs_name}</td>
+                <td>{p.pacs_type}</td>
+                <td>{p.ae_title}</td>
+                <td>{p.ip_address}</td>
+                <td>{p.port}</td>
+                <td>{p.is_active ? "Active" : "Inactive"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </MainLayout>
   );
 }

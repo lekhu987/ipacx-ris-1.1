@@ -1,8 +1,21 @@
-// src/pages/adminsettings/ReportedBy.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import ProtectedRoute from "../../components/ProtectedRoute";
 import MainLayout from "../../layout/MainLayout";
 import api, { apiUrl } from "../../api/axios";
+import "./UserManagement.css";
+
+const EMPTY_FORM = {
+  id: null,
+  title: "",
+  full_name: "",
+  email: "",
+  qualification: "",
+  signature: null,
+  signature_url: "",
+};
+
+const TITLES = ["Dr", "Mr", "Miss", "Mrs"];
+const QUALIFICATIONS = ["MBBS", "MBBS, DMRD", "MBBS, MD (Radiology)", "MBBS, DNB (Radiology)"];
 
 function ReportedBy() {
   const [users, setUsers] = useState([]);
@@ -10,33 +23,31 @@ function ReportedBy() {
   const [error, setError] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [formKey, setFormKey] = useState(0);
+  const [form, setForm] = useState(EMPTY_FORM);
 
-  const [form, setForm] = useState({
-    id: null,
-    title: "",
-    full_name: "",
-    email: "",
-    qualification: "",
-    signature: null,
-    signature_url: "",
-  });
+  const signaturePreview = useMemo(() => {
+    if (form.signature) return URL.createObjectURL(form.signature);
+    if (form.signature_url) return apiUrl(form.signature_url);
+    return "";
+  }, [form.signature, form.signature_url]);
 
-  const TITLES = ["Dr", "Mr", "Miss", "Mrs"];
-  const QUALIFICATIONS = [
-    "MBBS",
-    "MBBS, DMRD",
-    "MBBS, MD (Radiology)",
-    "MBBS, DNB (Radiology)",
-  ];
+  useEffect(() => {
+    return () => {
+      if (form.signature && signaturePreview.startsWith("blob:")) {
+        URL.revokeObjectURL(signaturePreview);
+      }
+    };
+  }, [form.signature, signaturePreview]);
 
-  // Fetch reported by users
+  useEffect(() => {
+    fetchUsers();
+  }, []);
+
   const fetchUsers = async () => {
     try {
       setLoading(true);
       setError("");
-      // ✅ Correct backend route
-      const res = await api.get("/api/reported-by")
+      const res = await api.get("/api/reported-by");
       if (!Array.isArray(res.data)) throw new Error("Unexpected response from server");
       setUsers(res.data);
     } catch (err) {
@@ -47,11 +58,29 @@ function ReportedBy() {
     }
   };
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
+  const closeForm = () => {
+    setShowForm(false);
+    setForm(EMPTY_FORM);
+  };
 
-  // Save user (Add/Edit)
+  const openAddForm = () => {
+    setForm(EMPTY_FORM);
+    setShowForm(true);
+  };
+
+  const editUser = (u) => {
+    setForm({
+      id: u.id,
+      title: u.title || "",
+      full_name: u.full_name || "",
+      email: u.email || "",
+      qualification: u.qualification || "",
+      signature: null,
+      signature_url: u.signature_url || "",
+    });
+    setShowForm(true);
+  };
+
   const saveUser = async (e) => {
     e.preventDefault();
     if (!form.full_name || !form.email) {
@@ -73,54 +102,28 @@ function ReportedBy() {
       fd.append("email", form.email);
       fd.append("qualification", form.qualification);
       if (form.signature) fd.append("signature", form.signature);
-      fd.append("is_reporter", "true"); // important flag
+      fd.append("is_reporter", "true");
 
       let res;
       if (form.id) {
-        // ✅ Update via reportedBy route
         res = await api.put(`/api/reported-by/${form.id}`, fd, {
           headers: { "Content-Type": "multipart/form-data" },
         });
-        setUsers((prev) =>
-          prev.map((u) => (u.id === form.id ? { ...u, ...res.data } : u))
-        );
+        setUsers((prev) => prev.map((u) => (u.id === form.id ? { ...u, ...res.data } : u)));
       } else {
-        // ✅ Create via reportedBy route
         res = await api.post("/api/reported-by", fd, {
           headers: { "Content-Type": "multipart/form-data" },
         });
         setUsers((prev) => [...prev, res.data]);
       }
 
-      setForm({
-        id: null,
-        title: "",
-        full_name: "",
-        email: "",
-        qualification: "",
-        signature: null,
-        signature_url: "",
-      });
-      setShowForm(false);
+      closeForm();
     } catch (err) {
       console.error("Save reported by user failed:", err);
       alert(err.response?.data?.error || "Failed to save user");
     } finally {
       setSaving(false);
     }
-  };
-
-  const editUser = (u) => {
-    setForm({
-      id: u.id,
-      title: u.title || "",
-      full_name: u.full_name || "",
-      email: u.email || "",
-      qualification: u.qualification || "",
-      signature: null,
-      signature_url: u.signature_url || "",
-    });
-    setShowForm(true);
   };
 
   const deleteUser = async (id) => {
@@ -136,178 +139,175 @@ function ReportedBy() {
 
   return (
     <MainLayout>
-      <div style={{ padding: "0px" }}>
-        <h2>Reported By Users</h2>
-        <button
-          style={{ float: "right", marginBottom: "10px" }}
-          onClick={() => {
-            setFormKey((k) => k + 1);
-            setForm({
-              id: null,
-              title: "",
-              full_name: "",
-              email: "",
-              qualification: "",
-              signature: null,
-              signature_url: "",
-            });
-            setShowForm(true);
-          }}
-        >
-          + Add Reported By
-        </button>
+      <div className="um-page">
+        <div className="um-header">
+          <h2>Reported By Users</h2>
+          <div className="um-header-actions">
+            <button className="um-btn um-btn-primary" onClick={openAddForm}>
+              + Add Reported By
+            </button>
+          </div>
+        </div>
+
+        <section className="um-table-shell">
+          {loading && <div className="um-state">Loading users...</div>}
+          {error && <div className="um-state um-error">{error}</div>}
+          {!loading && !error && users.length === 0 && <div className="um-state">No reported by users found.</div>}
+
+          {!loading && users.length > 0 && (
+            <div className="um-table-wrap">
+              <table className="um-table">
+                <thead>
+                  <tr>
+                    <th>ID</th>
+                    <th>Title</th>
+                    <th>Full Name</th>
+                    <th>Email</th>
+                    <th>Qualification</th>
+                    <th>Signature</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {users.map((u, index) => (
+                    <tr key={u.id}>
+                      <td>{index + 1}</td>
+                      <td>{u.title || "-"}</td>
+                      <td>{u.full_name || "-"}</td>
+                      <td>{u.email || "-"}</td>
+                      <td>{u.qualification || "-"}</td>
+                      <td>
+                        {u.signature_url ? (
+                          <img
+                            className="um-signature-thumb"
+                            src={apiUrl(u.signature_url)}
+                            alt="signature"
+                            onClick={() => window.open(apiUrl(u.signature_url), "_blank")}
+                          />
+                        ) : (
+                          <span className="um-muted">-</span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="um-actions">
+                          <button className="um-btn um-btn-small" onClick={() => editUser(u)}>
+                            Edit
+                          </button>
+                          <button className="um-btn um-btn-small um-btn-danger" onClick={() => deleteUser(u.id)}>
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
 
         {showForm && (
-          <form
-            key={formKey}
-            onSubmit={saveUser}
-            style={{
-              border: "1px solid #ccc",
-              padding: "10px",
-              marginBottom: "15px",
-              borderRadius: "6px",
-            }}
-          >
-            <select
-              value={form.title}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
-              style={{ marginRight: "10px", padding: "4px", height: "28px" }}
-            >
-              <option value="">Title</option>
-              {TITLES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
-              ))}
-            </select>
+          <div className="um-modal-backdrop" onClick={closeForm}>
+            <section className="um-form-shell um-modal-panel" onClick={(e) => e.stopPropagation()}>
+              <div className="um-form-top">
+                <div>
+                  <h3>{form.id ? "Edit Reported By" : "Add Reported By"}</h3>
+                  <p>{form.id ? "Update reported by details and signature" : "Create a reported by profile"}</p>
+                </div>
+                <button type="button" className="um-close-link" onClick={closeForm}>
+                  Cancel
+                </button>
+              </div>
 
-            <input
-              type="text"
-              placeholder="Full Name"
-              value={form.full_name}
-              onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-              style={{ marginRight: "10px", padding: "4px" }}
-            />
+              <form onSubmit={saveUser} className="um-form-grid">
+                <label>
+                  <span>Title</span>
+                  <select value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })}>
+                    <option value="">Select title</option>
+                    {TITLES.map((t) => (
+                      <option key={t} value={t}>
+                        {t}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-            <input
-              type="email"
-              placeholder="Email"
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              style={{ marginRight: "10px", padding: "4px" }}
-            />
+                <label>
+                  <span>Full Name</span>
+                  <input
+                    type="text"
+                    placeholder="Enter full name"
+                    value={form.full_name}
+                    onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                    required
+                  />
+                </label>
 
-            <select
-              value={form.qualification}
-              onChange={(e) => setForm({ ...form, qualification: e.target.value })}
-              style={{ marginRight: "10px", padding: "4px", height: "28px" }}
-            >
-              <option value="">Qualification</option>
-              {QUALIFICATIONS.map((q) => (
-                <option key={q} value={q}>
-                  {q}
-                </option>
-              ))}
-            </select>
+                <label>
+                  <span>Email</span>
+                  <input
+                    type="email"
+                    placeholder="Enter email"
+                    value={form.email}
+                    onChange={(e) => setForm({ ...form, email: e.target.value })}
+                    required
+                  />
+                </label>
 
-            <input
-              key={formKey + "-signature"}
-              type="file"
-              accept="image/*"
-              onChange={(e) => setForm({ ...form, signature: e.target.files[0] })}
-              style={{ marginRight: "10px" }}
-            />
+                <label>
+                  <span>Qualification</span>
+                  <select
+                    value={form.qualification}
+                    onChange={(e) => setForm({ ...form, qualification: e.target.value })}
+                  >
+                    <option value="">Select qualification</option>
+                    {QUALIFICATIONS.map((q) => (
+                      <option key={q} value={q}>
+                        {q}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-            {form.signature_url && (
-              <span style={{ fontSize: "12px", color: "green" }}>Signature uploaded</span>
-            )}
-
-            <button type="submit" disabled={saving} style={{ marginRight: "5px", padding: "4px 8px" }}>
-              {saving ? "Saving..." : form.id ? "Update" : "Add"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setShowForm(false);
-                setForm({
-                  id: null,
-                  title: "",
-                  full_name: "",
-                  email: "",
-                  qualification: "",
-                  signature: null,
-                  signature_url: "",
-                });
-              }}
-              style={{ padding: "4px 8px" }}
-            >
-              Cancel
-            </button>
-          </form>
-        )}
-
-        {loading && <div>Loading users...</div>}
-        {error && <div style={{ color: "red" }}>{error}</div>}
-        {!loading && users.length === 0 && <div>No reported by users found.</div>}
-
-        {!loading && users.length > 0 && (
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ backgroundColor: "#f0f0f0" }}>
-                <th style={thStyle}>ID</th>
-                <th style={thStyle}>Title</th>
-                <th style={thStyle}>Full Name</th>
-                <th style={thStyle}>Email</th>
-                <th style={thStyle}>Qualification</th>
-                <th style={thStyle}>Signature</th>
-                <th style={thStyle}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u, index) => (
-                <tr key={u.id}>
-                  <td style={tdStyle}>{index + 1}</td>
-                  <td style={tdStyle}>{u.title || "-"}</td>
-                  <td style={tdStyle}>{u.full_name || "-"}</td>
-                  <td style={tdStyle}>{u.email || "-"}</td>
-                  <td style={tdStyle}>{u.qualification || "-"}</td>
-                  <td style={tdStyle}>
-                    {u.signature_url && (
+                <div className="um-signature-block">
+                  <span>Signature</span>
+                  <div className="um-signature-upload">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setForm({ ...form, signature: e.target.files?.[0] || null })}
+                    />
+                    <small>Upload PNG/JPG signature image</small>
+                  </div>
+                  <div className="um-signature-preview">
+                    {signaturePreview ? (
                       <img
-                        src={apiUrl(u.signature_url)}
-                        alt="signature"
-                        title="View signature"
-                        style={{ height: "22px", cursor: "pointer" }}
-                        onClick={() => window.open(apiUrl(u.signature_url), "_blank")}
+                        src={signaturePreview}
+                        alt="signature preview"
+                        onClick={() => window.open(signaturePreview, "_blank")}
                       />
+                    ) : (
+                      <div className="um-signature-empty">No signature</div>
                     )}
-                  </td>
-                  <td style={tdStyle}>
-                    <button
-                      onClick={() => editUser(u)}
-                      style={{ padding: "4px 8px", marginRight: "4px" }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => deleteUser(u.id)}
-                      style={{ padding: "4px 8px", backgroundColor: "#e74c3c", color: "#fff" }}
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                </div>
+
+                <div className="um-form-actions">
+                  <button type="submit" className="um-btn um-btn-primary" disabled={saving}>
+                    {saving ? "Saving..." : form.id ? "Update" : "Create"}
+                  </button>
+                  <button type="button" className="um-btn" onClick={closeForm} disabled={saving}>
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </section>
+          </div>
         )}
       </div>
     </MainLayout>
   );
 }
-
-const thStyle = { padding: "10px", border: "1px solid #ccc", textAlign: "left" };
-const tdStyle = { padding: "8px", border: "1px solid #ccc" };
 
 export default function AdminReportedByPage() {
   return (
