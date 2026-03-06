@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 
 import ProtectedRoute from "../../components/ProtectedRoute";
 import MainLayout from "../../layout/MainLayout";
-import api from "../../api/axios";
+import api, { apiUrl } from "../../api/axios";
 import "./UserManagement.css";
 
 function UserManagement() {
@@ -470,7 +470,7 @@ fd.append("designation", form.designation);
                     </button>
                     {u.signature_url && (
   <img
-    src={u.signature_url}
+    src={apiUrl(u.signature_url)}
     alt="signature"
     title="View signature"
     style={{
@@ -479,7 +479,7 @@ fd.append("designation", form.designation);
       cursor: "pointer",
       verticalAlign: "middle",
     }}
-    onClick={() => window.open(u.signature_url, "_blank")}
+    onClick={() => window.open(apiUrl(u.signature_url), "_blank")}
   />
 )}
 

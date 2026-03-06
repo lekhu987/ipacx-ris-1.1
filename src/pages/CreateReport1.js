@@ -4,7 +4,7 @@ import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import "./CreateReport.css";
-import api from "../api/axios";
+import api, { apiUrl } from "../api/axios";
 const ORTHANC_URL = process.env.REACT_APP_ORTHANC_URL || "http://192.168.1.34:8042";
 import DigitalSignatureField from "../components/DigitalSignatureField";
 
@@ -1422,7 +1422,7 @@ const applyPixelFontSize = (size) => {
     style={{ position: "relative", width: 120, height: 120 }}
   >
    <img
-  src={src}
+  src={apiUrl(src)}
   alt={`ki-${i}`}
   style={{
     width: "100%",

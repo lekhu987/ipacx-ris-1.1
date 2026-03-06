@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import MainLayout from "../layout/MainLayout";
 import "./Dashboard.css";
 import CustomDatePicker from "../components/CustomDatePicker";
+import api from "../api/axios";
 
 const SummaryCard = ({ title, value }) => (
   <div className="card">
@@ -94,7 +95,7 @@ export default function Dashboard() {
 
   const fetchPatients = async () => {
     try {
-      const res = await fetch("/api/patients");
+      const res = await fetch(`${api.defaults.baseURL}/api/patients`);
       const data = await res.json();
       const rows = Array.isArray(data) ? data : data?.patients || [];
 
@@ -112,7 +113,7 @@ export default function Dashboard() {
 
   const fetchReportsStats = async () => {
     try {
-      const res = await fetch("/api/reports");
+      const res = await fetch(`${api.defaults.baseURL}/api/reports`);
       const reportsData = await res.json();
       const reports = Array.isArray(reportsData) ? reportsData : reportsData?.reports || [];
 
@@ -136,7 +137,7 @@ export default function Dashboard() {
 
       const allRows = [];
       for (const date of dates) {
-        const res = await fetch(`/api/appointments?date=${date}`);
+        const res = await fetch(`${api.defaults.baseURL}/api/appointments?date=${date}`);
         if (!res.ok) continue;
         const data = await res.json();
         const rows = Array.isArray(data) ? data : data?.appointments || [];

@@ -5,7 +5,7 @@ import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import { createPortal } from "react-dom";
 import "./ReportPanel.css";
-import api from "../api/axios";
+import api, { apiUrl } from "../api/axios";
 import DigitalSignatureField from "../components/DigitalSignatureField"; 
 
 /* ===========================
@@ -2338,7 +2338,7 @@ const insertTextAtCursor = (text) => {
                     {keyImages.length === 0 && <div style={{ color: "#666", fontSize: 11 }}>Click to add images or drag & drop</div>}
                     {keyImages.map((src, i) => (
                       <div key={i} style={{ position: "relative", width: 120, height: 120 }}>
-                        <img src={src} alt={`ki-${i}`} style={{ width: "100%", height: "100%", objectFit: "contain", border: "1px solid #ddd", borderRadius: 6 }} />
+                        <img src={apiUrl(src)} alt={`ki-${i}`} style={{ width: "100%", height: "100%", objectFit: "contain", border: "1px solid #ddd", borderRadius: 6 }} />
                         <button
                           className="remove-btn no-print"
                           onClick={(e) => { e.stopPropagation(); setKeyImages((prev) => prev.filter((_, idx) => idx !== i)); }}

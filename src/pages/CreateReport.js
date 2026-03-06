@@ -4,7 +4,7 @@ import { useSearchParams, useNavigate, useLocation } from "react-router-dom";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import "./CreateReport.css";
-import api from "../api/axios";
+import api, { apiUrl } from "../api/axios";
 import DigitalSignatureField from "../components/DigitalSignatureField"; // adjust path
 
 /* ===========================
@@ -550,7 +550,7 @@ useEffect(() => {
 useEffect(() => {
   if (!study.Modality || !study.BodyPartExamined) return;
 
-  fetch("/api/report-templates")
+  fetch(`${api.defaults.baseURL}/api/report-templates`)
     .then(res => res.json())
     .then(data => {
       const bodyPart = study.BodyPartExamined.trim().toLowerCase();
@@ -686,11 +686,11 @@ useEffect(() => {
   const loadStudyAndReport = async () => {
     try {
       // 1️⃣ Load study info
-      const studyRes = await fetch(`/api/studies/${encodeURIComponent(studyUID)}`);
+      const studyRes = await fetch(`${api.defaults.baseURL}/api/studies/${encodeURIComponent(studyUID)}`);
       const studyData = (await studyRes.json()) || {};
 
       // 2️⃣ Load report (draft/final)
-      const reportRes = await fetch(`/api/reports/by-study/${studyUID}`);
+      const reportRes = await fetch(`${api.defaults.baseURL}/api/reports/by-study/${studyUID}`);
       let reportData = null;
       if (reportRes.ok) {
         try {
@@ -802,7 +802,7 @@ if (location.state?.isAddendum && location.state?.parentReportData) {
   imageFiles.forEach((f) => formData.append("images", f));
 
   try {
-    const res = await fetch("/api/reports/upload", {
+    const res = await fetch(`${api.defaults.baseURL}/api/reports/upload`, {
       method: "POST",
       body: formData,
     });
@@ -850,7 +850,7 @@ approved_by_signature: study.ApprovedBy,
   };
 
   try {
-    const res = await fetch("/api/reports/save", {
+    const res = await fetch(`${api.defaults.baseURL}/api/reports/save`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -876,7 +876,7 @@ useEffect(() => {
 
   const syncFinalReport = async () => {
     try {
-      const res = await fetch(`/api/reports/by-study/${studyUID}`);
+      const res = await fetch(`${api.defaults.baseURL}/api/reports/by-study/${studyUID}`);
       if (!res.ok) return;
 
       const data = await res.json();
@@ -1979,7 +1979,7 @@ const isSplitMode = !viewerMinimized && !reportMinimized;
     style={{ position: "relative", width: 120, height: 120 }}
   >
    <img
-  src={src}
+  src={apiUrl(src)}
   alt={`ki-${i}`}
   style={{
     width: "100%",

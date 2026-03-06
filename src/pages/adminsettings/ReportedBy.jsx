@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from "react";
 import ProtectedRoute from "../../components/ProtectedRoute";
 import MainLayout from "../../layout/MainLayout";
-import api from "../../api/axios";
+import api, { apiUrl } from "../../api/axios";
 
 function ReportedBy() {
   const [users, setUsers] = useState([]);
@@ -274,11 +274,11 @@ function ReportedBy() {
                   <td style={tdStyle}>
                     {u.signature_url && (
                       <img
-                        src={u.signature_url}
+                        src={apiUrl(u.signature_url)}
                         alt="signature"
                         title="View signature"
                         style={{ height: "22px", cursor: "pointer" }}
-                        onClick={() => window.open(u.signature_url, "_blank")}
+                        onClick={() => window.open(apiUrl(u.signature_url), "_blank")}
                       />
                     )}
                   </td>

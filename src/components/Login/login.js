@@ -16,8 +16,6 @@ function Login() {
   const handleLogin = async (e) => {
     e.preventDefault(); // Prevent page reload
 
-    console.log("Login triggered", username, password);
-
     if (!username || !password) {
       alert("Please enter username and password");
       return;
@@ -27,8 +25,6 @@ function Login() {
       setLoading(true);
 
       const res = await api.post("/api/login", { username, password });
-
-      console.log("LOGIN RESPONSE:", res.data);
 
       if (!res.data || !res.data.user) {
         alert("Login failed");

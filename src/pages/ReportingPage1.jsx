@@ -61,7 +61,7 @@ const handlePrintReport = () => {
 
   const reportId = selectedReports[0]; // only one allowed
   window.open(
-    `http://localhost:5000/api/reports/${reportId}/pdf/print`,
+    `${api.defaults.baseURL}/api/reports/${reportId}/pdf/print`,
     "_blank"
   );
 };
@@ -91,7 +91,7 @@ const openAddendumPage = async () => {
   const fetchReports = async () => {
     setLoadingReports(true);
     try {
-      const res = await fetch("/api/reports");
+      const res = await fetch(`${api.defaults.baseURL}/api/reports`);
       if (!res.ok) throw new Error("Failed to load reports");
       const reports = await res.json();
 
@@ -100,7 +100,7 @@ const openAddendumPage = async () => {
       await Promise.all(
         uniqStudyUIDs.map(async (uid) => {
           try {
-            const sr = await fetch(`/api/studies/${encodeURIComponent(uid)}`);
+            const sr = await fetch(`${api.defaults.baseURL}/api/studies/${encodeURIComponent(uid)}`);
             if (!sr.ok) return;
             studyMap[uid] = await sr.json();
           } catch {}
@@ -316,7 +316,7 @@ const openAddendumPage = async () => {
         onClick={() => {
           
           window.open(
-            `http://localhost:5000/api/reports/${r.id}/pdf`,
+            `${api.defaults.baseURL}/api/reports/${r.id}/pdf`,
             "_blank"
           );
         }}

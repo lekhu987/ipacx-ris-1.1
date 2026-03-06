@@ -1,6 +1,7 @@
 // src/pages/AddendumReport.jsx
 import React, { useEffect, useState } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import api from "../api/axios";
 
 function AddendumReport() {
   const navigate = useNavigate();
@@ -28,7 +29,7 @@ function AddendumReport() {
     // fetch report content
     const fetchReport = async () => {
       try {
-        const res = await fetch(`/api/reports/by-study/${studyUID}`);
+        const res = await fetch(`${api.defaults.baseURL}/api/reports/by-study/${studyUID}`);
         const reportData = await res.json();
         if (reportData) {
           const content = reportData.report_content || {};
@@ -44,7 +45,7 @@ function AddendumReport() {
     // fetch existing addendum reasons
     const fetchAddendums = async () => {
       try {
-        const res = await fetch(`/api/addendum/by-report/${parentReport.id}`);
+        const res = await fetch(`${api.defaults.baseURL}/api/addendum/by-report/${parentReport.id}`);
         const data = await res.json();
         setExistingAddendums(data || []);
       } catch (err) {
@@ -73,7 +74,7 @@ function AddendumReport() {
     }
 
     try {
-      const res = await fetch("/api/addendum/save-reason", {
+      const res = await fetch(`${api.defaults.baseURL}/api/addendum/save-reason`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -112,7 +113,7 @@ function AddendumReport() {
     };
 
     try {
-      const res = await fetch("/api/addendum/save-report", {
+      const res = await fetch(`${api.defaults.baseURL}/api/addendum/save-report`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
