@@ -21,23 +21,24 @@ export default function MWLS() {
     setLoading(true);
     try {
       const { data } = await api.get("/api/mwl");
+      const rows = Array.isArray(data) ? data : (Array.isArray(data?.data) ? data.data : []);
 
-      const normalized = data.map((e) => ({
+      const normalized = rows.map((e) => ({
         id: e.id,
-        PatientID: e.patientid,
-        PatientName: e.patientname,
-        PatientSex: e.patientsex,
-        PatientAge: e.patientage,
-        AccessionNumber: e.accessionnumber || "",
-        StudyDescription: e.studydescription || "",
-        SchedulingDate: e.schedulingdate,
-        Modality: e.modality,
-        BodyPartExamined: e.bodypartexamined,
-        ReferringPhysician: e.referringphysician,
+        PatientID: e.patientid || e.patient_id || "",
+        PatientName: e.patientname || e.patient_name || "",
+        PatientSex: e.patientsex || (e["00100040"]?.Value?.[0] || "O"),
+        PatientAge: e.patientage || "",
+        AccessionNumber: e.accessionnumber || e.accession_number || "",
+        StudyDescription: e.studydescription || e["00321060"]?.Value?.[0] || "",
+        SchedulingDate: e.schedulingdate || e.scheduled_datetime || null,
+        Modality: e.modality || "",
+        BodyPartExamined: e.bodypartexamined || "",
+        ReferringPhysician: e.referringphysician || "",
         PatientSexDisplay:
-          e.patientsex === "M"
+          (e.patientsex || e["00100040"]?.Value?.[0]) === "M"
             ? "Male"
-            : e.patientsex === "F"
+            : (e.patientsex || e["00100040"]?.Value?.[0]) === "F"
             ? "Female"
             : "Other",
       }));
@@ -111,7 +112,12 @@ export default function MWLS() {
       setSelectedIds([]);
       loadMwl();
     } catch (err) {
-      alert("Send failed");
+      alert(
+        err?.response?.data?.error ||
+        err?.response?.data?.details ||
+        err?.message ||
+        "Send failed"
+      );
     }
   };
 
