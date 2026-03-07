@@ -93,6 +93,7 @@ app.post("/api/signatures", (req, res) => {
 
 const mwlRoutes = require("./routes/mwl");
 app.use("/api/mwl", mwlRoutes);
+app.use("/mwl", mwlRoutes);
 
 const reportsRoutes = require("./routes/reports");
 app.use("/", reportsRoutes);
