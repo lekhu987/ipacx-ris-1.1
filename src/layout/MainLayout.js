@@ -15,6 +15,7 @@ import {
   ChevronLeft,
 } from "lucide-react";
 import "./MainLayout.css";
+import { getClickLabel, logAuditEvent } from "../utils/auditClient";
 
 function MainLayout({ children }) {
   // Initialize collapsed state from sessionStorage
@@ -56,6 +57,30 @@ function MainLayout({ children }) {
     { name: "PACS Page", icon: <Monitor size={18} />, path: "/pacspage" },
     { name: "Reporting", icon: <FileText size={18} />, path: "/reporting" },
   ];
+
+  useEffect(() => {
+    if (!user) return;
+    if (location.pathname.startsWith("/admin/audit-logs")) return;
+    logAuditEvent("PAGE_VIEW", { pathname: location.pathname });
+  }, [location.pathname, user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const handler = (evt) => {
+      if (window.location.pathname.startsWith("/admin/audit-logs")) return;
+      const node = evt.target?.closest?.("button, a, [role='button']");
+      if (!node) return;
+      const label = getClickLabel(node);
+      logAuditEvent("CLICK", {
+        label: label || "unknown",
+        tag: node.tagName || "",
+      });
+    };
+
+    document.addEventListener("click", handler);
+    return () => document.removeEventListener("click", handler);
+  }, [user]);
 
   return (
     <div className="ris-layout">
@@ -110,6 +135,7 @@ function MainLayout({ children }) {
                   <Link to="/admin/templates">Template Management</Link>
                   <Link to="/admin/pacs-management">PACS Management</Link>
                   <Link to="/admin/mwls-management">MWLS Management</Link>
+                  <Link to="/admin/audit-logs">Audit Logs</Link>
                 </div>
               )}
             </>

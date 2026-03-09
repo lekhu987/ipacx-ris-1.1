@@ -97,17 +97,61 @@ export default function ReportingPage() {
       })
     );
 
+    const addendumRowsByStudy = reports.reduce((acc, row) => {
+      if (row?.status === "Addendum" && row?.study_uid) {
+        if (!acc[row.study_uid]) acc[row.study_uid] = [];
+        acc[row.study_uid].push(row);
+      }
+      return acc;
+    }, {});
+
+    const fallbackByStudyUid = reports.reduce((acc, row) => {
+      if (!row?.study_uid) return acc;
+      if (!acc[row.study_uid]) {
+        acc[row.study_uid] = {
+          patient_name: row.patient_name || "",
+          patient_id: row.patient_id || "",
+          accession_number: row.accession_number || "",
+          modality: row.modality || "",
+        };
+      } else {
+        if (!acc[row.study_uid].patient_name && row.patient_name) acc[row.study_uid].patient_name = row.patient_name;
+        if (!acc[row.study_uid].patient_id && row.patient_id) acc[row.study_uid].patient_id = row.patient_id;
+        if (!acc[row.study_uid].accession_number && row.accession_number) acc[row.study_uid].accession_number = row.accession_number;
+        if (!acc[row.study_uid].modality && row.modality) acc[row.study_uid].modality = row.modality;
+      }
+      return acc;
+    }, {});
+
+    const addendumIndexByReportId = {};
+    Object.values(addendumRowsByStudy).forEach((rows) => {
+      rows
+        .sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0))
+        .forEach((row, idx) => {
+          addendumIndexByReportId[row.id] = idx + 1;
+        });
+    });
+
     const enriched = reports.map(r => {
       const study = studyMap[r.study_uid];
-      let displayStatus = r.status;
-      if (r.addendum_index > 0) displayStatus = "Addendum";
+      const isAddendumRow = r.status === "Addendum";
+      const addendumIndex = addendumIndexByReportId[r.id] || 0;
+      const fallback = fallbackByStudyUid[r.study_uid] || {};
+      const basePatientName = r.patient_name || fallback.patient_name || study?.PatientName || "";
+      const basePatientId = r.patient_id || fallback.patient_id || study?.PatientID || "";
+      const baseAccession = r.accession_number || fallback.accession_number || study?.AccessionNumber || "";
+      const baseModality = r.modality || fallback.modality || study?.Modality || "";
       return {
         ...r,
-        patient_name: r.addendum_index > 0 ? `${r.patient_name} (${r.addendum_index})` : r.patient_name,
-        accession_number: r.accession_number || study?.AccessionNumber || "",
-        modality: r.modality || study?.Modality || "",
+        patient_name:
+          isAddendumRow && addendumIndex > 0
+            ? `${basePatientName} (${addendumIndex})`
+            : basePatientName,
+        patient_id: basePatientId,
+        accession_number: baseAccession,
+        modality: baseModality,
         study_date: study?.StudyDate || r.created_at,
-        status: displayStatus,
+        status: r.status,
          reported_by: r.reported_by_signature || "",       // add this
     approved_by: r.approved_by_signature || "", 
       };

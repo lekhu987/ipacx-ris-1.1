@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
+import { logLogoutEvent } from "../utils/auditClient";
 
 const AuthContext = createContext();
 
@@ -22,7 +23,8 @@ export const AuthProvider = ({ children }) => {
   };
 
   // Logout
-  const logout = () => {
+  const logout = async () => {
+    await logLogoutEvent();
     setUser(null);
     sessionStorage.removeItem("user");
     window.location.href = "/";

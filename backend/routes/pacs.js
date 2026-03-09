@@ -4,6 +4,7 @@ const router = express.Router();
 const axios = require("axios");
 const net = require("net");
 const pool = require("../db");
+const { logAction } = require("../utils/auditLogger");
 
 /* ======================================================
    ORTHANC CONFIG
@@ -64,6 +65,16 @@ router.post("/", async (req, res) => {
          RETURNING *`,
         [pacs_name, pacs_type, ae_title, ip_address, port, id]
       );
+      await logAction(req, {
+        event: "PACS_UPDATED",
+        details: {
+          pacs_id: result.rows[0].id,
+          pacs_name: result.rows[0].pacs_name,
+          ae_title,
+          ip_address,
+          port,
+        },
+      });
       res.json(result.rows[0]);
     } else {
       const result = await pool.query(
@@ -72,6 +83,16 @@ router.post("/", async (req, res) => {
          RETURNING *`,
         [pacs_name, pacs_type, ae_title, ip_address, port]
       );
+      await logAction(req, {
+        event: "PACS_CREATED",
+        details: {
+          pacs_id: result.rows[0].id,
+          pacs_name: result.rows[0].pacs_name,
+          ae_title,
+          ip_address,
+          port,
+        },
+      });
       res.json(result.rows[0]);
     }
   } catch (err) {
@@ -83,7 +104,16 @@ router.post("/", async (req, res) => {
    DELETE PACS
 ====================================================== */
 router.delete("/:id", async (req, res) => {
-  await pool.query("DELETE FROM pacs WHERE id=$1", [req.params.id]);
+  const deleted = await pool.query("DELETE FROM pacs WHERE id=$1 RETURNING id, pacs_name", [req.params.id]);
+  if (deleted.rows.length) {
+    await logAction(req, {
+      event: "PACS_DELETED",
+      details: {
+        pacs_id: deleted.rows[0].id,
+        pacs_name: deleted.rows[0].pacs_name,
+      },
+    });
+  }
   res.json({ success: true });
 });
 
@@ -95,11 +125,19 @@ router.post("/:id/activate", async (req, res) => {
     "UPDATE pacs SET is_active=true WHERE id=$1",
     [req.params.id]
   );
+  await logAction(req, {
+    event: "PACS_ACTIVATED",
+    details: { pacs_id: Number(req.params.id) },
+  });
   res.json({ success: true });
 });
 
 router.post("/:id/deactivate", async (req, res) => {
   await pool.query("UPDATE pacs SET is_active=false WHERE id=$1", [req.params.id]);
+  await logAction(req, {
+    event: "PACS_DEACTIVATED",
+    details: { pacs_id: Number(req.params.id) },
+  });
   res.json({ success: true });
 });
 

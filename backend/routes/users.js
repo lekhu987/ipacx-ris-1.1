@@ -6,6 +6,7 @@ const pool = require("../db");
 const router = express.Router();
 const uploadSignature = require("../middleware/uploadSignature");
 const axios = require("axios");
+const { logAction } = require("../utils/auditLogger");
 
 /* =========================
    CREATE USER (ADMIN)
@@ -56,6 +57,15 @@ router.post("/", uploadSignature.single("signature"), async (req, res) => {
         signature_path
       ]
     );
+
+    await logAction(req, {
+      event: "USER_CREATED",
+      details: {
+        target_user_id: result.rows[0].id,
+        target_username: result.rows[0].username,
+        target_role: result.rows[0].role,
+      },
+    });
 
     res.json(result.rows[0]);
   } catch (err) {
@@ -164,6 +174,27 @@ router.put("/:id", uploadSignature.single("signature"), async (req, res) => {
       ]
     );
 
+    const updated = result.rows[0];
+    const changed = [];
+    if ((user.title || null) !== (updated.title || null)) changed.push("title");
+    if ((user.full_name || null) !== (updated.full_name || null)) changed.push("full_name");
+    if ((user.username || null) !== (updated.username || null)) changed.push("username");
+    if ((user.email || null) !== (updated.email || null)) changed.push("email");
+    if ((user.role || null) !== (updated.role || null)) changed.push("role");
+    if ((user.qualification || null) !== (updated.qualification || null)) changed.push("qualification");
+    if ((user.designation || null) !== (updated.designation || null)) changed.push("designation");
+    if ((user.signature_url || null) !== (updated.signature_url || null)) changed.push("signature_url");
+    if (password?.trim()) changed.push("password_hash");
+
+    await logAction(req, {
+      event: "USER_UPDATED",
+      details: {
+        target_user_id: updated.id,
+        target_username: updated.username,
+        changed_fields: changed,
+      },
+    });
+
     res.json(result.rows[0]);
   } catch (err) {
     console.error("Update user error:", err);
@@ -190,6 +221,14 @@ router.put("/:id/toggle", async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
+    await logAction(req, {
+      event: "USER_STATUS_TOGGLED",
+      details: {
+        target_user_id: result.rows[0].id,
+        is_active: result.rows[0].is_active,
+      },
+    });
+
     res.json(result.rows[0]);
   } catch (err) {
     console.error("Toggle user error:", err);
@@ -210,6 +249,14 @@ router.delete("/:id", async (req, res) => {
     if (!result.rows.length) {
       return res.status(404).json({ error: "User not found" });
     }
+
+    await logAction(req, {
+      event: "USER_DELETED",
+      details: {
+        target_user_id: result.rows[0].id,
+        target_username: result.rows[0].username,
+      },
+    });
 
     res.json({ success: true, deleted: result.rows[0] });
   } catch (err) {

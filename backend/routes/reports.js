@@ -5,6 +5,7 @@ const { Pool } = require("pg");
 const multer = require("multer");
 const fs = require("fs");
 const axios = require("axios");
+const { logAction } = require("../utils/auditLogger");
 
 const generateFinalReportPDF = require("../utils/generateFinalReportPDF");
 
@@ -340,6 +341,24 @@ router.post("/api/reports/save", async (req, res) => {
     // ADDENDUM → ALWAYS INSERT
     // =========================
     if (status === "Addendum" || isAddendum) {
+      const previousReportRes = await pool.query(
+        `SELECT accession_number, patient_id, patient_name, modality, report_title, body_part, referring_doctor
+         FROM reports
+         WHERE study_uid = $1
+         ORDER BY updated_at DESC
+         LIMIT 1`,
+        [study_uid]
+      );
+      const previousReport = previousReportRes.rows[0] || {};
+
+      const resolvedAccession = accession_number || previousReport.accession_number || null;
+      const resolvedPatientId = patient_id || previousReport.patient_id || null;
+      const resolvedPatientName = patient_name || previousReport.patient_name || null;
+      const resolvedModality = modality || previousReport.modality || null;
+      const resolvedTitle = reportTitle || previousReport.report_title || null;
+      const resolvedBodyPart = body_part || previousReport.body_part || null;
+      const resolvedRefDoctor = referring_doctor || previousReport.referring_doctor || null;
+
       const result = await pool.query(
         `INSERT INTO reports (
           study_uid, accession_number, patient_id, patient_name,
@@ -349,9 +368,9 @@ router.post("/api/reports/save", async (req, res) => {
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'Addendum',$9,$10,$11)
         RETURNING id`,
         [
-          study_uid, accession_number, patient_id, patient_name,
-          modality, reportContent, finalReportedSignature, finalApprovedSignature,
-          reportTitle, body_part, referring_doctor
+          study_uid, resolvedAccession, resolvedPatientId, resolvedPatientName,
+          resolvedModality, reportContent, finalReportedSignature, finalApprovedSignature,
+          resolvedTitle, resolvedBodyPart, resolvedRefDoctor
         ]
       );
       reportId = result.rows[0].id;
@@ -518,6 +537,24 @@ router.post("/api/reports/save", async (req, res) => {
       }
     }
 
+    await logAction(req, {
+      event:
+        status === "Final"
+          ? "REPORT_FINAL_SAVED"
+          : status === "Addendum" || isAddendum
+          ? "REPORT_ADDENDUM_SAVED"
+          : "REPORT_DRAFT_SAVED",
+      details: {
+        report_id: reportId,
+        study_uid,
+        accession_number,
+        patient_id,
+        patient_name,
+        modality,
+        report_title: reportTitle || null,
+      },
+    });
+
     res.json({ success: true, reportId });
   } catch (err) {
     console.error("Save report error:", err);
@@ -650,15 +687,38 @@ router.get("/api/reports/:id/pdf", async (req, res) => {
     const reportId = req.params.id;
 
     const reportRes = await pool.query(
-      `SELECT r.*, 
-              s.study_date,
-              s.study_time,
-              (SELECT reason 
-               FROM report_addendums 
-               WHERE report_id = r.id 
-               ORDER BY created_at DESC 
-               LIMIT 1) AS addendum_reason
+      `SELECT
+          r.*,
+          COALESCE(NULLIF(r.accession_number, ''), base.accession_number) AS accession_number,
+          COALESCE(NULLIF(r.patient_id, ''), base.patient_id) AS patient_id,
+          COALESCE(NULLIF(r.patient_name, ''), base.patient_name) AS patient_name,
+          COALESCE(NULLIF(r.modality, ''), base.modality) AS modality,
+          COALESCE(NULLIF(r.report_title, ''), base.report_title) AS report_title,
+          COALESCE(NULLIF(r.body_part, ''), base.body_part) AS body_part,
+          COALESCE(NULLIF(r.referring_doctor, ''), base.referring_doctor) AS referring_doctor,
+          s.study_date,
+          s.study_time,
+          (SELECT reason
+           FROM report_addendums
+           WHERE report_id = r.id
+           ORDER BY created_at DESC
+           LIMIT 1) AS addendum_reason
        FROM reports r
+       LEFT JOIN LATERAL (
+         SELECT
+           rb.accession_number,
+           rb.patient_id,
+           rb.patient_name,
+           rb.modality,
+           rb.report_title,
+           rb.body_part,
+           rb.referring_doctor
+         FROM reports rb
+         WHERE rb.study_uid = r.study_uid
+           AND rb.id <> r.id
+         ORDER BY (rb.status = 'Final') DESC, rb.updated_at DESC, rb.created_at DESC
+         LIMIT 1
+       ) base ON TRUE
        LEFT JOIN studies s ON r.study_uid = s.study_uid
        WHERE r.id = $1`,
       [reportId]
@@ -704,15 +764,38 @@ router.get("/api/reports/study/:studyUid/pdf", async (req, res) => {
     // The subquery looks into report_addendums for the specific report_id
     // and grabs the single most recent reason string.
     let query = `
-  SELECT r.*, 
-         s.study_date,
-         s.study_time,
-         (SELECT reason 
-          FROM report_addendums 
-          WHERE report_id = r.id 
-          ORDER BY created_at DESC 
-          LIMIT 1) AS addendum_reason
+  SELECT
+    r.*,
+    COALESCE(NULLIF(r.accession_number, ''), base.accession_number) AS accession_number,
+    COALESCE(NULLIF(r.patient_id, ''), base.patient_id) AS patient_id,
+    COALESCE(NULLIF(r.patient_name, ''), base.patient_name) AS patient_name,
+    COALESCE(NULLIF(r.modality, ''), base.modality) AS modality,
+    COALESCE(NULLIF(r.report_title, ''), base.report_title) AS report_title,
+    COALESCE(NULLIF(r.body_part, ''), base.body_part) AS body_part,
+    COALESCE(NULLIF(r.referring_doctor, ''), base.referring_doctor) AS referring_doctor,
+    s.study_date,
+    s.study_time,
+    (SELECT reason
+     FROM report_addendums
+     WHERE report_id = r.id
+     ORDER BY created_at DESC
+     LIMIT 1) AS addendum_reason
   FROM reports r
+  LEFT JOIN LATERAL (
+    SELECT
+      rb.accession_number,
+      rb.patient_id,
+      rb.patient_name,
+      rb.modality,
+      rb.report_title,
+      rb.body_part,
+      rb.referring_doctor
+    FROM reports rb
+    WHERE rb.study_uid = r.study_uid
+      AND rb.id <> r.id
+    ORDER BY (rb.status = 'Final') DESC, rb.updated_at DESC, rb.created_at DESC
+    LIMIT 1
+  ) base ON TRUE
   LEFT JOIN studies s ON r.study_uid = s.study_uid
   WHERE r.study_uid = $1
 `;
@@ -761,13 +844,36 @@ router.get("/api/reports/:id/pdf/print", async (req, res) => {
   try {
     const reportId = req.params.id;
 const reportRes = await pool.query(
-  `SELECT r.*, 
-          s.study_date,
-          s.study_time,
-          (SELECT reason FROM report_addendums 
-           WHERE report_id = r.id 
-           ORDER BY created_at DESC LIMIT 1) AS addendum_reason 
-   FROM reports r 
+  `SELECT
+      r.*,
+      COALESCE(NULLIF(r.accession_number, ''), base.accession_number) AS accession_number,
+      COALESCE(NULLIF(r.patient_id, ''), base.patient_id) AS patient_id,
+      COALESCE(NULLIF(r.patient_name, ''), base.patient_name) AS patient_name,
+      COALESCE(NULLIF(r.modality, ''), base.modality) AS modality,
+      COALESCE(NULLIF(r.report_title, ''), base.report_title) AS report_title,
+      COALESCE(NULLIF(r.body_part, ''), base.body_part) AS body_part,
+      COALESCE(NULLIF(r.referring_doctor, ''), base.referring_doctor) AS referring_doctor,
+      s.study_date,
+      s.study_time,
+      (SELECT reason FROM report_addendums
+       WHERE report_id = r.id
+       ORDER BY created_at DESC LIMIT 1) AS addendum_reason
+   FROM reports r
+   LEFT JOIN LATERAL (
+     SELECT
+       rb.accession_number,
+       rb.patient_id,
+       rb.patient_name,
+       rb.modality,
+       rb.report_title,
+       rb.body_part,
+       rb.referring_doctor
+     FROM reports rb
+     WHERE rb.study_uid = r.study_uid
+       AND rb.id <> r.id
+     ORDER BY (rb.status = 'Final') DESC, rb.updated_at DESC, rb.created_at DESC
+     LIMIT 1
+   ) base ON TRUE
    LEFT JOIN studies s ON r.study_uid = s.study_uid
    WHERE r.id = $1`,
   [reportId]

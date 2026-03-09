@@ -9,8 +9,20 @@ function DigitalSignatureField({ type, value, onSelect = () => {} }) {
   const [data, setData] = useState(value || null);
 
   useEffect(() => {
-    if (value) setData(value);
+    if (!value || value === "null") {
+      setData(null);
+      return;
+    }
+    setData(value);
   }, [value]);
+
+  const signedOnText = () => {
+    const ts = data?.dateTime;
+    if (!ts) return "";
+    const dt = new Date(ts);
+    if (Number.isNaN(dt.getTime())) return "";
+    return dt.toLocaleString();
+  };
 
   const handleKeyDown = async (e) => {
     if (e.key !== "Enter" || loading || !inputText.trim()) return;
@@ -89,9 +101,7 @@ function DigitalSignatureField({ type, value, onSelect = () => {} }) {
             <div>{data.designation}</div>
           )}
 
-          <div>
-            Signed on {new Date(data.dateTime).toLocaleString()}
-          </div>
+          {signedOnText() && <div>Signed on {signedOnText()}</div>}
         </div>
       )}
     </div>

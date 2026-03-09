@@ -30,4 +30,19 @@ const api = axios.create({
   },
 });
 
+api.interceptors.request.use(
+  (config) => {
+    try {
+      const user = JSON.parse(sessionStorage.getItem("user") || "null");
+      if (user?.username) config.headers["x-audit-username"] = user.username;
+      if (user?.role) config.headers["x-audit-role"] = user.role;
+      if (user?.session_id) config.headers["x-audit-session"] = user.session_id;
+    } catch {
+      // no-op
+    }
+    return config;
+  },
+  (error) => Promise.reject(error)
+);
+
 export default api;

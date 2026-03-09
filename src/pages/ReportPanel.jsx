@@ -194,15 +194,45 @@ const formatDicomDateTime = (date, time) => {
     6,
     8
   )}T${t.substring(0, 2)}:${t.substring(2, 4)}:${t.substring(4, 6)}`;
-  return new Date(iso).toLocaleString();
+  return formatDateTime(iso);
 };
 
 const formatDateTime = (date) => {
   try {
-    return new Date(date).toLocaleString();
+    const dt = date instanceof Date ? date : new Date(date);
+    if (Number.isNaN(dt.getTime())) return "";
+    const dd = String(dt.getDate()).padStart(2, "0");
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const yyyy = dt.getFullYear();
+    let hh = dt.getHours();
+    const min = String(dt.getMinutes()).padStart(2, "0");
+    const sec = String(dt.getSeconds()).padStart(2, "0");
+    const ampm = hh >= 12 ? "PM" : "AM";
+    hh = hh % 12 || 12;
+    return `${dd}/${mm}/${yyyy}, ${String(hh).padStart(2, "0")}:${min}:${sec} ${ampm}`;
   } catch {
-    return date;
+    return "";
   }
+};
+
+const dicomDateToInput = (value) => {
+  const d = String(value || "").trim();
+  if (!/^\d{8}$/.test(d)) return "";
+  return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
+};
+
+const inputDateToDicom = (value) => String(value || "").replace(/-/g, "");
+
+const dicomTimeToInput = (value) => {
+  const t = String(value || "").replace(/\D/g, "").padEnd(6, "0").slice(0, 6);
+  if (!t) return "";
+  return `${t.slice(0, 2)}:${t.slice(2, 4)}`;
+};
+
+const inputTimeToDicom = (value) => {
+  const t = String(value || "").replace(":", "");
+  if (!t) return "";
+  return `${t.padEnd(4, "0").slice(0, 4)}00`;
 };
 
 const extractAgeGender = (rawName, rawAge, rawSex) => {
@@ -372,6 +402,7 @@ function WordColorPicker({ onSelect }) {
 export default function CreateReport() {
   const [searchParams] = useSearchParams();
   const studyUID = searchParams.get("study");
+  const accessKey = (searchParams.get("k") || "").trim();
   const navigate = useNavigate();
 
   const defaultStudy = {
@@ -388,8 +419,8 @@ export default function CreateReport() {
     History: "",
     Findings: "",
     Conclusion: "",
-    ReportedBy: "null",
-    ApprovedBy: "null",
+    ReportedBy: null,
+    ApprovedBy: null,
     ReportStatus: "",
   };
   const [isLoadingReport, setIsLoadingReport] = useState(true);
@@ -434,6 +465,15 @@ export default function CreateReport() {
   const [showPreviewPane, setShowPreviewPane] = useState(false);
 
   const location = useLocation(); // import from react-router-dom
+const blankModeParam = (searchParams.get("blank") || "").toLowerCase();
+const blankModeRequested =
+  location.pathname === "/secure-report-sheet" ||
+  ["1", "true", "yes"].includes(blankModeParam);
+const [blankAccessStatus, setBlankAccessStatus] = useState(
+  blankModeRequested ? "checking" : "not-required"
+);
+const isBlankMode = blankModeRequested && blankAccessStatus === "granted";
+const isBlankModeDenied = blankModeRequested && blankAccessStatus === "denied";
 const [isAddendum, setIsAddendum] = useState(false);
 const [noteInput, setNoteInput] = useState("");
 const [parentReportId, setParentReportId] = useState(null);
@@ -451,6 +491,41 @@ const PREVIEW_SCALED_HEADER_HEIGHT_PX = PREVIEW_HEADER_HEIGHT_PX * previewScale;
 const PREVIEW_SCALED_CONTENT_HEIGHT_PX =
   PREVIEW_CONTENT_HEIGHT_PX * previewScale;
 const PREVIEW_SCALED_FOOTER_HEIGHT_PX = PREVIEW_FOOTER_HEIGHT_PX * previewScale;
+
+useEffect(() => {
+  if (!blankModeRequested) {
+    setBlankAccessStatus("not-required");
+    return;
+  }
+
+  if (!accessKey) {
+    setBlankAccessStatus("denied");
+    return;
+  }
+
+  let cancelled = false;
+  setBlankAccessStatus("checking");
+
+  const validateBlankAccess = async () => {
+    try {
+      const res = await fetch(
+        `${api.defaults.baseURL}/api/public/report-sheet/validate?k=${encodeURIComponent(accessKey)}`
+      );
+      if (!cancelled) {
+        setBlankAccessStatus(res.ok ? "granted" : "denied");
+      }
+    } catch (err) {
+      if (!cancelled) setBlankAccessStatus("denied");
+      console.error("Blank report access validation failed", err);
+    }
+  };
+
+  validateBlankAccess();
+
+  return () => {
+    cancelled = true;
+  };
+}, [blankModeRequested, accessKey]);
 
 //report tile
 // Auto-update report title based on modality + body part
@@ -753,7 +828,19 @@ useEffect(() => {
         Load report and prefill
      ========================== */
  useEffect(() => {
-  if (!studyUID) return;
+  if (blankModeRequested && blankAccessStatus === "checking") return;
+  if (isBlankModeDenied) {
+    setLoading(false);
+    return;
+  }
+  if (isBlankMode) {
+    setLoading(false);
+    return;
+  }
+  if (!studyUID) {
+    setLoading(false);
+    return;
+  }
 
   const loadStudyAndReport = async () => {
     try {
@@ -856,13 +943,18 @@ if (location.state?.isAddendum && location.state?.parentReportData) {
   };
 
   loadStudyAndReport();
-}, [studyUID, location.state]);
+}, [studyUID, location.state, isBlankMode, isBlankModeDenied, blankModeRequested, blankAccessStatus]);
 
 
   /* ===========================
         Handle file uploads
      ========================== */
  const handleFiles = async (files) => {
+  if (!studyUID) {
+    alert("Key image upload requires study-linked report.");
+    return;
+  }
+
   const imageFiles = [...files].filter((f) => f.type.startsWith("image/"));
   if (!imageFiles.length) return;
 
@@ -899,6 +991,11 @@ if (location.state?.isAddendum && location.state?.parentReportData) {
         Save report (Draft / Final)
      ========================== */
 const handleSaveReport = async (status) => {
+  if (!studyUID) {
+    alert("This blank sheet can be edited/printed. Save requires a study-linked report.");
+    return;
+  }
+
   setStudy((prev) => ({ ...prev, ReportStatus: status })); // update immediately
 
   const payload = {
@@ -944,7 +1041,7 @@ useEffect(() => {
 }, [location.state]);
 // ✅ SYNC FINAL REPORT CONTENT (IMPORTANT)
 useEffect(() => {
-  if (!studyUID) return;
+  if (isBlankMode || !studyUID) return;
 
   const syncFinalReport = async () => {
     try {
@@ -983,7 +1080,7 @@ useEffect(() => {
   };
 
   syncFinalReport();
-}, [studyUID]);
+}, [studyUID, isBlankMode]);
 
 
   /* ===========================
@@ -1281,9 +1378,17 @@ const insertTextAtCursor = (text) => {
     saveSelection();
   };
 
-  if (loading) return <p style={{ padding: 12 }}>Loading…</p>;
+  if (blankModeRequested && blankAccessStatus === "checking") {
+    return <p style={{ padding: 12 }}>Validating secure link...</p>;
+  }
 
-  const { name: patientName, age, gender } = extractAgeGender(
+  if (isBlankModeDenied) {
+    return <p style={{ padding: 12 }}>Access denied. Invalid secure report link.</p>;
+  }
+
+  if (loading) return <p style={{ padding: 12 }}>Loading...</p>;
+
+  const parsedPatient = extractAgeGender(
     study.PatientName,
     study.PatientAge,
     study.PatientSex
@@ -1445,33 +1550,6 @@ const renderPreviewSheet = (attachRef = false) => (
 {/* ====================== */}
 {isAddendum && (
   <>
-    {/* STEP 1: Ask for reason if not yet confirmed */}
-    {!addendumConfirmed && (
-      <div style={{ marginBottom: 12, position: "relative", zIndex: 600 }}>
-        <div style={{ display: "flex", gap: 8 }}>
-          <input
-            type="text"
-            placeholder="Enter addendum reason"
-            value={noteInput}
-            onChange={(e) => setNoteInput(e.target.value)}
-            style={{ padding: "4px 6px", minWidth: 250 }}
-          />
-          <button
-            onClick={() => {
-              if (!noteInput.trim()) {
-                alert("Please enter a reason");
-                return;
-              }
-              setAddendumConfirmed(true); // ✅ mark as confirmed
-            }}
-          >
-            OK
-          </button>
-        </div>
-      </div>
-    )}
-
-    {/* STEP 2: Show reason after confirmation */}
     {addendumConfirmed && (
       <div
         style={{
@@ -1488,20 +1566,86 @@ const renderPreviewSheet = (attachRef = false) => (
       </div>
     )}
 
-    {/* Overlay to block the entire report until reason is entered */}
     {!addendumConfirmed && (
       <div
         style={{
-          position: "absolute",
+          position: "fixed",
           top: 0,
           left: 0,
           width: "100%",
           height: "100%",
-          backgroundColor: "rgba(255,255,255,0.6)",
-          zIndex: 500,
-          pointerEvents: "all", // block interactions
+          backgroundColor: "rgba(15, 23, 42, 0.25)",
+          backdropFilter: "blur(3px)",
+          zIndex: 2000,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          pointerEvents: "all",
         }}
-      />
+      >
+        <div
+          style={{
+            width: "min(520px, 92vw)",
+            background: "#fff",
+            borderRadius: 10,
+            border: "1px solid #cfd8e3",
+            boxShadow: "0 16px 36px rgba(0,0,0,0.22)",
+            padding: 16,
+          }}
+        >
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>
+            Addendum Reason Required
+          </div>
+          <input
+            type="text"
+            placeholder="Enter addendum reason"
+            value={noteInput}
+            onChange={(e) => setNoteInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                if (!noteInput.trim()) {
+                  alert("Please enter a reason");
+                  return;
+                }
+                setAddendumConfirmed(true);
+              }
+            }}
+            autoFocus
+            style={{
+              width: "100%",
+              height: 38,
+              padding: "0 10px",
+              border: "1px solid #b8c0cc",
+              borderRadius: 6,
+              marginBottom: 10,
+              boxSizing: "border-box",
+            }}
+          />
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button
+              onClick={() => {
+                if (!noteInput.trim()) {
+                  alert("Please enter a reason");
+                  return;
+                }
+                setAddendumConfirmed(true);
+              }}
+              style={{
+                height: 36,
+                padding: "0 14px",
+                border: "none",
+                borderRadius: 6,
+                background: "#0d6efd",
+                color: "#fff",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      </div>
     )}
   </>
 )}
@@ -1825,20 +1969,83 @@ const renderPreviewSheet = (attachRef = false) => (
           <tbody>
             <tr>
               <td style={{ padding: 6, border: "1px solid #000" }}>
-                <strong>Patient Name:</strong> {cleanPatientName(patientName)}
+                <strong>Patient Name:</strong>{" "}
+                {isBlankMode ? (
+                  <input
+                    value={study.PatientName || ""}
+                    onChange={(e) =>
+                      setStudy((p) => ({ ...p, PatientName: e.target.value }))
+                    }
+                    style={{ width: "65%" }}
+                  />
+                ) : (
+                  cleanPatientName(parsedPatient.name)
+                )}
               </td>
               <td style={{ padding: 6, border: "1px solid #000" }}>
-                <strong>Age/Gender:</strong> {age}/{gender}
+                <strong>Age/Gender:</strong>{" "}
+                {isBlankMode ? (
+                  <>
+                    <input
+                      value={study.PatientAge || ""}
+                      onChange={(e) =>
+                        setStudy((p) => ({ ...p, PatientAge: e.target.value }))
+                      }
+                      style={{ width: 42, marginRight: 4 }}
+                    />
+                    /
+                    <input
+                      value={study.PatientSex || ""}
+                      onChange={(e) =>
+                        setStudy((p) => ({ ...p, PatientSex: e.target.value.toUpperCase() }))
+                      }
+                      style={{ width: 42, marginLeft: 4 }}
+                    />
+                  </>
+                ) : (
+                  `${parsedPatient.age}/${parsedPatient.gender}`
+                )}
               </td>
               <td style={{ padding: 6, border: "1px solid #000" }}>
-                <strong>Patient ID:</strong> {study.PatientID}
+                <strong>Patient ID:</strong>{" "}
+                {isBlankMode ? (
+                  <input
+                    value={study.PatientID || ""}
+                    onChange={(e) =>
+                      setStudy((p) => ({ ...p, PatientID: e.target.value }))
+                    }
+                    style={{ width: "60%" }}
+                  />
+                ) : (
+                  study.PatientID
+                )}
               </td>
             </tr>
 
             <tr>
               <td style={{ padding: 6, border: "1px solid #000" }}>
                 <strong>Study Date/Time:</strong>{" "}
-                {formatDicomDateTime(study.StudyDate, study.StudyTime)}
+                {isBlankMode ? (
+                  <>
+                    <input
+                      type="date"
+                      value={dicomDateToInput(study.StudyDate)}
+                      onChange={(e) =>
+                        setStudy((p) => ({ ...p, StudyDate: inputDateToDicom(e.target.value) }))
+                      }
+                      style={{ marginRight: 6 }}
+                    />
+                    <input
+                      type="time"
+                      value={dicomTimeToInput(study.StudyTime)}
+                      onChange={(e) =>
+                        setStudy((p) => ({ ...p, StudyTime: inputTimeToDicom(e.target.value) }))
+                      }
+                    />
+                  </>
+                ) : (
+                  formatDicomDateTime(study.StudyDate, study.StudyTime)
+                )}
               </td>
       <td style={{ padding: 6, border: "1px solid #000" }}>
   <strong>Ref. Doctor:</strong>{" "}
@@ -1890,7 +2097,18 @@ const renderPreviewSheet = (attachRef = false) => (
                 <strong>Reported Date/Time:</strong> {formatDateTime(new Date())}
               </td>
               <td style={{ padding: 6, border: "1px solid #000" }}>
-                <strong>Modality:</strong> {study.Modality}
+                <strong>Modality:</strong>{" "}
+                {isBlankMode ? (
+                  <input
+                    value={study.Modality || ""}
+                    onChange={(e) =>
+                      setStudy((p) => ({ ...p, Modality: e.target.value }))
+                    }
+                    style={{ width: "55%" }}
+                  />
+                ) : (
+                  study.Modality
+                )}
               </td>
              <td style={{ padding: 6, border: "1px solid #000" }}>
   <strong>Body Part:</strong>{" "}
@@ -2111,3 +2329,4 @@ const renderPreviewSheet = (attachRef = false) => (
     
   );
 }
+

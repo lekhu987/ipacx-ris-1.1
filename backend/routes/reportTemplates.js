@@ -2,6 +2,7 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db"); // import your pool from db.js
+const { logAction } = require("../utils/auditLogger");
 
 // ========================
 // MODALITIES & BODY PARTS
@@ -73,6 +74,16 @@ router.post("/report-templates", async (req, res) => {
 
     const created = result.rows[0];
     created.content = content;
+
+    await logAction(req, {
+      event: "TEMPLATE_CREATED",
+      details: {
+        template_id: created.id,
+        template_name: created.template_name,
+        modality: created.modality,
+        body_part: created.body_part,
+      },
+    });
 
     res.json({ success: true, template: created });
   } catch (err) {
@@ -156,6 +167,17 @@ router.put("/report-templates/:id", async (req, res) => {
 
     const updated = result.rows[0];
     updated.content = content;
+
+    await logAction(req, {
+      event: "TEMPLATE_UPDATED",
+      details: {
+        template_id: updated.id,
+        template_name: updated.template_name,
+        modality: updated.modality,
+        body_part: updated.body_part,
+      },
+    });
+
     res.json(updated);
   } catch (err) {
     console.error("Update template error:", err.message);
@@ -197,6 +219,14 @@ router.delete("/report-templates/:id", async (req, res) => {
     const { id } = req.params;
     const result = await pool.query("DELETE FROM report_templates WHERE id=$1 RETURNING *", [id]);
     if (result.rowCount === 0) return res.status(404).json({ error: "Template not found" });
+
+    await logAction(req, {
+      event: "TEMPLATE_DELETED",
+      details: {
+        template_id: result.rows[0].id,
+        template_name: result.rows[0].template_name,
+      },
+    });
 
     res.json({ success: true, message: "Template deleted", deleted: result.rows[0] });
   } catch (err) {

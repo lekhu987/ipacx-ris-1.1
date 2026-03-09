@@ -194,14 +194,24 @@ const formatDicomDateTime = (date, time) => {
     6,
     8
   )}T${t.substring(0, 2)}:${t.substring(2, 4)}:${t.substring(4, 6)}`;
-  return new Date(iso).toLocaleString();
+  return formatDateTime(iso);
 };
 
 const formatDateTime = (date) => {
   try {
-    return new Date(date).toLocaleString();
+    const dt = date instanceof Date ? date : new Date(date);
+    if (Number.isNaN(dt.getTime())) return "";
+    const dd = String(dt.getDate()).padStart(2, "0");
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const yyyy = dt.getFullYear();
+    let hh = dt.getHours();
+    const min = String(dt.getMinutes()).padStart(2, "0");
+    const sec = String(dt.getSeconds()).padStart(2, "0");
+    const ampm = hh >= 12 ? "PM" : "AM";
+    hh = hh % 12 || 12;
+    return `${dd}/${mm}/${yyyy}, ${String(hh).padStart(2, "0")}:${min}:${sec} ${ampm}`;
   } catch {
-    return date;
+    return "";
   }
 };
 
@@ -1458,33 +1468,6 @@ const isSplitMode = !viewerMinimized && !reportMinimized;
 {/* ====================== */}
 {isAddendum && (
   <>
-    {/* STEP 1: Ask for reason if not yet confirmed */}
-    {!addendumConfirmed && (
-      <div style={{ marginBottom: 12, position: "relative", zIndex: 600 }}>
-        <div style={{ display: "flex", gap: 8 }}>
-          <input
-            type="text"
-            placeholder="Enter addendum reason"
-            value={noteInput}
-            onChange={(e) => setNoteInput(e.target.value)}
-            style={{ padding: "4px 6px", minWidth: 250 }}
-          />
-          <button
-            onClick={() => {
-              if (!noteInput.trim()) {
-                alert("Please enter a reason");
-                return;
-              }
-              setAddendumConfirmed(true); // ✅ mark as confirmed
-            }}
-          >
-            OK
-          </button>
-        </div>
-      </div>
-    )}
-
-    {/* STEP 2: Show reason after confirmation */}
     {addendumConfirmed && (
       <div
         style={{
@@ -1501,20 +1484,86 @@ const isSplitMode = !viewerMinimized && !reportMinimized;
       </div>
     )}
 
-    {/* Overlay to block the entire report until reason is entered */}
     {!addendumConfirmed && (
       <div
         style={{
-          position: "absolute",
+          position: "fixed",
           top: 0,
           left: 0,
           width: "100%",
           height: "100%",
-          backgroundColor: "rgba(255,255,255,0.6)",
-          zIndex: 500,
-          pointerEvents: "all", // block interactions
+          backgroundColor: "rgba(15, 23, 42, 0.25)",
+          backdropFilter: "blur(3px)",
+          zIndex: 2000,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          pointerEvents: "all",
         }}
-      />
+      >
+        <div
+          style={{
+            width: "min(520px, 92vw)",
+            background: "#fff",
+            borderRadius: 10,
+            border: "1px solid #cfd8e3",
+            boxShadow: "0 16px 36px rgba(0,0,0,0.22)",
+            padding: 16,
+          }}
+        >
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>
+            Addendum Reason Required
+          </div>
+          <input
+            type="text"
+            placeholder="Enter addendum reason"
+            value={noteInput}
+            onChange={(e) => setNoteInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                if (!noteInput.trim()) {
+                  alert("Please enter a reason");
+                  return;
+                }
+                setAddendumConfirmed(true);
+              }
+            }}
+            autoFocus
+            style={{
+              width: "100%",
+              height: 38,
+              padding: "0 10px",
+              border: "1px solid #b8c0cc",
+              borderRadius: 6,
+              marginBottom: 10,
+              boxSizing: "border-box",
+            }}
+          />
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button
+              onClick={() => {
+                if (!noteInput.trim()) {
+                  alert("Please enter a reason");
+                  return;
+                }
+                setAddendumConfirmed(true);
+              }}
+              style={{
+                height: 36,
+                padding: "0 14px",
+                border: "none",
+                borderRadius: 6,
+                background: "#0d6efd",
+                color: "#fff",
+                fontWeight: 600,
+                cursor: "pointer",
+              }}
+            >
+              Continue
+            </button>
+          </div>
+        </div>
+      </div>
     )}
   </>
 )}

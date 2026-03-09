@@ -32,7 +32,16 @@ const corsOptions = {
   },
   credentials: true,
   methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization", "Cache-Control", "Pragma", "Expires"],
+  allowedHeaders: [
+    "Content-Type",
+    "Authorization",
+    "Cache-Control",
+    "Pragma",
+    "Expires",
+    "x-audit-username",
+    "x-audit-role",
+    "x-audit-session",
+  ],
 };
 
 app.use(cors(corsOptions));
@@ -115,6 +124,12 @@ app.use("/api", modalitiesRoutes);
 
 const speechRoutes = require("./routes/speech");
 app.use("/api/speech", speechRoutes);
+
+const auditRoutes = require("./routes/audit");
+app.use("/api/audit", auditRoutes);
+
+const publicReportSheetRoutes = require("./routes/publicReportSheet");
+app.use("/api/public/report-sheet", publicReportSheetRoutes);
 
 //const studiesRoutes = require("./routes/studies");
 //app.use("/api/studies", studiesRoutes);

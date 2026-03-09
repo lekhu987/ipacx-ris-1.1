@@ -21,6 +21,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import MainLayout from "./layout/MainLayout";
 import AddNewReportPage from "./pages/AddNewReportPage";
 import ReportedBy from "./pages/adminsettings/ReportedBy";
+import AuditLogs from "./pages/adminsettings/AuditLogs";
 
 
 // Context
@@ -125,6 +126,10 @@ function App() {
                 </ProtectedRoute>
               }
             />
+            <Route
+              path="/secure-report-sheet"
+              element={<ReportPanelPage />}
+            />
 <Route
   path="/add-new-report"
   element={
@@ -164,6 +169,14 @@ function App() {
               element={
                 <ProtectedRoute roles={["ADMIN"]}>
                   <PacsManagement />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/audit-logs"
+              element={
+                <ProtectedRoute roles={["ADMIN"]}>
+                  <AuditLogs />
                 </ProtectedRoute>
               }
             />
