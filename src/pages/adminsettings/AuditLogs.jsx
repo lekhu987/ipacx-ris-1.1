@@ -6,6 +6,14 @@ import "./AuditLogs.css";
 
 const AUDIT_FILTER_CACHE_KEY = "audit_log_filters";
 
+function getTodayYmd() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+
 function getCurrentSessionId() {
   try {
     const user = JSON.parse(sessionStorage.getItem("user") || "null");
@@ -54,8 +62,8 @@ export default function AuditLogs() {
   const [filters, setFilters] = useState({
     username: "",
     ip: "",
-    from: "",
-    to: "",
+    from: getTodayYmd(),
+    to: getTodayYmd(),
     limit: 30,
   });
   const [offset, setOffset] = useState(0);
@@ -69,6 +77,7 @@ export default function AuditLogs() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [refreshSec, setRefreshSec] = useState(10);
   const [exporting, setExporting] = useState(false);
+  const [archiveInfo, setArchiveInfo] = useState({ found: false, file_path: "", log_date: "" });
 
   const fetchLogs = useCallback(async (nextOffset = offset, activeFilters = filters) => {
     try {
@@ -85,6 +94,11 @@ export default function AuditLogs() {
       setSearchParams(params, { replace: true });
       const res = await api.get(`/api/audit/logs?${params.toString()}`);
       const rows = Array.isArray(res.data?.data) ? res.data.data : [];
+      setArchiveInfo({
+        found: Boolean(res.data?.archive?.found),
+        file_path: res.data?.archive?.file_path || "",
+        log_date: res.data?.archive?.log_date || "",
+      });
       setLogs(rows);
       setOffset(nextOffset || 0);
       const apiTotal = Number(res.data?.paging?.total);
@@ -120,17 +134,28 @@ export default function AuditLogs() {
         const nextFilters = {
           username: parsed.filters?.username || "",
           ip: parsed.filters?.ip || "",
-          from: parsed.filters?.from || "",
-          to: parsed.filters?.to || "",
+          from: parsed.filters?.from || getTodayYmd(),
+          to: parsed.filters?.to || getTodayYmd(),
           limit: 30,
         };
         const nextOffset = Number(parsed.offset || 0);
         setFilters(nextFilters);
         setOffset(nextOffset);
         restored = true;
-        setTimeout(() => {
-          fetchLogs(nextOffset, nextFilters);
-        }, 0);
+        if ((nextFilters.username || "").trim()) {
+          setTimeout(() => {
+            fetchLogs(nextOffset, nextFilters);
+          }, 0);
+        } else {
+          setLogs([]);
+          setPaging({ total: 0, has_next: false });
+          setSummaryCounts({
+            total: 0,
+            login_success: 0,
+            login_failed: 0,
+            logout: 0,
+          });
+        }
       }
     } catch (err) {
       console.warn("Failed to restore audit filter cache", err);
@@ -139,17 +164,23 @@ export default function AuditLogs() {
     if (!restored) {
       setLogs([]);
       setPaging({ total: 0, has_next: false });
+      setSummaryCounts({
+        total: 0,
+        login_success: 0,
+        login_failed: 0,
+        logout: 0,
+      });
       setOffset(0);
     }
   }, []);
 
   useEffect(() => {
-    if (!autoRefresh || logs.length === 0) return;
+    if (!autoRefresh || logs.length === 0 || !filters.username.trim()) return;
     const timer = setInterval(() => {
-      fetchLogs(offset);
+      fetchLogs(offset, filters);
     }, Math.max(5, Number(refreshSec) || 10) * 1000);
     return () => clearInterval(timer);
-  }, [autoRefresh, refreshSec, fetchLogs, offset, logs.length]);
+  }, [autoRefresh, refreshSec, fetchLogs, offset, logs.length, filters]);
 
   const pageStats = useMemo(() => {
     const stats = {
@@ -214,10 +245,101 @@ export default function AuditLogs() {
   };
 
   const applyFilters = () => {
+    const today = getTodayYmd();
+    const normalizedFilters = {
+      ...filters,
+      from: filters.from?.trim() || today,
+      to: filters.to?.trim() || today,
+      limit: 30,
+    };
+
+    if (!normalizedFilters.username.trim()) {
+      setFilters(normalizedFilters);
+      setOffset(0);
+      setLogs([]);
+      setPaging({ total: 0, has_next: false });
+      setSummaryCounts({
+        total: 0,
+        login_success: 0,
+        login_failed: 0,
+        logout: 0,
+      });
+      setError("Enter username and click Apply.");
+      const payload = {
+        session_id: getCurrentSessionId(),
+        offset: 0,
+        filters: {
+          username: "",
+          ip: normalizedFilters.ip || "",
+          from: normalizedFilters.from || "",
+          to: normalizedFilters.to || "",
+        },
+      };
+      sessionStorage.setItem(AUDIT_FILTER_CACHE_KEY, JSON.stringify(payload));
+      return;
+    }
+
+    setError("");
+    setFilters(normalizedFilters);
+
     const nextOffset = 0;
     const payload = {
       session_id: getCurrentSessionId(),
       offset: nextOffset,
+      filters: {
+        username: normalizedFilters.username || "",
+        ip: normalizedFilters.ip || "",
+        from: normalizedFilters.from || "",
+        to: normalizedFilters.to || "",
+      },
+    };
+    sessionStorage.setItem(AUDIT_FILTER_CACHE_KEY, JSON.stringify(payload));
+    fetchLogs(nextOffset, normalizedFilters);
+  };
+
+  const clearFilters = () => {
+    const resetFilters = {
+      username: "",
+      ip: "",
+      from: "",
+      to: "",
+      limit: 30,
+    };
+    setFilters(resetFilters);
+    setOffset(0);
+    setError("");
+    setArchiveInfo({ found: false, file_path: "", log_date: "" });
+    setSearchParams({}, { replace: true });
+    sessionStorage.removeItem(AUDIT_FILTER_CACHE_KEY);
+    setLogs([]);
+    setPaging({ total: 0, has_next: false });
+    setSummaryCounts({
+      total: 0,
+      login_success: 0,
+      login_failed: 0,
+      logout: 0,
+    });
+  };
+
+  const downloadDateTxt = () => {
+    const date = (filters.from || "").trim();
+    const to = (filters.to || "").trim();
+    if (!date || !to || date !== to) {
+      alert("Select same From and To date to download date-wise TXT.");
+      return;
+    }
+    const params = new URLSearchParams();
+    params.set("date", date);
+    if ((filters.username || "").trim()) params.set("username", filters.username.trim());
+    if ((filters.ip || "").trim()) params.set("ip", filters.ip.trim());
+    const url = `${api.defaults.baseURL}/api/audit/archives/download?${params.toString()}`;
+    window.open(url, "_blank");
+  };
+
+  useEffect(() => {
+    const payload = {
+      session_id: getCurrentSessionId(),
+      offset,
       filters: {
         username: filters.username || "",
         ip: filters.ip || "",
@@ -226,8 +348,7 @@ export default function AuditLogs() {
       },
     };
     sessionStorage.setItem(AUDIT_FILTER_CACHE_KEY, JSON.stringify(payload));
-    fetchLogs(nextOffset, filters);
-  };
+  }, [filters.username, filters.ip, filters.from, filters.to, offset]);
 
   return (
     <MainLayout>
@@ -280,11 +401,26 @@ export default function AuditLogs() {
             onChange={(e) => setFilters((p) => ({ ...p, to: e.target.value }))}
           />
           <button
+            onClick={clearFilters}
+            disabled={loading}
+            className="audit-filter-btn"
+          >
+            Clear
+          </button>
+          <button
             onClick={applyFilters}
             disabled={loading}
             className="audit-filter-btn"
           >
             Apply
+          </button>
+          <button
+            onClick={downloadDateTxt}
+            disabled={loading}
+            className="audit-filter-btn"
+            title="Download TXT"
+          >
+            ⬇
           </button>
         </div>
 
@@ -308,6 +444,11 @@ export default function AuditLogs() {
         </div>
 
         {error && <div className="audit-error">{error}</div>}
+        {!error && archiveInfo.found && (
+          <div className="audit-error" style={{ background: "#f0f7ff", color: "#0f172a", borderColor: "#bfdbfe" }}>
+            Archived logs loaded for {archiveInfo.log_date}. File: {archiveInfo.file_path}
+          </div>
+        )}
 
         <div className="audit-table-wrap">
           <table className="audit-table">

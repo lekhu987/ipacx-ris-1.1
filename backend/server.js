@@ -127,6 +127,7 @@ app.use("/api/speech", speechRoutes);
 
 const auditRoutes = require("./routes/audit");
 app.use("/api/audit", auditRoutes);
+const { startAuditArchiveScheduler } = require("./utils/auditLogger");
 
 const publicReportSheetRoutes = require("./routes/publicReportSheet");
 app.use("/api/public/report-sheet", publicReportSheetRoutes);
@@ -152,8 +153,10 @@ pool.connect()
     }
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on port ${PORT}`);
+      startAuditArchiveScheduler();
     });
   })
   .catch(err => {
     console.error("🔴 Failed to connect to PostgreSQL:", err.message);
   });
+
