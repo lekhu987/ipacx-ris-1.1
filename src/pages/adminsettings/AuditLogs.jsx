@@ -78,12 +78,14 @@ export default function AuditLogs() {
   const [refreshSec, setRefreshSec] = useState(10);
   const [exporting, setExporting] = useState(false);
   const [archiveInfo, setArchiveInfo] = useState({ found: false, file_path: "", log_date: "" });
+  const [hasSearched, setHasSearched] = useState(false);
 
-  const fetchLogs = useCallback(async (nextOffset = offset, activeFilters = filters) => {
+  const fetchLogs = useCallback(async (nextOffset = offset, activeFilters = filters, markSearched = true) => {
     try {
       setLoading(true);
       setError("");
       const params = new URLSearchParams();
+      if (markSearched) params.set("searched", "1");
       params.set("limit", String(activeFilters.limit || 200));
       params.set("offset", String(nextOffset || 0));
       if (activeFilters.username.trim()) params.set("username", activeFilters.username.trim());
@@ -126,11 +128,40 @@ export default function AuditLogs() {
 
   useEffect(() => {
     const currentSessionId = getCurrentSessionId();
-    let restored = false;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const urlUsername = urlParams.get("username") || "";
+    const urlIp = urlParams.get("ip") || "";
+    const urlFrom = urlParams.get("from") || "";
+    const urlTo = urlParams.get("to") || "";
+    const urlSearched = urlParams.get("searched") === "1";
+    if (urlSearched) {
+      const nextFilters = {
+        username: urlUsername,
+        ip: urlIp,
+        from: urlFrom || getTodayYmd(),
+        to: urlTo || getTodayYmd(),
+        limit: 30,
+      };
+      setFilters(nextFilters);
+      setOffset(0);
+      setHasSearched(true);
+      fetchLogs(0, nextFilters, true);
+      return;
+    }
+
     try {
       const raw = sessionStorage.getItem(AUDIT_FILTER_CACHE_KEY);
       const parsed = raw ? JSON.parse(raw) : null;
-      if (parsed && parsed.session_id && parsed.session_id === currentSessionId) {
+      if (parsed?.session_id && currentSessionId && parsed.session_id !== currentSessionId) {
+        sessionStorage.removeItem(AUDIT_FILTER_CACHE_KEY);
+      }
+      const canRestore =
+        parsed &&
+        parsed.filters &&
+        parsed.hasSearched &&
+        (!parsed.session_id || !currentSessionId || parsed.session_id === currentSessionId);
+      if (canRestore) {
         const nextFilters = {
           username: parsed.filters?.username || "",
           ip: parsed.filters?.ip || "",
@@ -141,41 +172,38 @@ export default function AuditLogs() {
         const nextOffset = Number(parsed.offset || 0);
         setFilters(nextFilters);
         setOffset(nextOffset);
-        restored = true;
-        if ((nextFilters.username || "").trim()) {
-          setTimeout(() => {
-            fetchLogs(nextOffset, nextFilters);
-          }, 0);
-        } else {
-          setLogs([]);
-          setPaging({ total: 0, has_next: false });
-          setSummaryCounts({
-            total: 0,
-            login_success: 0,
-            login_failed: 0,
-            logout: 0,
-          });
-        }
+        setHasSearched(true);
+        setTimeout(() => {
+          fetchLogs(nextOffset, nextFilters, true);
+        }, 0);
+        return;
       }
     } catch (err) {
       console.warn("Failed to restore audit filter cache", err);
     }
 
-    if (!restored) {
-      setLogs([]);
-      setPaging({ total: 0, has_next: false });
-      setSummaryCounts({
-        total: 0,
-        login_success: 0,
-        login_failed: 0,
-        logout: 0,
-      });
-      setOffset(0);
-    }
+    setHasSearched(false);
+    setFilters({
+      username: "",
+      ip: "",
+      from: getTodayYmd(),
+      to: getTodayYmd(),
+      limit: 30,
+    });
+    setOffset(0);
+    setLogs([]);
+    setPaging({ total: 0, has_next: false });
+    setSummaryCounts({
+      total: 0,
+      login_success: 0,
+      login_failed: 0,
+      logout: 0,
+    });
+    setSearchParams({}, { replace: true });
   }, []);
 
   useEffect(() => {
-    if (!autoRefresh || logs.length === 0 || !filters.username.trim()) return;
+    if (!autoRefresh || logs.length === 0 || !filters.username.trim() || !hasSearched) return;
     const timer = setInterval(() => {
       fetchLogs(offset, filters);
     }, Math.max(5, Number(refreshSec) || 10) * 1000);
@@ -253,32 +281,6 @@ export default function AuditLogs() {
       limit: 30,
     };
 
-    if (!normalizedFilters.username.trim()) {
-      setFilters(normalizedFilters);
-      setOffset(0);
-      setLogs([]);
-      setPaging({ total: 0, has_next: false });
-      setSummaryCounts({
-        total: 0,
-        login_success: 0,
-        login_failed: 0,
-        logout: 0,
-      });
-      setError("Enter username and click Apply.");
-      const payload = {
-        session_id: getCurrentSessionId(),
-        offset: 0,
-        filters: {
-          username: "",
-          ip: normalizedFilters.ip || "",
-          from: normalizedFilters.from || "",
-          to: normalizedFilters.to || "",
-        },
-      };
-      sessionStorage.setItem(AUDIT_FILTER_CACHE_KEY, JSON.stringify(payload));
-      return;
-    }
-
     setError("");
     setFilters(normalizedFilters);
 
@@ -286,6 +288,7 @@ export default function AuditLogs() {
     const payload = {
       session_id: getCurrentSessionId(),
       offset: nextOffset,
+      hasSearched: true,
       filters: {
         username: normalizedFilters.username || "",
         ip: normalizedFilters.ip || "",
@@ -294,7 +297,8 @@ export default function AuditLogs() {
       },
     };
     sessionStorage.setItem(AUDIT_FILTER_CACHE_KEY, JSON.stringify(payload));
-    fetchLogs(nextOffset, normalizedFilters);
+    setHasSearched(true);
+    fetchLogs(nextOffset, normalizedFilters, true);
   };
 
   const clearFilters = () => {
@@ -311,6 +315,7 @@ export default function AuditLogs() {
     setArchiveInfo({ found: false, file_path: "", log_date: "" });
     setSearchParams({}, { replace: true });
     sessionStorage.removeItem(AUDIT_FILTER_CACHE_KEY);
+    setHasSearched(false);
     setLogs([]);
     setPaging({ total: 0, has_next: false });
     setSummaryCounts({
@@ -324,12 +329,13 @@ export default function AuditLogs() {
   const downloadDateTxt = () => {
     const date = (filters.from || "").trim();
     const to = (filters.to || "").trim();
-    if (!date || !to || date !== to) {
-      alert("Select same From and To date to download date-wise TXT.");
+    if (!date || !to) {
+      alert("Select From and To date to download TXT.");
       return;
     }
     const params = new URLSearchParams();
-    params.set("date", date);
+    params.set("from", date);
+    params.set("to", to);
     if ((filters.username || "").trim()) params.set("username", filters.username.trim());
     if ((filters.ip || "").trim()) params.set("ip", filters.ip.trim());
     const url = `${api.defaults.baseURL}/api/audit/archives/download?${params.toString()}`;
@@ -340,6 +346,7 @@ export default function AuditLogs() {
     const payload = {
       session_id: getCurrentSessionId(),
       offset,
+      hasSearched,
       filters: {
         username: filters.username || "",
         ip: filters.ip || "",

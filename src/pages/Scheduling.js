@@ -131,11 +131,40 @@ function Scheduling() {
 
   const moveToMwl = async (appt) => {
     try {
+      const combineDateTime = (dateStr, timeStr) => {
+        const date = String(dateStr || "").trim();
+        const time = String(timeStr || "").trim();
+        if (!date) return "";
+        if (!time) return `${date}T00:00`;
+
+        const ampm = time.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+        if (ampm) {
+          let hour = Number(ampm[1]);
+          const minute = ampm[2];
+          const period = ampm[3].toUpperCase();
+          if (period === "PM" && hour < 12) hour += 12;
+          if (period === "AM" && hour === 12) hour = 0;
+          return `${date}T${String(hour).padStart(2, "0")}:${minute}`;
+        }
+
+        const m24 = time.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+        if (m24) {
+          const hour = String(Number(m24[1])).padStart(2, "0");
+          return `${date}T${hour}:${m24[2]}`;
+        }
+
+        return `${date}T00:00`;
+      };
+
+      const scheduledDate = appt.date || toLocalISODate(new Date());
+      const scheduledDateTime = combineDateTime(scheduledDate, appt.time || "");
+
       await api.post("/api/mwl", {
         PatientID: appt.patientId || "",
         PatientName: appt.patientName || "",
         Modality: appt.modality || "",
-        SchedulingDate: appt.date || toLocalISODate(new Date()),
+        SchedulingDate: scheduledDate,
+        scheduled_datetime: scheduledDateTime,
         StudyDescription: `Scheduled ${appt.modality || ""}`.trim(),
         ReferringPhysician: appt.doctor || "",
       });

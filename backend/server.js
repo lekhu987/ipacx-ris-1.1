@@ -101,8 +101,13 @@ app.post("/api/signatures", (req, res) => {
 });
 
 const mwlRoutes = require("./routes/mwl");
+const mwlPublicRoutes = require("./routes/mwlRoutes");
 app.use("/api/mwl", mwlRoutes);
-app.use("/mwl", mwlRoutes);
+app.use("/mwl", mwlPublicRoutes);
+const mwlTargetsRoutes = require("./routes/mwlTargets");
+app.use("/api/mwl-targets", mwlTargetsRoutes);
+const mwlSettingsRoutes = require("./routes/mwlSettings");
+app.use("/api/mwl-settings", mwlSettingsRoutes);
 
 const reportsRoutes = require("./routes/reports");
 app.use("/", reportsRoutes);
@@ -128,6 +133,7 @@ app.use("/api/speech", speechRoutes);
 const auditRoutes = require("./routes/audit");
 app.use("/api/audit", auditRoutes);
 const { startAuditArchiveScheduler } = require("./utils/auditLogger");
+const { startMwlAutoPushScheduler } = require("./services/mwlAutoPush");
 
 const publicReportSheetRoutes = require("./routes/publicReportSheet");
 app.use("/api/public/report-sheet", publicReportSheetRoutes);
@@ -154,6 +160,7 @@ pool.connect()
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on port ${PORT}`);
       startAuditArchiveScheduler();
+      startMwlAutoPushScheduler();
     });
   })
   .catch(err => {

@@ -87,6 +87,27 @@ function formatHumanAuditReport({ date, username, ip, event, rows }) {
   return [...header, ...body, ""].join("\n");
 }
 
+function isValidDateString(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function listDateRange(from, to) {
+  const [fy, fm, fd] = from.split("-").map(Number);
+  const [ty, tm, td] = to.split("-").map(Number);
+  const start = Date.UTC(fy, fm - 1, fd);
+  const end = Date.UTC(ty, tm - 1, td);
+  if (Number.isNaN(start) || Number.isNaN(end) || start > end) return [];
+  const dates = [];
+  for (let t = start; t <= end; t += 86400000) {
+    const d = new Date(t);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(d.getUTCDate()).padStart(2, "0");
+    dates.push(`${y}-${m}-${day}`);
+  }
+  return dates;
+}
+
 router.post("/event", async (req, res) => {
   try {
     const {
@@ -381,59 +402,95 @@ router.get("/archives/download", async (req, res) => {
   try {
     await ensureAuditTable();
     const date = String(req.query.date || "").trim();
+    let from = String(req.query.from || "").trim();
+    let to = String(req.query.to || "").trim();
     const username = String(req.query.username || "").trim();
     const ip = String(req.query.ip || "").trim();
     const event = String(req.query.event || "").trim();
 
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return res.status(400).json({ success: false, message: "date is required in YYYY-MM-DD format" });
+    if (!from && !to && date) {
+      from = date;
+      to = date;
+    }
+
+    if (!from || !to || !isValidDateString(from) || !isValidDateString(to)) {
+      return res.status(400).json({
+        success: false,
+        message: "from and to are required in YYYY-MM-DD format",
+      });
+    }
+
+    const dates = listDateRange(from, to);
+    if (!dates.length) {
+      return res.status(400).json({ success: false, message: "Invalid date range" });
     }
 
     let rows = [];
-    const archiveRes = await pool.query(
-      `SELECT file_path FROM audit_log_archives WHERE log_date = $1::date LIMIT 1`,
-      [date]
-    );
 
-    if (archiveRes.rows.length) {
-      rows = parseArchiveLines(archiveRes.rows[0].file_path);
-    } else {
-      const params = [date];
-      let where = `WHERE (created_at AT TIME ZONE 'Asia/Kolkata')::date = $1::date`;
-      if (username) {
-        params.push(username);
-        where += ` AND username = $${params.length}`;
+    const archiveRangeRes = await pool.query(
+      `SELECT log_date::text AS log_date, file_path
+       FROM audit_log_archives
+       WHERE log_date BETWEEN $1::date AND $2::date`,
+      [from, to]
+    );
+    const archiveMap = new Map(archiveRangeRes.rows.map((r) => [r.log_date, r.file_path]));
+    const archivedDates = new Set(archiveRangeRes.rows.map((r) => r.log_date));
+
+    for (const d of dates) {
+      const filePath = archiveMap.get(d);
+      if (filePath) {
+        rows.push(...parseArchiveLines(filePath));
       }
-      if (ip) {
-        params.push(`%${ip}%`);
-        where += ` AND ip_address ILIKE $${params.length}`;
-      }
-      if (event) {
-        params.push(event);
-        where += ` AND event = $${params.length}`;
-      }
-      const liveRes = await pool.query(
-        `
-          SELECT id, session_id, username, role, event, page, details, ip_address, user_agent,
-                 (created_at AT TIME ZONE 'Asia/Kolkata')::date AS log_date, created_at
-          FROM audit_logs
-          ${where}
-          ORDER BY created_at ASC, id ASC
-        `,
-        params
-      );
-      rows = liveRes.rows;
     }
+
+    const liveParams = [from, to];
+    let liveWhere = `WHERE (created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1::date AND $2::date`;
+    if (username) {
+      liveParams.push(username);
+      liveWhere += ` AND username = $${liveParams.length}`;
+    }
+    if (ip) {
+      liveParams.push(`%${ip}%`);
+      liveWhere += ` AND ip_address ILIKE $${liveParams.length}`;
+    }
+    if (event) {
+      liveParams.push(event);
+      liveWhere += ` AND event = $${liveParams.length}`;
+    }
+    if (archivedDates.size) {
+      const dateList = Array.from(archivedDates);
+      const placeholders = dateList.map((_, idx) => `$${liveParams.length + idx + 1}`).join(", ");
+      liveParams.push(...dateList);
+      liveWhere += ` AND (created_at AT TIME ZONE 'Asia/Kolkata')::date NOT IN (${placeholders})`;
+    }
+
+    const liveRes = await pool.query(
+      `
+        SELECT id, session_id, username, role, event, page, details, ip_address, user_agent,
+               (created_at AT TIME ZONE 'Asia/Kolkata')::date AS log_date, created_at
+        FROM audit_logs
+        ${liveWhere}
+        ORDER BY created_at ASC, id ASC
+      `,
+      liveParams
+    );
+    rows.push(...liveRes.rows);
 
     if (username || ip || event) {
       rows = filterArchiveRows(rows, { username, sessionId: "", event, ip });
     }
 
-    const reportText = formatHumanAuditReport({ date, username, ip, event, rows });
+    rows.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+
+    const dateLabel = from === to ? from : `${from} to ${to}`;
+    const reportText = formatHumanAuditReport({ date: dateLabel, username, ip, event, rows });
     const suffix = username ? `-${username}` : "";
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
     res.setHeader("Content-Type", "text/plain; charset=utf-8");
-    res.setHeader("Content-Disposition", `attachment; filename=\"audit-${date}${suffix}-${stamp}.txt\"`);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename=\"audit-${from}-${to}${suffix}-${stamp}.txt\"`
+    );
     return res.send(reportText);
   } catch (err) {
     console.error("Audit filtered txt download error:", err.message);

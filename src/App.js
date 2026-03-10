@@ -15,6 +15,7 @@ import MWLS from "./pages/MWLS";
 import TemplateManagement from "./pages/adminsettings/TemplateManagement";
 import UserManagement from "./pages/adminsettings/UserManagement";
 import PacsManagement from "./pages/adminsettings/PacsManagement";
+import MwlsManagement from "./pages/adminsettings/MwlsManagement";
 import PatientList from "./pages/PatientList";
 import Billing from "./pages/Billing";
 import ProtectedRoute from "./components/ProtectedRoute";
@@ -169,6 +170,14 @@ function App() {
               element={
                 <ProtectedRoute roles={["ADMIN"]}>
                   <PacsManagement />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin/mwls-management"
+              element={
+                <ProtectedRoute roles={["ADMIN"]}>
+                  <MwlsManagement />
                 </ProtectedRoute>
               }
             />

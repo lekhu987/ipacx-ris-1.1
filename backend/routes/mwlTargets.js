@@ -1,0 +1,164 @@
+const express = require("express");
+const router = express.Router();
+const pool = require("../db");
+
+async function ensureMwlTargetsTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS mwl_modality_targets (
+      id SERIAL PRIMARY KEY,
+      modality_code VARCHAR(16) NOT NULL UNIQUE,
+      pacs_id INTEGER REFERENCES pacs(id) ON DELETE SET NULL,
+      orthanc_modality_name VARCHAR(64),
+      manual_host VARCHAR(128),
+      manual_port INTEGER,
+      manual_ae_title VARCHAR(64),
+      manual_type VARCHAR(32),
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_host VARCHAR(128)");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_port INTEGER");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_ae_title VARCHAR(64)");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_type VARCHAR(32)");
+}
+
+router.get("/options", async (req, res) => {
+  try {
+    await ensureMwlTargetsTable();
+    const [modalitiesRes, pacsRes] = await Promise.all([
+      pool.query(
+        "SELECT id, code, name FROM modalities WHERE is_active = true ORDER BY id"
+      ),
+      pool.query(
+        "SELECT id, pacs_name, ae_title, ip_address, port, is_active FROM pacs ORDER BY id"
+      ),
+    ]);
+    return res.json({
+      success: true,
+      modalities: modalitiesRes.rows,
+      pacs: pacsRes.rows,
+    });
+  } catch (err) {
+    console.error("MWL target options error:", err.message);
+    return res.status(500).json({ success: false, error: "Failed to load MWL options" });
+  }
+});
+
+router.get("/", async (req, res) => {
+  try {
+    await ensureMwlTargetsTable();
+    const result = await pool.query(
+      `
+      SELECT
+        t.id,
+        t.modality_code,
+        t.pacs_id,
+        t.orthanc_modality_name,
+        t.manual_host,
+        t.manual_port,
+        t.manual_ae_title,
+        t.manual_type,
+        t.is_active,
+        t.updated_at,
+        p.pacs_name,
+        p.ae_title,
+        p.ip_address,
+        p.port
+      FROM mwl_modality_targets t
+      LEFT JOIN pacs p ON p.id = t.pacs_id
+      ORDER BY t.modality_code ASC
+      `
+    );
+    return res.json({ success: true, data: result.rows });
+  } catch (err) {
+    console.error("MWL target fetch error:", err.message);
+    return res.status(500).json({ success: false, error: "Failed to fetch MWL targets" });
+  }
+});
+
+router.post("/", async (req, res) => {
+  try {
+    await ensureMwlTargetsTable();
+    const {
+      modality_code,
+      pacs_id,
+      orthanc_modality_name,
+      manual_host,
+      manual_port,
+      manual_ae_title,
+      manual_type,
+      is_active = true,
+    } = req.body || {};
+    const modalityCode = String(modality_code || "").trim().toUpperCase();
+
+    if (!modalityCode) {
+      return res.status(400).json({ success: false, error: "modality_code is required" });
+    }
+    const hasManual = String(manual_host || "").trim() && Number(manual_port);
+    if (!pacs_id && !hasManual) {
+      return res.status(400).json({ success: false, error: "manual_host/manual_port required" });
+    }
+
+    if (pacs_id) {
+      const pacsRes = await pool.query("SELECT id FROM pacs WHERE id = $1 LIMIT 1", [pacs_id]);
+      if (!pacsRes.rows.length) {
+        return res.status(400).json({ success: false, error: "Selected PACS not found" });
+      }
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO mwl_modality_targets
+        (modality_code, pacs_id, orthanc_modality_name, manual_host, manual_port, manual_ae_title, manual_type, is_active, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+      ON CONFLICT (modality_code)
+      DO UPDATE SET
+        pacs_id = EXCLUDED.pacs_id,
+        orthanc_modality_name = EXCLUDED.orthanc_modality_name,
+        manual_host = EXCLUDED.manual_host,
+        manual_port = EXCLUDED.manual_port,
+        manual_ae_title = EXCLUDED.manual_ae_title,
+        manual_type = EXCLUDED.manual_type,
+        is_active = EXCLUDED.is_active,
+        updated_at = NOW()
+      RETURNING *
+      `,
+      [
+        modalityCode,
+        pacs_id ? Number(pacs_id) : null,
+        orthanc_modality_name || null,
+        manual_host || null,
+        manual_port ? Number(manual_port) : null,
+        manual_ae_title || null,
+        manual_type || null,
+        Boolean(is_active),
+      ]
+    );
+    return res.json({ success: true, data: result.rows[0] });
+  } catch (err) {
+    console.error("MWL target save error:", err.message);
+    return res.status(500).json({ success: false, error: "Failed to save MWL target" });
+  }
+});
+
+router.delete("/:modalityCode", async (req, res) => {
+  try {
+    await ensureMwlTargetsTable();
+    const modalityCode = String(req.params.modalityCode || "").trim().toUpperCase();
+    const deleted = await pool.query(
+      "DELETE FROM mwl_modality_targets WHERE UPPER(modality_code) = UPPER($1) RETURNING id",
+      [modalityCode]
+    );
+    if (!deleted.rows.length) {
+      return res.status(404).json({ success: false, error: "Mapping not found" });
+    }
+    return res.json({ success: true });
+  } catch (err) {
+    console.error("MWL target delete error:", err.message);
+    return res.status(500).json({ success: false, error: "Failed to delete MWL target" });
+  }
+});
+
+module.exports = router;

@@ -11,6 +11,44 @@ const ORTHANC_AUTH = {
 };
 const DEFAULT_MWL_TARGET_AE = process.env.DEFAULT_MWL_TARGET_AE || "IPACXPACS";
 
+async function ensureMwlDatetimeColumn() {
+  await pool.query(
+    "ALTER TABLE mwl ADD COLUMN IF NOT EXISTS scheduling_datetime timestamp"
+  );
+}
+
+async function ensureMwlStatusColumn() {
+  await pool.query("ALTER TABLE mwl ADD COLUMN IF NOT EXISTS status text DEFAULT 'NEW'");
+}
+
+async function backfillSchedulingDatetime() {
+  await pool.query(
+    "UPDATE mwl SET scheduling_datetime = schedulingdate WHERE scheduling_datetime IS NULL"
+  );
+}
+
+async function ensureMwlTargetsTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS mwl_modality_targets (
+      id SERIAL PRIMARY KEY,
+      modality_code VARCHAR(16) NOT NULL UNIQUE,
+      pacs_id INTEGER REFERENCES pacs(id) ON DELETE SET NULL,
+      orthanc_modality_name VARCHAR(64),
+      manual_host VARCHAR(128),
+      manual_port INTEGER,
+      manual_ae_title VARCHAR(64),
+      manual_type VARCHAR(32),
+      is_active BOOLEAN NOT NULL DEFAULT true,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+    )
+  `);
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_host VARCHAR(128)");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_port INTEGER");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_ae_title VARCHAR(64)");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_type VARCHAR(32)");
+}
+
 function pick(row, keys, fallback = "") {
   for (const k of keys) {
     if (row[k] !== undefined && row[k] !== null && String(row[k]).trim() !== "") {
@@ -27,7 +65,7 @@ function toWorklistItem(row) {
   const accession = String(pick(row, ["accessionnumber", "accession_number"], ""));
   const studyUid = String(pick(row, ["studyinstanceuid", "study_instance_uid"], ""));
   const modality = String(pick(row, ["modality"], ""));
-  const schedule = pick(row, ["schedulingdate", "scheduled_datetime"], null);
+  const schedule = pick(row, ["scheduling_datetime", "schedulingdate", "scheduled_datetime"], null);
   const description = String(pick(row, ["studydescription", "study_description"], ""));
   const status = String(pick(row, ["status"], "NEW"));
   const now = new Date();
@@ -56,6 +94,7 @@ function toWorklistItem(row) {
     study_instance_uid: studyUid,
     created_at: row.created_at || null,
     pacs_id: row.pacs_id || null,
+    status: row.status || "NEW",
   };
 }
 
@@ -96,6 +135,9 @@ function normalizeInput(body = {}) {
 
 router.post("/", async (req, res) => {
   try {
+    await ensureMwlDatetimeColumn();
+    await ensureMwlStatusColumn();
+    await backfillSchedulingDatetime();
     const entry = normalizeInput(req.body);
     if (!entry.patient_name || !entry.modality) {
       return res.status(400).json({ error: "Missing required fields" });
@@ -104,9 +146,9 @@ router.post("/", async (req, res) => {
     const result = await pool.query(
       `INSERT INTO mwl
        (PatientID, PatientName, PatientSex, PatientAge,
-        AccessionNumber, StudyDescription, SchedulingDate,
-        Modality, BodyPartExamined, ReferringPhysician)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        AccessionNumber, StudyDescription, SchedulingDate, scheduling_datetime,
+        Modality, BodyPartExamined, ReferringPhysician, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        RETURNING *`,
       [
         entry.patient_id || `P${Date.now()}`,
@@ -116,9 +158,11 @@ router.post("/", async (req, res) => {
         entry.accession_number || "",
         entry.study_description || "",
         entry.scheduling_datetime || new Date(),
+        entry.scheduling_datetime || new Date(),
         entry.modality,
         entry.body_part_examined || "",
         entry.referring_physician || "",
+        "NEW",
       ]
     );
 
@@ -131,6 +175,9 @@ router.post("/", async (req, res) => {
 
 router.post("/register", async (req, res) => {
   try {
+    await ensureMwlDatetimeColumn();
+    await ensureMwlStatusColumn();
+    await backfillSchedulingDatetime();
     const entry = normalizeInput(req.body);
     if (!entry.patient_name || !entry.modality) {
       return res.status(400).json({ error: "PatientName and Modality are required" });
@@ -139,9 +186,9 @@ router.post("/register", async (req, res) => {
     const created = await pool.query(
       `INSERT INTO mwl
        (PatientID, PatientName, PatientSex, PatientAge,
-        AccessionNumber, StudyDescription, SchedulingDate,
-        Modality, BodyPartExamined, ReferringPhysician)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        AccessionNumber, StudyDescription, SchedulingDate, scheduling_datetime,
+        Modality, BodyPartExamined, ReferringPhysician, status)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        RETURNING *`,
       [
         entry.patient_id || `P${Date.now()}`,
@@ -151,9 +198,11 @@ router.post("/register", async (req, res) => {
         entry.accession_number || "",
         entry.study_description || "",
         entry.scheduling_datetime || new Date(),
+        entry.scheduling_datetime || new Date(),
         entry.modality,
         entry.body_part_examined || "",
         entry.referring_physician || "",
+        "NEW",
       ]
     );
 
@@ -252,13 +301,16 @@ router.delete("/:id", async (req, res) => {
 
 router.put("/:id", async (req, res) => {
   try {
+    await ensureMwlDatetimeColumn();
+    await ensureMwlStatusColumn();
+    await backfillSchedulingDatetime();
     const entry = normalizeInput(req.body);
     const result = await pool.query(
       `UPDATE mwl SET
        PatientID=$1, PatientName=$2, PatientSex=$3, PatientAge=$4,
-       AccessionNumber=$5, StudyDescription=$6, SchedulingDate=$7,
-       Modality=$8, BodyPartExamined=$9, ReferringPhysician=$10
-       WHERE id=$11 RETURNING *`,
+       AccessionNumber=$5, StudyDescription=$6, SchedulingDate=$7, scheduling_datetime=$8,
+       Modality=$9, BodyPartExamined=$10, ReferringPhysician=$11
+       WHERE id=$12 RETURNING *`,
       [
         entry.patient_id,
         entry.patient_name,
@@ -266,6 +318,7 @@ router.put("/:id", async (req, res) => {
         entry.patient_age,
         entry.accession_number,
         entry.study_description,
+        entry.scheduling_datetime,
         entry.scheduling_datetime,
         entry.modality,
         entry.body_part_examined,
@@ -284,6 +337,9 @@ router.put("/:id", async (req, res) => {
 
 router.post("/:id/send", async (req, res) => {
   try {
+    await ensureMwlStatusColumn();
+    await ensureMwlTargetsTable();
+
     let { modality, orthancModalityName } = req.body;
     const result = await pool.query("SELECT * FROM mwl WHERE id=$1", [req.params.id]);
     if (result.rowCount === 0) return res.status(404).json({ error: "MWL entry not found" });
@@ -308,29 +364,71 @@ router.post("/:id/send", async (req, res) => {
       NM: DEFAULT_MWL_TARGET_AE,
     };
     const key = String(modality).toUpperCase();
-    const target = orthancModalityName || MODALITY_MAP[key] || DEFAULT_MWL_TARGET_AE;
-    if (!target) return res.status(400).json({ error: "Unsupported modality" });
-
-    const pacsResult = await pool.query(
+    const targetConfigResult = await pool.query(
       `
-      SELECT *
-      FROM pacs
-      WHERE is_active = true
-        AND (
-          UPPER(COALESCE(ae_title, '')) = UPPER($1)
-          OR UPPER(COALESCE(pacs_name, '')) = UPPER($1)
-        )
-      ORDER BY id ASC
+      SELECT modality_code, pacs_id, orthanc_modality_name, manual_host, manual_port, manual_ae_title, manual_type
+      FROM mwl_modality_targets
+      WHERE UPPER(modality_code) = UPPER($1)
+        AND is_active = true
       LIMIT 1
       `,
-      [target]
+      [key]
     );
-    let targetPacs = pacsResult.rows[0] || null;
+    const targetConfig = targetConfigResult.rows[0] || null;
+    if (!orthancModalityName && targetConfig?.orthanc_modality_name) {
+      orthancModalityName = targetConfig.orthanc_modality_name;
+    }
+
+    let targetPacs = null;
+    let target = "";
+
+    if (targetConfig?.manual_host && targetConfig?.manual_port) {
+      targetPacs = {
+        pacs_name: "Manual",
+        pacs_type: targetConfig.manual_type || "",
+        ip_address: targetConfig.manual_host,
+        port: targetConfig.manual_port,
+        ae_title: targetConfig.manual_ae_title || "",
+      };
+      target = targetPacs.ae_title || "Manual";
+    } else if (targetConfig?.pacs_id) {
+      const byId = await pool.query(
+        `SELECT * FROM pacs WHERE id = $1 AND is_active = true LIMIT 1`,
+        [targetConfig.pacs_id]
+      );
+      targetPacs = byId.rows[0] || null;
+      target = targetPacs?.ae_title || targetPacs?.pacs_name || "";
+    }
+
+    if (!targetPacs) {
+      target = orthancModalityName || MODALITY_MAP[key] || DEFAULT_MWL_TARGET_AE;
+      if (!target) return res.status(400).json({ error: "Unsupported modality" });
+
+      const pacsResult = await pool.query(
+        `
+        SELECT *
+        FROM pacs
+        WHERE is_active = true
+          AND (
+            UPPER(COALESCE(ae_title, '')) = UPPER($1)
+            OR UPPER(COALESCE(pacs_name, '')) = UPPER($1)
+          )
+        ORDER BY id ASC
+        LIMIT 1
+        `,
+        [target]
+      );
+      targetPacs = pacsResult.rows[0] || null;
+    }
+
     if (!targetPacs) {
       const fallback = await pool.query(
         `SELECT * FROM pacs WHERE is_active = true ORDER BY id ASC LIMIT 1`
       );
       targetPacs = fallback.rows[0] || null;
+      if (targetPacs && !target) {
+        target = targetPacs.ae_title || targetPacs.pacs_name || "fallback";
+      }
     }
 
     // Preferred: push MWL JSON to selected target PACS endpoint.
@@ -344,11 +442,16 @@ router.post("/:id/send", async (req, res) => {
         scheduled_start: entry.schedulingdate || new Date().toISOString(),
         station_aet: targetPacs.ae_title || "",
       });
+      await pool.query(
+        "UPDATE mwl SET status = $1 WHERE id = $2",
+        ["SYNCED", req.params.id]
+      );
       return res.json({
         success: true,
-        sentTo: target,
+        sentTo: target || targetPacs.ae_title || targetPacs.pacs_name,
         mode: "mwl_json_push",
         endpoint: pushed.url,
+        server: `${targetPacs.ip_address}:${targetPacs.port}`,
       });
     }
     return res.status(404).json({
