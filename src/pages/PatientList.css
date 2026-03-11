@@ -128,10 +128,14 @@
   background-color: #334155;
 }
 
+.schedule-btn.delete-action {
+  background-color: #ef4444;
+}
+
 .patient-table td:last-child,
 .patient-table th:last-child {
-  min-width: 96px;
-  width: 96px;
+  min-width: 120px;
+  width: 120px;
 }
 
 .patient-table td:last-child {

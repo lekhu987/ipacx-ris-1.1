@@ -1,7 +1,7 @@
 // src/components/PatientList.jsx
 
 import React, { useState, useEffect } from "react";
-import { CalendarDays, SquarePen, Printer } from "lucide-react";
+import { CalendarDays, SquarePen, Printer, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import PatientRegistration from "./PatientRegistration";
 import api from "../api/axios"; // Adjust path to your axios instance
@@ -211,6 +211,22 @@ function PatientList() {
     }
   };
 
+  const handleDelete = async (patient) => {
+    const identifier = patient?.uhid || patient?.patient_id;
+    if (!identifier) return;
+
+    const confirmDelete = window.confirm(`Are you sure you want to delete patient ${identifier}?`);
+    if (!confirmDelete) return;
+
+    try {
+      await api.delete(`/api/patients/${encodeURIComponent(identifier)}`);
+      setPatients((prev) => prev.filter((p) => (p.uhid || p.patient_id) !== identifier));
+    } catch (err) {
+      console.error("Failed to delete patient:", err);
+      alert("Failed to delete patient. Please try again.");
+    }
+  };
+
   return (
     <div className="patient-page">
 
@@ -312,6 +328,12 @@ function PatientList() {
                           title="Print"
                           aria-label="Print"
                         ><Printer size={12} /></button>
+                        <button
+                          className="schedule-btn delete-action"
+                          onClick={() => handleDelete(p)}
+                          title="Delete"
+                          aria-label="Delete"
+                        ><Trash2 size={12} /></button>
                       </div>
                         );
                       })()}

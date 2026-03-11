@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 
-export default function useIdleTimer(idleTime = 45 * 60 * 1000) {
+export default function useIdleTimer(idleTime = 15 * 60 * 1000) {
   const { user, logout } = useAuth();
 
   useEffect(() => {
@@ -12,20 +12,22 @@ export default function useIdleTimer(idleTime = 45 * 60 * 1000) {
     const resetTimer = () => {
       clearTimeout(timer);
       timer = setTimeout(() => {
-        alert("Logged out due to inactivity");
+        alert("Session expired due to inactivity. Please login again.");
         logout();
       }, idleTime);
     };
 
-    ["mousemove", "keydown", "click", "scroll"].forEach((event) =>
-      window.addEventListener(event, resetTimer)
+    // Reset timer on any user activity
+    const events = ["mousemove", "keydown", "click", "scroll", "touchstart", "touchmove"];
+    events.forEach((event) =>
+      window.addEventListener(event, resetTimer, { passive: true })
     );
 
-    resetTimer();
+    resetTimer(); // Start the timer initially
 
     return () => {
       clearTimeout(timer);
-      ["mousemove", "keydown", "click", "scroll"].forEach((event) =>
+      events.forEach((event) =>
         window.removeEventListener(event, resetTimer)
       );
     };

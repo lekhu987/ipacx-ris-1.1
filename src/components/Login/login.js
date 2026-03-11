@@ -32,7 +32,7 @@ function Login() {
       }
 
       // Save user context
-      login(res.data.user);
+      login(res.data.user, res.data.token);
 
       // Navigate to dashboard
       navigate("/dashboard");
