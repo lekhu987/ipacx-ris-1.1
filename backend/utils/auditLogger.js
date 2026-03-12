@@ -8,6 +8,7 @@ let archiveSchedulerStarted = false;
 
 const IST_TIME_ZONE = "Asia/Kolkata";
 const AUDIT_ARCHIVE_DIR = path.join(__dirname, "..", "..", "logs", "audit");
+const PROJECT_ROOT = path.join(__dirname, "..", "..");
 
 function ensureAuditTable() {
   if (tableReadyPromise) return tableReadyPromise;
@@ -124,6 +125,15 @@ function ensureArchiveDir() {
   }
 }
 
+function resolveArchivePath(filePath) {
+  if (!filePath) return "";
+  return path.isAbsolute(filePath) ? filePath : path.join(PROJECT_ROOT, filePath);
+}
+
+function isReadableArchivePath(filePath) {
+  return String(filePath || "").includes("audit-readable-");
+}
+
 function toArchiveLine(row) {
   return JSON.stringify({
     id: row.id,
@@ -187,11 +197,6 @@ async function archiveLogDate(logDate) {
   if (!rows.length) return { archived: false, reason: "empty" };
 
   ensureArchiveDir();
-  const fileName = `audit-${logDate}.txt`;
-  const fullPath = path.join(AUDIT_ARCHIVE_DIR, fileName);
-  const fileContent = rows.map(toArchiveLine).join("\n") + "\n";
-  fs.writeFileSync(fullPath, fileContent, "utf8");
-
   const readableFileName = `audit-readable-${logDate}.txt`;
   const readablePath = path.join(AUDIT_ARCHIVE_DIR, readableFileName);
   const readableHeader = [
@@ -205,10 +210,6 @@ async function archiveLogDate(logDate) {
   const readableBody = rows.map(toReadableArchiveLine).join("\n");
   fs.writeFileSync(readablePath, `${readableHeader}\n${readableBody}\n`, "utf8");
 
-  const relativePath = path
-    .relative(path.join(__dirname, "..", ".."), fullPath)
-    .replace(/\\/g, "/");
-
   await pool.query(
     `
       INSERT INTO audit_log_archives (log_date, file_path, row_count, archived_at)
@@ -219,19 +220,30 @@ async function archiveLogDate(logDate) {
           row_count = EXCLUDED.row_count,
           archived_at = NOW()
     `,
-    [logDate, relativePath, rows.length]
+    [
+      logDate,
+      path
+        .relative(path.join(__dirname, "..", ".."), readablePath)
+        .replace(/\\/g, "/"),
+      rows.length,
+    ]
   );
 
-  const relativeReadablePath = path
-    .relative(path.join(__dirname, "..", ".."), readablePath)
-    .replace(/\\/g, "/");
+  await pool.query(
+    `
+      DELETE FROM audit_logs
+      WHERE (created_at AT TIME ZONE 'Asia/Kolkata')::date = $1::date
+    `,
+    [logDate]
+  );
 
   return {
     archived: true,
     logDate,
     rowCount: rows.length,
-    filePath: relativePath,
-    readableFilePath: relativeReadablePath,
+    filePath: path
+      .relative(path.join(__dirname, "..", ".."), readablePath)
+      .replace(/\\/g, "/"),
   };
 }
 
@@ -243,18 +255,25 @@ async function archiveAllPastDays() {
       SELECT DISTINCT ((created_at AT TIME ZONE 'Asia/Kolkata')::date)::text AS log_date
       FROM audit_logs
       WHERE (created_at AT TIME ZONE 'Asia/Kolkata')::date < $1::date
-        AND NOT EXISTS (
-          SELECT 1
-          FROM audit_log_archives a
-          WHERE a.log_date = (created_at AT TIME ZONE 'Asia/Kolkata')::date
-        )
       ORDER BY log_date ASC
     `,
     [todayIST]
   );
 
+  const archiveMetaRes = await pool.query(
+    `SELECT log_date::text AS log_date, file_path FROM audit_log_archives`
+  );
+  const archiveMap = new Map(archiveMetaRes.rows.map((r) => [r.log_date, r.file_path]));
+
   const result = [];
   for (const row of daysRes.rows) {
+    const existingPath = archiveMap.get(row.log_date) || "";
+    const resolvedPath = resolveArchivePath(existingPath);
+    const needsRearchive =
+      !existingPath || !isReadableArchivePath(existingPath) || !fs.existsSync(resolvedPath);
+    if (!needsRearchive) {
+      continue;
+    }
     const archived = await archiveLogDate(row.log_date);
     result.push(archived);
   }

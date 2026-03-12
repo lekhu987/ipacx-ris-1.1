@@ -64,15 +64,20 @@ function pad3(n) {
   return String(n).padStart(3, "0");
 }
 
+function normalizeIdValue(value) {
+  if (value === null || value === undefined) return value;
+  return String(value).replace(/\//g, "");
+}
+
 function buildPatientId(year, month, seq) {
-  return `${year}/${String(month).padStart(2, "0")}/${pad3(seq)}`;
+  return `${year}${String(month).padStart(2, "0")}${pad3(seq)}`;
 }
 
 async function generateNextPatientId() {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
-  const prefix = `${year}/${String(month).padStart(2, "0")}/`;
+  const prefix = `${year}${String(month).padStart(2, "0")}`;
 
   const result = await pool.query(
     `
@@ -87,9 +92,15 @@ async function generateNextPatientId() {
 
   let nextSeq = 1;
   if (result.rowCount > 0 && result.rows[0]?.patient_id) {
-    const parts = String(result.rows[0].patient_id).split("/");
-    const last = Number(parts[2]);
-    if (!Number.isNaN(last)) nextSeq = last + 1;
+    const raw = String(result.rows[0].patient_id);
+    if (raw.includes("/")) {
+      const parts = raw.split("/");
+      const last = Number(parts[2]);
+      if (!Number.isNaN(last)) nextSeq = last + 1;
+    } else {
+      const last = Number(raw.slice(-3));
+      if (!Number.isNaN(last)) nextSeq = last + 1;
+    }
   }
 
   return buildPatientId(year, month, nextSeq);
@@ -446,7 +457,11 @@ router.get("/", async (req, res) => {
     res.json({
       success: true,
       count: result.rowCount,
-      patients: result.rows,
+      patients: result.rows.map((row) => ({
+        ...row,
+        patient_id: normalizeIdValue(row.patient_id),
+        uhid: normalizeIdValue(row.uhid),
+      })),
     });
   } catch (error) {
     console.error("Fetch Patients Error:", error.message);
@@ -561,7 +576,11 @@ router.get("/lookup", async (req, res) => {
 
     return res.json({
       success: true,
-      matches: result.rows,
+      matches: result.rows.map((row) => ({
+        ...row,
+        patient_id: normalizeIdValue(row.patient_id),
+        uhid: normalizeIdValue(row.uhid),
+      })),
     });
   } catch (error) {
     console.error("Patient lookup error:", error.message);
@@ -590,7 +609,11 @@ router.get("/details/:identifier", async (req, res) => {
 
     return res.json({
       success: true,
-      patient,
+      patient: {
+        ...patient,
+        patient_id: normalizeIdValue(patient.patient_id),
+        uhid: normalizeIdValue(patient.uhid),
+      },
     });
   } catch (error) {
     console.error("Get Patient Details Error:", error.message);
@@ -616,7 +639,11 @@ router.get("/print/:identifier", async (req, res) => {
       });
     }
 
-    const patientId = patient.uhid || patient.patient_id || patient.mrn || identifier;
+    const patientId =
+      normalizeIdValue(patient.uhid) ||
+      normalizeIdValue(patient.patient_id) ||
+      normalizeIdValue(patient.mrn) ||
+      normalizeIdValue(identifier);
     const fullName =
       `${patient.first_name || ""} ${patient.last_name || ""}`.trim() ||
       patient.full_name ||
@@ -948,7 +975,11 @@ router.put("/:identifier", upload.single("id_proof_path"), async (req, res) => {
     res.json({
       success: true,
       message: "Patient updated successfully",
-      patient: result.rows[0],
+      patient: {
+        ...result.rows[0],
+        patient_id: normalizeIdValue(result.rows[0].patient_id),
+        uhid: normalizeIdValue(result.rows[0].uhid),
+      },
     });
   } catch (error) {
     console.error("Patient Update Error:", error.message);
@@ -978,7 +1009,11 @@ router.get("/:uhid", async (req, res) => {
 
     res.json({
       success: true,
-      patient: result.rows[0],
+      patient: {
+        ...result.rows[0],
+        patient_id: normalizeIdValue(result.rows[0].patient_id),
+        uhid: normalizeIdValue(result.rows[0].uhid),
+      },
     });
   } catch (error) {
     console.error("Get Patient Error:", error.message);

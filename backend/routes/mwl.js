@@ -3,6 +3,7 @@ const router = express.Router();
 const axios = require("axios");
 const pool = require("../db");
 const { sendMWL } = require("../services/mwlExporter");
+const { exportDimseWorklist } = require("../services/mwlDimseExport");
 
 const ORTHANC_URL = process.env.ORTHANC_URL;
 const ORTHANC_AUTH = {
@@ -38,6 +39,11 @@ async function ensureMwlTargetsTable() {
       manual_port INTEGER,
       manual_ae_title VARCHAR(64),
       manual_type VARCHAR(32),
+      manual_protocol VARCHAR(16),
+      manual_calling_ae VARCHAR(64),
+      manual_called_ae VARCHAR(64),
+      viewer_protocol VARCHAR(32),
+      viewer_base_url VARCHAR(256),
       is_active BOOLEAN NOT NULL DEFAULT true,
       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
@@ -47,6 +53,11 @@ async function ensureMwlTargetsTable() {
   await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_port INTEGER");
   await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_ae_title VARCHAR(64)");
   await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_type VARCHAR(32)");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_protocol VARCHAR(16)");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_calling_ae VARCHAR(64)");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_called_ae VARCHAR(64)");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS viewer_protocol VARCHAR(32)");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS viewer_base_url VARCHAR(256)");
 }
 
 function pick(row, keys, fallback = "") {
@@ -336,6 +347,9 @@ router.put("/:id", async (req, res) => {
 });
 
 router.post("/:id/send", async (req, res) => {
+  let target = "";
+  let targetServer = null;
+  let usingManualTarget = false;
   try {
     await ensureMwlStatusColumn();
     await ensureMwlTargetsTable();
@@ -366,7 +380,7 @@ router.post("/:id/send", async (req, res) => {
     const key = String(modality).toUpperCase();
     const targetConfigResult = await pool.query(
       `
-      SELECT modality_code, pacs_id, orthanc_modality_name, manual_host, manual_port, manual_ae_title, manual_type
+      SELECT modality_code, pacs_id, orthanc_modality_name, manual_host, manual_port, manual_ae_title, manual_type, manual_protocol, manual_calling_ae, manual_called_ae
       FROM mwl_modality_targets
       WHERE UPPER(modality_code) = UPPER($1)
         AND is_active = true
@@ -380,17 +394,52 @@ router.post("/:id/send", async (req, res) => {
     }
 
     let targetPacs = null;
-    let target = "";
 
     if (targetConfig?.manual_host && targetConfig?.manual_port) {
+      const manualProtocol = String(targetConfig.manual_protocol || "").trim().toUpperCase();
+      const manualType = String(targetConfig.manual_type || "").trim().toUpperCase();
+      const isDimse = manualProtocol === "DIMSE" || manualType === "DIMSE";
+      if (isDimse) {
+        const exported = await exportDimseWorklist(entry, {
+          outDir: process.env.MWL_DIMSE_OUT_DIR,
+        });
+        await pool.query(
+          "UPDATE mwl SET status = $1 WHERE id = $2",
+          ["QUEUED", req.params.id]
+        );
+        return res.json({
+          success: true,
+          mode: "dimse_export",
+          status: "QUEUED",
+          message:
+            "DIMSE MWL uses modality pull (C-FIND). Worklist exported for MWL SCP.",
+          files: {
+            json: exported.jsonPath,
+            text: exported.txtPath,
+            directory: exported.outDir,
+          },
+          target: `${targetConfig.manual_host}:${targetConfig.manual_port}`,
+        });
+      }
+      if (!manualType) {
+        return res.status(400).json({
+          error: "Manual MWL target requires manual_type (ORTHANC/DCM4CHEE)",
+          details: {
+            modality: key,
+            target: "manual",
+          },
+        });
+      }
+      usingManualTarget = true;
       targetPacs = {
         pacs_name: "Manual",
-        pacs_type: targetConfig.manual_type || "",
+        pacs_type: manualType,
         ip_address: targetConfig.manual_host,
         port: targetConfig.manual_port,
         ae_title: targetConfig.manual_ae_title || "",
       };
       target = targetPacs.ae_title || "Manual";
+      targetServer = `${targetPacs.ip_address}:${targetPacs.port}`;
     } else if (targetConfig?.pacs_id) {
       const byId = await pool.query(
         `SELECT * FROM pacs WHERE id = $1 AND is_active = true LIMIT 1`,
@@ -398,6 +447,7 @@ router.post("/:id/send", async (req, res) => {
       );
       targetPacs = byId.rows[0] || null;
       target = targetPacs?.ae_title || targetPacs?.pacs_name || "";
+      if (targetPacs) targetServer = `${targetPacs.ip_address}:${targetPacs.port}`;
     }
 
     if (!targetPacs) {
@@ -419,6 +469,7 @@ router.post("/:id/send", async (req, res) => {
         [target]
       );
       targetPacs = pacsResult.rows[0] || null;
+      if (targetPacs) targetServer = `${targetPacs.ip_address}:${targetPacs.port}`;
     }
 
     if (!targetPacs) {
@@ -428,6 +479,7 @@ router.post("/:id/send", async (req, res) => {
       targetPacs = fallback.rows[0] || null;
       if (targetPacs && !target) {
         target = targetPacs.ae_title || targetPacs.pacs_name || "fallback";
+        targetServer = `${targetPacs.ip_address}:${targetPacs.port}`;
       }
     }
 
@@ -451,7 +503,7 @@ router.post("/:id/send", async (req, res) => {
         sentTo: target || targetPacs.ae_title || targetPacs.pacs_name,
         mode: "mwl_json_push",
         endpoint: pushed.url,
-        server: `${targetPacs.ip_address}:${targetPacs.port}`,
+        server: targetServer || `${targetPacs.ip_address}:${targetPacs.port}`,
       });
     }
     return res.status(404).json({
@@ -459,16 +511,27 @@ router.post("/:id/send", async (req, res) => {
     });
   } catch (err) {
     const upstream = err?.response?.data || err?.cause?.response?.data || null;
-    const statusCode = err?.statusCode || (err?.response?.status >= 400 ? err.response.status : 500);
+    const responseStatus = err?.response?.status;
+    const statusCode =
+      err?.statusCode ||
+      (typeof responseStatus === "number" && responseStatus >= 400 ? responseStatus : null) ||
+      (err?.code ? 502 : 500);
     const publicMessage =
       err?.publicMessage ||
       (typeof upstream === "string" ? upstream : upstream?.Message || upstream?.OrthancError) ||
       err?.message ||
       "Failed to send MWL";
-    console.error("Send error:", upstream || err.message);
     res.status(statusCode).json({
       error: publicMessage,
       details: upstream || err.message,
+      meta: {
+        code: err?.code || null,
+        message: err?.message || null,
+        response_status: responseStatus || null,
+        target: typeof target === "string" ? target : null,
+        server: targetServer || null,
+        manual: usingManualTarget || false,
+      },
     });
   }
 });

@@ -155,8 +155,14 @@ export default function MWLS() {
       toast.success("Study Transmitted Successfully", { id: tid });
       load();
     } catch (err) {
-      console.error("push mwl", err);
-      toast.error("Transmission Failed", { id: tid });
+      const apiError = err?.response?.data;
+      const message =
+        apiError?.error ||
+        apiError?.details ||
+        err?.message ||
+        "Transmission Failed";
+      console.error("push mwl", err, apiError);
+      toast.error(message, { id: tid });
     }
   };
 

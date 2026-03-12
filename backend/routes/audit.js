@@ -14,29 +14,6 @@ const {
 const router = express.Router();
 const PROJECT_ROOT = path.join(__dirname, "..", "..");
 
-function parseArchiveLines(filePath) {
-  if (!filePath) return [];
-  const absolutePath = path.isAbsolute(filePath)
-    ? filePath
-    : path.join(PROJECT_ROOT, filePath);
-
-  if (!fs.existsSync(absolutePath)) return [];
-  const content = fs.readFileSync(absolutePath, "utf8");
-  if (!content.trim()) return [];
-
-  return content
-    .split(/\r?\n/)
-    .filter(Boolean)
-    .map((line) => {
-      try {
-        return JSON.parse(line);
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean);
-}
-
 function filterArchiveRows(rows, { username, sessionId, event, ip }) {
   return rows.filter((row) => {
     if (username && String(row.username || "") !== username) return false;
@@ -170,59 +147,6 @@ router.get("/logs", async (req, res) => {
     const to = req.query.to ? String(req.query.to).trim() : null; // YYYY-MM-DD
     const todayIST = getISTDateString();
     const hasDateFilter = Boolean(from || to);
-
-    // Archived day read path: single full previous date file
-    if (from && to && from === to && from < todayIST) {
-      const archiveMetaRes = await pool.query(
-        `SELECT log_date, file_path, row_count, archived_at
-         FROM audit_log_archives
-         WHERE log_date = $1::date
-         LIMIT 1`,
-        [from]
-      );
-
-      if (!archiveMetaRes.rows.length) {
-        return res.json({
-          success: true,
-          data: [],
-          summary: { total: 0, login_success: 0, login_failed: 0, logout: 0 },
-          paging: { total: 0, limit, offset, has_next: false },
-          archive: { log_date: from, found: false },
-        });
-      }
-
-      const meta = archiveMetaRes.rows[0];
-      let rows = parseArchiveLines(meta.file_path);
-      rows = filterArchiveRows(rows, { username, sessionId, event, ip });
-      rows.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
-
-      const total = rows.length;
-      const pageRows = rows.slice(offset, offset + limit);
-
-      return res.json({
-        success: true,
-        data: pageRows,
-        summary: {
-          total,
-          login_success: rows.filter((r) => r.event === "LOGIN_SUCCESS").length,
-          login_failed: rows.filter((r) => r.event === "LOGIN_FAILED").length,
-          logout: rows.filter((r) => r.event === "LOGOUT").length,
-        },
-        paging: {
-          total,
-          limit,
-          offset,
-          has_next: offset + limit < total,
-        },
-        archive: {
-          log_date: String(meta.log_date),
-          found: true,
-          file_path: meta.file_path,
-          row_count: meta.row_count,
-          archived_at: meta.archived_at,
-        },
-      });
-    }
 
     let whereSql = ` WHERE 1=1 `;
     const params = [];
@@ -425,24 +349,6 @@ router.get("/archives/download", async (req, res) => {
       return res.status(400).json({ success: false, message: "Invalid date range" });
     }
 
-    let rows = [];
-
-    const archiveRangeRes = await pool.query(
-      `SELECT log_date::text AS log_date, file_path
-       FROM audit_log_archives
-       WHERE log_date BETWEEN $1::date AND $2::date`,
-      [from, to]
-    );
-    const archiveMap = new Map(archiveRangeRes.rows.map((r) => [r.log_date, r.file_path]));
-    const archivedDates = new Set(archiveRangeRes.rows.map((r) => r.log_date));
-
-    for (const d of dates) {
-      const filePath = archiveMap.get(d);
-      if (filePath) {
-        rows.push(...parseArchiveLines(filePath));
-      }
-    }
-
     const liveParams = [from, to];
     let liveWhere = `WHERE (created_at AT TIME ZONE 'Asia/Kolkata')::date BETWEEN $1::date AND $2::date`;
     if (username) {
@@ -457,12 +363,6 @@ router.get("/archives/download", async (req, res) => {
       liveParams.push(event);
       liveWhere += ` AND event = $${liveParams.length}`;
     }
-    if (archivedDates.size) {
-      const dateList = Array.from(archivedDates);
-      const placeholders = dateList.map((_, idx) => `$${liveParams.length + idx + 1}`).join(", ");
-      liveParams.push(...dateList);
-      liveWhere += ` AND (created_at AT TIME ZONE 'Asia/Kolkata')::date NOT IN (${placeholders})`;
-    }
 
     const liveRes = await pool.query(
       `
@@ -474,7 +374,7 @@ router.get("/archives/download", async (req, res) => {
       `,
       liveParams
     );
-    rows.push(...liveRes.rows);
+    let rows = liveRes.rows;
 
     if (username || ip || event) {
       rows = filterArchiveRows(rows, { username, sessionId: "", event, ip });

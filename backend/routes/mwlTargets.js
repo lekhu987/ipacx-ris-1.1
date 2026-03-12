@@ -13,6 +13,11 @@ async function ensureMwlTargetsTable() {
       manual_port INTEGER,
       manual_ae_title VARCHAR(64),
       manual_type VARCHAR(32),
+      manual_protocol VARCHAR(16),
+      manual_calling_ae VARCHAR(64),
+      manual_called_ae VARCHAR(64),
+      viewer_protocol VARCHAR(32),
+      viewer_base_url VARCHAR(256),
       is_active BOOLEAN NOT NULL DEFAULT true,
       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
@@ -22,6 +27,11 @@ async function ensureMwlTargetsTable() {
   await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_port INTEGER");
   await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_ae_title VARCHAR(64)");
   await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_type VARCHAR(32)");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_protocol VARCHAR(16)");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_calling_ae VARCHAR(64)");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_called_ae VARCHAR(64)");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS viewer_protocol VARCHAR(32)");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS viewer_base_url VARCHAR(256)");
 }
 
 router.get("/options", async (req, res) => {
@@ -60,6 +70,11 @@ router.get("/", async (req, res) => {
         t.manual_port,
         t.manual_ae_title,
         t.manual_type,
+        t.manual_protocol,
+        t.manual_calling_ae,
+        t.manual_called_ae,
+        t.viewer_protocol,
+        t.viewer_base_url,
         t.is_active,
         t.updated_at,
         p.pacs_name,
@@ -89,6 +104,11 @@ router.post("/", async (req, res) => {
       manual_port,
       manual_ae_title,
       manual_type,
+      manual_protocol,
+      manual_calling_ae,
+      manual_called_ae,
+      viewer_protocol,
+      viewer_base_url,
       is_active = true,
     } = req.body || {};
     const modalityCode = String(modality_code || "").trim().toUpperCase();
@@ -111,8 +131,8 @@ router.post("/", async (req, res) => {
     const result = await pool.query(
       `
       INSERT INTO mwl_modality_targets
-        (modality_code, pacs_id, orthanc_modality_name, manual_host, manual_port, manual_ae_title, manual_type, is_active, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+        (modality_code, pacs_id, orthanc_modality_name, manual_host, manual_port, manual_ae_title, manual_type, manual_protocol, manual_calling_ae, manual_called_ae, viewer_protocol, viewer_base_url, is_active, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
       ON CONFLICT (modality_code)
       DO UPDATE SET
         pacs_id = EXCLUDED.pacs_id,
@@ -121,6 +141,11 @@ router.post("/", async (req, res) => {
         manual_port = EXCLUDED.manual_port,
         manual_ae_title = EXCLUDED.manual_ae_title,
         manual_type = EXCLUDED.manual_type,
+        manual_protocol = EXCLUDED.manual_protocol,
+        manual_calling_ae = EXCLUDED.manual_calling_ae,
+        manual_called_ae = EXCLUDED.manual_called_ae,
+        viewer_protocol = EXCLUDED.viewer_protocol,
+        viewer_base_url = EXCLUDED.viewer_base_url,
         is_active = EXCLUDED.is_active,
         updated_at = NOW()
       RETURNING *
@@ -133,6 +158,11 @@ router.post("/", async (req, res) => {
         manual_port ? Number(manual_port) : null,
         manual_ae_title || null,
         manual_type || null,
+        manual_protocol || null,
+        manual_calling_ae || null,
+        manual_called_ae || null,
+        viewer_protocol || null,
+        viewer_base_url || null,
         Boolean(is_active),
       ]
     );

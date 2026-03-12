@@ -14,6 +14,11 @@ async function ensureMwlTargetsTable() {
       manual_port INTEGER,
       manual_ae_title VARCHAR(64),
       manual_type VARCHAR(32),
+      manual_protocol VARCHAR(16),
+      manual_calling_ae VARCHAR(64),
+      manual_called_ae VARCHAR(64),
+      viewer_protocol VARCHAR(32),
+      viewer_base_url VARCHAR(256),
       is_active BOOLEAN NOT NULL DEFAULT true,
       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
@@ -23,6 +28,11 @@ async function ensureMwlTargetsTable() {
   await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_port INTEGER");
   await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_ae_title VARCHAR(64)");
   await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_type VARCHAR(32)");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_protocol VARCHAR(16)");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_calling_ae VARCHAR(64)");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_called_ae VARCHAR(64)");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS viewer_protocol VARCHAR(32)");
+  await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS viewer_base_url VARCHAR(256)");
 }
 
 async function ensureMwlStatusColumn() {
@@ -53,7 +63,7 @@ async function pickTargetPacs(modality) {
 
   const targetConfigResult = await pool.query(
     `
-    SELECT modality_code, pacs_id, orthanc_modality_name, manual_host, manual_port, manual_ae_title, manual_type
+    SELECT modality_code, pacs_id, orthanc_modality_name, manual_host, manual_port, manual_ae_title, manual_type, manual_protocol, manual_calling_ae, manual_called_ae
     FROM mwl_modality_targets
     WHERE UPPER(modality_code) = UPPER($1)
       AND is_active = true
@@ -65,6 +75,10 @@ async function pickTargetPacs(modality) {
 
   let targetPacs = null;
   if (targetConfig?.manual_host && targetConfig?.manual_port) {
+    const manualProtocol = String(targetConfig.manual_protocol || "").trim().toUpperCase();
+    if (manualProtocol === "DIMSE") {
+      return null;
+    }
     return {
       pacs_name: "Manual",
       pacs_type: targetConfig.manual_type || "",

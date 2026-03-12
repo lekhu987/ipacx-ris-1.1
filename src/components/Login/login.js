@@ -50,29 +50,55 @@ function Login() {
 
   return (
     <div className="login-container">
-      <div className="login-box">
-        <h2>iPacx RIS Login</h2>
+      <div className="login-card">
+        {/* Left Side: Branding/Illustration */}
+        <div className="login-left">
+          <div className="branding">
+            <h1>iPacx RIS</h1>
+          </div>
+          <div className="illustration-wrapper">
+            {/* Soft decorative circles for modern feel */}
+            <div className="circle circle-1"></div>
+            <div className="circle circle-2"></div>
+            <div className="circle circle-3"></div>
+          </div>
+        </div>
 
-        {/* ✅ Form to allow Enter key submission */}
-        <form onSubmit={handleLogin}>
-          <input
-            type="text"
-            placeholder="Username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-          />
+        {/* Right Side: Login Form */}
+        <div className="login-right">
+          <div className="form-wrapper">
+            <h2>Welcome Back</h2>
+            <p className="subtitle">Please enter your details to sign in.</p>
 
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
+            <form onSubmit={handleLogin} className="login-form">
+              <div className="input-group">
+                <label>Username</label>
+                <input
+                  type="text"
+                  placeholder="Enter your username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  required
+                />
+              </div>
 
-          <button type="submit" disabled={loading}>
-            {loading ? "Logging in..." : "Login"}
-          </button>
-        </form>
+              <div className="input-group">
+                <label>Password</label>
+                <input
+                  type="password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                />
+              </div>
+
+              <button type="submit" className="login-btn" disabled={loading}>
+                {loading ? "Logging in..." : "Sign In"}
+              </button>
+            </form>
+          </div>
+        </div>
       </div>
     </div>
   );
