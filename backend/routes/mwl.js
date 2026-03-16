@@ -4,6 +4,7 @@ const axios = require("axios");
 const pool = require("../db");
 const { sendMWL } = require("../services/mwlExporter");
 const { exportDimseWorklist } = require("../services/mwlDimseExport");
+const { checkTcpReachable } = require("../services/mwlConnectivity");
 
 const ORTHANC_URL = process.env.ORTHANC_URL;
 const ORTHANC_AUTH = {
@@ -20,6 +21,12 @@ async function ensureMwlDatetimeColumn() {
 
 async function ensureMwlStatusColumn() {
   await pool.query("ALTER TABLE mwl ADD COLUMN IF NOT EXISTS status text DEFAULT 'NEW'");
+}
+
+async function ensureMwlStationAetColumn() {
+  await pool.query(
+    "ALTER TABLE mwl ADD COLUMN IF NOT EXISTS scheduledstationaetitle text"
+  );
 }
 
 async function backfillSchedulingDatetime() {
@@ -69,7 +76,7 @@ function pick(row, keys, fallback = "") {
   return fallback;
 }
 
-function toWorklistItem(row) {
+function toWorklistItem(row, opts = {}) {
   const patientId = String(pick(row, ["patientid", "patient_id"], ""));
   const patientName = String(pick(row, ["patientname", "patient_name"], ""));
   const patientSex = String(pick(row, ["patientsex", "patient_sex"], "O"));
@@ -79,8 +86,17 @@ function toWorklistItem(row) {
   const schedule = pick(row, ["scheduling_datetime", "schedulingdate", "scheduled_datetime"], null);
   const description = String(pick(row, ["studydescription", "study_description"], ""));
   const status = String(pick(row, ["status"], "NEW"));
+  const stationAet = String(
+    pick(
+      opts,
+      ["stationAet", "scheduledstationaetitle"],
+      pick(row, ["scheduledstationaetitle", "station_aet"], "")
+    )
+  );
   const now = new Date();
   const scheduleDate = schedule ? new Date(schedule) : now;
+  const dicomDate = scheduleDate.toISOString().slice(0, 10).replace(/-/g, "");
+  const dicomTime = scheduleDate.toISOString().slice(11, 19).replace(/:/g, "");
 
   return {
     // DICOM JSON fields
@@ -89,11 +105,22 @@ function toWorklistItem(row) {
     "00100040": { vr: "CS", Value: [patientSex.slice(0, 1).toUpperCase()] },
     "00080050": { vr: "SH", Value: [accession] },
     "0020000D": { vr: "UI", Value: [studyUid] },
-    "00400001": { vr: "AE", Value: [pick(row, ["scheduledstationaetitle", "station_aet"], "")] },
-    "00400002": { vr: "DA", Value: [scheduleDate.toISOString().slice(0, 10).replace(/-/g, "")] },
-    "00400003": { vr: "TM", Value: [scheduleDate.toISOString().slice(11, 19).replace(/:/g, "")] },
+    "00400001": { vr: "AE", Value: [stationAet] },
+    "00400002": { vr: "DA", Value: [dicomDate] },
+    "00400003": { vr: "TM", Value: [dicomTime] },
     "00321060": { vr: "LO", Value: [description] },
     "00080060": { vr: "CS", Value: [modality] },
+    "00400100": {
+      vr: "SQ",
+      Value: [
+        {
+          "00400001": { vr: "AE", Value: [stationAet] },
+          "00400002": { vr: "DA", Value: [dicomDate] },
+          "00400003": { vr: "TM", Value: [dicomTime] },
+          "00080060": { vr: "CS", Value: [modality] },
+        },
+      ],
+    },
     // Flat fields for frontend
     id: row.id,
     patient_id: patientId,
@@ -106,6 +133,7 @@ function toWorklistItem(row) {
     created_at: row.created_at || null,
     pacs_id: row.pacs_id || null,
     status: row.status || "NEW",
+    scheduled_station_aetitle: stationAet,
   };
 }
 
@@ -141,6 +169,12 @@ function normalizeInput(body = {}) {
     body_part_examined: body.body_part_examined || body.BodyPartExamined || "",
     referring_physician: body.referring_physician || body.ReferringPhysician || "",
     study_instance_uid: body.study_instance_uid || body.StudyInstanceUID || "",
+    scheduled_station_aetitle:
+      body.scheduled_station_aetitle ||
+      body.scheduledStationAETitle ||
+      body.station_aet ||
+      body.StationAETitle ||
+      "",
   };
 }
 
@@ -148,6 +182,7 @@ router.post("/", async (req, res) => {
   try {
     await ensureMwlDatetimeColumn();
     await ensureMwlStatusColumn();
+    await ensureMwlStationAetColumn();
     await backfillSchedulingDatetime();
     const entry = normalizeInput(req.body);
     if (!entry.patient_name || !entry.modality) {
@@ -158,8 +193,8 @@ router.post("/", async (req, res) => {
       `INSERT INTO mwl
        (PatientID, PatientName, PatientSex, PatientAge,
         AccessionNumber, StudyDescription, SchedulingDate, scheduling_datetime,
-        Modality, BodyPartExamined, ReferringPhysician, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        Modality, BodyPartExamined, ReferringPhysician, status, ScheduledStationAETitle)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        RETURNING *`,
       [
         entry.patient_id || `P${Date.now()}`,
@@ -174,6 +209,7 @@ router.post("/", async (req, res) => {
         entry.body_part_examined || "",
         entry.referring_physician || "",
         "NEW",
+        entry.scheduled_station_aetitle || "",
       ]
     );
 
@@ -188,6 +224,7 @@ router.post("/register", async (req, res) => {
   try {
     await ensureMwlDatetimeColumn();
     await ensureMwlStatusColumn();
+    await ensureMwlStationAetColumn();
     await backfillSchedulingDatetime();
     const entry = normalizeInput(req.body);
     if (!entry.patient_name || !entry.modality) {
@@ -198,8 +235,8 @@ router.post("/register", async (req, res) => {
       `INSERT INTO mwl
        (PatientID, PatientName, PatientSex, PatientAge,
         AccessionNumber, StudyDescription, SchedulingDate, scheduling_datetime,
-        Modality, BodyPartExamined, ReferringPhysician, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        Modality, BodyPartExamined, ReferringPhysician, status, ScheduledStationAETitle)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
        RETURNING *`,
       [
         entry.patient_id || `P${Date.now()}`,
@@ -214,6 +251,7 @@ router.post("/register", async (req, res) => {
         entry.body_part_examined || "",
         entry.referring_physician || "",
         "NEW",
+        entry.scheduled_station_aetitle || "",
       ]
     );
 
@@ -287,7 +325,43 @@ router.get("/", async (req, res) => {
     `;
 
     const result = await pool.query(sql, params);
-    const mwlItems = result.rows.map(toWorklistItem);
+
+    let stationMap = {};
+    try {
+      const targets = await pool.query(
+        `
+        SELECT
+          t.modality_code,
+          t.manual_calling_ae,
+          t.manual_called_ae,
+          t.manual_ae_title,
+          p.ae_title AS pacs_ae_title
+        FROM mwl_modality_targets t
+        LEFT JOIN pacs p ON p.id = t.pacs_id
+        WHERE t.is_active = true
+        `
+      );
+      stationMap = targets.rows.reduce((acc, row) => {
+        const key = String(row.modality_code || "").toUpperCase();
+        if (!key) return acc;
+        acc[key] =
+          row.manual_calling_ae ||
+          row.manual_called_ae ||
+          row.manual_ae_title ||
+          row.pacs_ae_title ||
+          acc[key] ||
+          "";
+        return acc;
+      }, {});
+    } catch (mapErr) {
+      console.warn("MWL station AE mapping not available:", mapErr.message);
+    }
+
+    const mwlItems = result.rows.map((row) => {
+      const key = String(row.modality || "").toUpperCase();
+      const stationAet = row.scheduledstationaetitle || stationMap[key] || "";
+      return toWorklistItem(row, { stationAet });
+    });
 
     if (legacy === "1") {
       return res.json(mwlItems.map(toLegacyRow));
@@ -314,14 +388,15 @@ router.put("/:id", async (req, res) => {
   try {
     await ensureMwlDatetimeColumn();
     await ensureMwlStatusColumn();
+    await ensureMwlStationAetColumn();
     await backfillSchedulingDatetime();
     const entry = normalizeInput(req.body);
     const result = await pool.query(
       `UPDATE mwl SET
        PatientID=$1, PatientName=$2, PatientSex=$3, PatientAge=$4,
        AccessionNumber=$5, StudyDescription=$6, SchedulingDate=$7, scheduling_datetime=$8,
-       Modality=$9, BodyPartExamined=$10, ReferringPhysician=$11
-       WHERE id=$12 RETURNING *`,
+       Modality=$9, BodyPartExamined=$10, ReferringPhysician=$11, ScheduledStationAETitle=$12
+       WHERE id=$13 RETURNING *`,
       [
         entry.patient_id,
         entry.patient_name,
@@ -334,6 +409,7 @@ router.put("/:id", async (req, res) => {
         entry.modality,
         entry.body_part_examined,
         entry.referring_physician,
+        entry.scheduled_station_aetitle || "",
         req.params.id,
       ]
     );
@@ -400,6 +476,21 @@ router.post("/:id/send", async (req, res) => {
       const manualType = String(targetConfig.manual_type || "").trim().toUpperCase();
       const isDimse = manualProtocol === "DIMSE" || manualType === "DIMSE";
       if (isDimse) {
+        try {
+          await checkTcpReachable(
+            targetConfig.manual_host,
+            targetConfig.manual_port,
+            Number(process.env.MWL_TARGET_CONNECT_TIMEOUT_MS || 3000)
+          );
+        } catch (err) {
+          const msg = `Target not reachable at ${targetConfig.manual_host}:${targetConfig.manual_port}`;
+          const e = new Error(msg);
+          e.statusCode = 502;
+          e.publicMessage = msg;
+          e.code = err?.code || "MWL_TARGET_UNREACHABLE";
+          e.cause = err;
+          throw e;
+        }
         const exported = await exportDimseWorklist(entry, {
           outDir: process.env.MWL_DIMSE_OUT_DIR,
         });
@@ -485,6 +576,27 @@ router.post("/:id/send", async (req, res) => {
 
     // Preferred: push MWL JSON to selected target PACS endpoint.
     if (targetPacs) {
+      try {
+        await checkTcpReachable(
+          targetPacs.ip_address,
+          targetPacs.port,
+          Number(process.env.MWL_TARGET_CONNECT_TIMEOUT_MS || 3000)
+        );
+      } catch (err) {
+        const msg = `Target not reachable at ${targetPacs.ip_address}:${targetPacs.port}`;
+        const e = new Error(msg);
+        e.statusCode = 502;
+        e.publicMessage = msg;
+        e.code = err?.code || "MWL_TARGET_UNREACHABLE";
+        e.cause = err;
+        throw e;
+      }
+      const stationAet =
+        entry.scheduledstationaetitle ||
+        targetConfig?.manual_calling_ae ||
+        targetConfig?.manual_called_ae ||
+        targetConfig?.manual_ae_title ||
+        "";
       const pushed = await sendMWL(targetPacs, {
         patient_name: entry.patientname || "",
         patient_id: entry.patientid || "",
@@ -492,7 +604,7 @@ router.post("/:id/send", async (req, res) => {
         requested_procedure_id: "",
         modality: entry.modality || "",
         scheduled_start: entry.schedulingdate || new Date().toISOString(),
-        station_aet: targetPacs.ae_title || "",
+        station_aet: stationAet || "",
       });
       await pool.query(
         "UPDATE mwl SET status = $1 WHERE id = $2",

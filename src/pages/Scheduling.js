@@ -92,6 +92,7 @@ function Scheduling() {
         modality: newData.modality,
         doctor: newData.doctor,
         date: newData.date,
+        scheduled_station_aetitle: newData.scheduled_station_aetitle || "",
       };
       if (editingAppointment?.id) {
         await api.put(`/api/appointments/${encodeURIComponent(String(editingAppointment.id))}`, payload);
@@ -167,6 +168,7 @@ function Scheduling() {
         scheduled_datetime: scheduledDateTime,
         StudyDescription: `Scheduled ${appt.modality || ""}`.trim(),
         ReferringPhysician: appt.doctor || "",
+        scheduled_station_aetitle: appt.scheduled_station_aetitle || "",
       });
       alert("Moved to MWL successfully");
     } catch (err) {
@@ -261,15 +263,16 @@ function Scheduling() {
             <th>Contact</th>
             <th>Time</th>
             <th>Modality</th>
+            <th>Scanner AE</th>
             <th>Doctor</th>
             <th>Action</th>
           </tr>
         </thead>
 
         <tbody>
-          {filteredAppointments.length === 0 ? (
+            {filteredAppointments.length === 0 ? (
             <tr>
-              <td colSpan="8" style={{ textAlign: "center" }}>
+              <td colSpan="9" style={{ textAlign: "center" }}>
                 No Appointments
               </td>
             </tr>
@@ -283,6 +286,7 @@ function Scheduling() {
                 <td>{appt.contact}</td>
                 <td>{formatDisplayTime(appt.time)}</td>
                 <td>{appt.modality}</td>
+                <td>{appt.scheduled_station_aetitle || "-"}</td>
                 <td>{appt.doctor}</td>
                 <td>
                   <div className="sch-actions">

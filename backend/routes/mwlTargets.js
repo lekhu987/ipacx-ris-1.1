@@ -111,11 +111,7 @@ router.post("/", async (req, res) => {
       viewer_base_url,
       is_active = true,
     } = req.body || {};
-    const modalityCode = String(modality_code || "").trim().toUpperCase();
-
-    if (!modalityCode) {
-      return res.status(400).json({ success: false, error: "modality_code is required" });
-    }
+    const modalityCode = String(modality_code || "").trim().toUpperCase() || "ALL";
     const hasManual = String(manual_host || "").trim() && Number(manual_port);
     if (!pacs_id && !hasManual) {
       return res.status(400).json({ success: false, error: "manual_host/manual_port required" });

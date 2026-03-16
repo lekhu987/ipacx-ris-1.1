@@ -1,16 +1,15 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import MainLayout from "../../layout/MainLayout";
 import api from "../../api/axios";
 import "./MwlsManagement.css";
 
 function MwlsManagement() {
-  const [modalities, setModalities] = useState([]);
-  const [pacsList, setPacsList] = useState([]);
   const [mappings, setMappings] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [modalityOptions, setModalityOptions] = useState([{ code: "ALL", name: "All Modalities" }]);
 
   const [form, setForm] = useState({
-    modality_code: "",
+    modality_code: "ALL",
     manual_host: "",
     manual_port: "",
     manual_ae_title: "",
@@ -22,23 +21,25 @@ function MwlsManagement() {
     is_active: true,
   });
 
-  const pacsById = useMemo(() => {
-    const map = new Map();
-    pacsList.forEach((p) => map.set(Number(p.id), p));
-    return map;
-  }, [pacsList]);
-
   const loadData = async () => {
     setLoading(true);
     try {
-      const [optionsRes, mappingsRes] = await Promise.all([
-        api.get("/api/mwl-targets/options"),
-        api.get("/api/mwl-targets"),
-      ]);
-
-      setModalities(optionsRes.data?.modalities || []);
-      setPacsList(optionsRes.data?.pacs || []);
+      const mappingsRes = await api.get("/api/mwl-targets");
       setMappings(mappingsRes.data?.data || []);
+
+      try {
+        const optionsRes = await api.get("/api/mwl-targets/options");
+        const options = Array.isArray(optionsRes.data?.modalities) ? optionsRes.data.modalities : [];
+        const normalized = options.map((m) => ({
+          code: String(m.code || "").toUpperCase(),
+          name: m.name || m.code || "Unknown",
+        }));
+        const withAll = [{ code: "ALL", name: "All Modalities" }, ...normalized];
+        setModalityOptions(withAll);
+      } catch (err) {
+        // Fallback to default option if modal list is unavailable.
+        setModalityOptions([{ code: "ALL", name: "All Modalities" }]);
+      }
     } catch (err) {
       alert(err?.response?.data?.error || "Failed to load MWLS management data");
     } finally {
@@ -59,13 +60,12 @@ function MwlsManagement() {
   };
 
   const handleSave = async () => {
-    if (!form.modality_code) return alert("Select modality");
     if (!form.manual_host || !form.manual_port) return alert("Enter IP/Hostname and Port");
     if (!form.manual_type) return alert("Select server type");
 
     try {
       await api.post("/api/mwl-targets", {
-        modality_code: form.modality_code,
+        modality_code: form.modality_code || "ALL",
         manual_host: form.manual_host,
         manual_port: Number(form.manual_port),
         manual_ae_title: form.manual_ae_title || null,
@@ -86,7 +86,7 @@ function MwlsManagement() {
 
   const handleEdit = (row) => {
     setForm({
-      modality_code: row.modality_code || "",
+      modality_code: row.modality_code || "ALL",
       manual_host: row.manual_host || row.ip_address || "",
       manual_port: row.manual_port || row.port || "",
       manual_ae_title: row.manual_ae_title || row.orthanc_modality_name || row.ae_title || "",
@@ -125,6 +125,21 @@ function MwlsManagement() {
           </div>
 
           <div className="mwl-form-grid">
+            <div className="mwl-field">
+              <label>Modality</label>
+              <select
+                name="modality_code"
+                value={form.modality_code}
+                onChange={handleChange}
+              >
+                {modalityOptions.map((m) => (
+                  <option key={m.code} value={m.code}>
+                    {m.name} ({m.code})
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="mwl-field">
               <label>Server Type</label>
               <div className="mwl-toggle-group">
@@ -226,6 +241,16 @@ function MwlsManagement() {
             </div>
 
             <div className="mwl-field">
+              <label>MWL Server AE Title</label>
+              <input
+                name="manual_called_ae"
+                placeholder="e.g. MWL_SERVER"
+                value={form.manual_called_ae}
+                onChange={handleChange}
+              />
+            </div>
+
+            <div className="mwl-field">
               <label>Host / IP Address</label>
               <input
                 name="manual_host"
@@ -269,22 +294,6 @@ function MwlsManagement() {
               </select>
             </div>
 
-            <div className="mwl-field">
-              <label>Modality</label>
-              <select
-                name="modality_code"
-                value={form.modality_code}
-                onChange={handleChange}
-              >
-                <option value="">Select Modality</option>
-                {modalities.map((m) => (
-                  <option key={m.id} value={m.code}>
-                    {m.code} - {m.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
             <div className="mwl-field mwl-field-inline">
               <label className="mwl-inline-check">
                 <input
@@ -310,28 +319,27 @@ function MwlsManagement() {
             <div className="mwl-empty">No mappings configured</div>
           ) : (
             mappings.map((row) => {
-              const p = pacsById.get(Number(row.pacs_id));
-              const host = row.manual_host || row.ip_address || p?.ip_address || p?.host || "-";
-              const port = row.manual_port || row.port || p?.port || "-";
+              const host = row.manual_host || row.ip_address || row.host || "-";
+              const port = row.manual_port || row.port || "-";
               const title =
                 row.manual_ae_title ||
                 row.pacs_name ||
-                p?.pacs_name ||
                 `${row.modality_code || "MWL"} Server`;
-              const type = row.manual_type || p?.pacs_type || "MANUAL";
+              const type = row.manual_type || "MANUAL";
               const protocol = row.manual_protocol || "DICOMWEB";
               const viewerProtocol = row.viewer_protocol || "OHIF (Web-based)";
               return (
                 <div key={row.id} className="mwl-list-card">
                   <div className="mwl-list-left">
                     <div className="mwl-list-title">{title}</div>
-                    <div className="mwl-list-meta">
-                      <span>HOST: {host}</span>
-                      <span>PORT: {port}</span>
-                      <span>TYPE: {type}</span>
-                      <span>PROTOCOL: {protocol}</span>
-                      <span>VIEWER: {viewerProtocol}</span>
-                    </div>
+                <div className="mwl-list-meta">
+                  <span>HOST: {host}</span>
+                  <span>PORT: {port}</span>
+                  <span>TYPE: {type}</span>
+                  <span>PROTOCOL: {protocol}</span>
+                  <span>AE: {row.manual_called_ae || row.manual_ae_title || "-"}</span>
+                  <span>VIEWER: {viewerProtocol}</span>
+                </div>
                     <div className="mwl-list-sub">
                       {host !== "-" && port !== "-"
                         ? `URL: http://${host}:${port}`

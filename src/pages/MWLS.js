@@ -55,6 +55,13 @@ const modalityClass = (modality) => {
   return "mwl-modality";
 };
 
+const normalizeModalityValue = (value) => {
+  const key = String(value || "").toUpperCase();
+  if (key === "MRI") return "MR";
+  if (key === "X-RAY" || key === "XRAY" || key === "X RAY") return "DX";
+  return key;
+};
+
 export default function MWLS() {
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -133,6 +140,7 @@ export default function MWLS() {
       patient_name: "",
       modality: "CT",
       scheduled_datetime: dayjs().format("YYYY-MM-DDTHH:mm"),
+      scheduled_station_aetitle: "",
     });
     setShowModal(true);
   };
@@ -320,6 +328,7 @@ export default function MWLS() {
                     className="mwl-icon-btn"
                     title="Edit"
                     onClick={() => {
+                      const normalizedModality = normalizeModalityValue(m.modality || "CT");
                       setEditing({
                         id: m.id,
                         pacs_id: m.pacs_id ?? null,
@@ -327,8 +336,9 @@ export default function MWLS() {
                         study_instance_uid: m.study_instance_uid || "",
                         patient_id: m.patient_id || "",
                         patient_name: m.patient_name || "",
-                        modality: m.modality || "CT",
+                        modality: normalizedModality,
                         scheduled_datetime: toLocalInput(m.scheduled_datetime),
+                        scheduled_station_aetitle: m.scheduled_station_aetitle || "",
                       });
                       setShowModal(true);
                     }}
@@ -507,6 +517,17 @@ function MwlEditor({ initial, modalities, onSaved, onCancel }) {
             </option>
           ))}
         </select>
+      </div>
+
+      <div className="mwl-field">
+        <label>Scheduled Station AE Title</label>
+        <input
+          value={form.scheduled_station_aetitle ?? ""}
+          onChange={(e) =>
+            setForm({ ...form, scheduled_station_aetitle: e.target.value })
+          }
+          placeholder="e.g. MWL_SERVER or CT_ROOM_1"
+        />
       </div>
 
       <div className="mwl-field">

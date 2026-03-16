@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import api from "../api/axios";
 import "./AddScheduler.css";
 
 export default function AddScheduler({ onSave, onClose, initialData }) {
@@ -43,8 +44,10 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
     timePeriod: "AM",
     modality: "",
     doctor: "",
-    date: ""
+    date: "",
+    scheduled_station_aetitle: "",
   });
+  const [stationOptions, setStationOptions] = useState([]);
 
   useEffect(() => {
     if (!initialData) return;
@@ -59,6 +62,40 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
     }));
   }, [initialData]);
 
+  useEffect(() => {
+    let active = true;
+    const loadStations = async () => {
+      try {
+        const res = await api.get("/api/mwl-targets");
+        const rows = Array.isArray(res.data?.data) ? res.data.data : [];
+        const options = rows
+          .filter((r) => r.is_active !== false)
+          .map((r) => ({
+            modality: String(r.modality_code || "").toUpperCase(),
+            aeTitle: String(r.manual_calling_ae || r.manual_ae_title || "").trim(),
+          }))
+          .filter((o) => o.aeTitle);
+        if (active) setStationOptions(options);
+      } catch (err) {
+        if (active) setStationOptions([]);
+      }
+    };
+    loadStations();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!form.modality) return;
+    if (String(form.scheduled_station_aetitle || "").trim()) return;
+    const key = String(form.modality || "").toUpperCase();
+    const match = stationOptions.find((o) => o.modality === key);
+    if (match?.aeTitle) {
+      setForm((prev) => ({ ...prev, scheduled_station_aetitle: match.aeTitle }));
+    }
+  }, [form.modality, form.scheduled_station_aetitle, stationOptions]);
+
   const modalities = ["CT", "MRI", "X-Ray", "Ultrasound", "DEXA"];
   const doctors = ["Dr. Smith", "Dr. Johnson", "Dr. Rakesh", "Dr. Priya", "Dr. Karthik"];
   const modalityOptions = form.modality && !modalities.includes(form.modality)
@@ -67,6 +104,11 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
   const doctorOptions = form.doctor && !doctors.includes(form.doctor)
     ? [form.doctor, ...doctors]
     : doctors;
+  const filteredStations = stationOptions.filter((o) =>
+    form.modality
+      ? o.modality === String(form.modality || "").toUpperCase()
+      : true
+  );
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -99,14 +141,16 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
     const patientName = String(form.patientName || "").trim();
     const time = String(form.time || "").trim();
     const modality = String(form.modality || "").trim();
-    const doctor = String(form.doctor || "").trim();
     const date = String(form.date || "").trim();
-    return Boolean(patientId && patientName && time && modality && doctor && date);
+    const stationAet = String(form.scheduled_station_aetitle || "").trim();
+    return Boolean(
+      patientId && patientName && time && modality && date && stationAet
+    );
   };
 
   const submitForm = () => {
     if (!isFormValid()) {
-      alert("Please fill all fields including date");
+      alert("Please fill all required fields including scanner/room AE title");
       return;
     }
     onSave(form);
@@ -185,13 +229,31 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
           </select>
         </div>
 
-        <div className="row">
-          <label>Doctor</label>
-          <select name="doctor" value={form.doctor} onChange={handleChange}>
-            <option value="">Select</option>
-            {doctorOptions.map((d) => <option key={d}>{d}</option>)}
-          </select>
-        </div>
+      <div className="row">
+        <label>Doctor</label>
+        <select name="doctor" value={form.doctor} onChange={handleChange}>
+          <option value="">Select</option>
+          {doctorOptions.map((d) => <option key={d}>{d}</option>)}
+        </select>
+      </div>
+    </div>
+
+      <div className="row">
+        <label>Scanner / Room AE Title</label>
+        <input
+          name="scheduled_station_aetitle"
+          value={form.scheduled_station_aetitle}
+          onChange={handleChange}
+          list="mwl-station-ae-options"
+          placeholder="e.g. CT_ROOM_1"
+        />
+        <datalist id="mwl-station-ae-options">
+          {filteredStations.map((o) => (
+            <option key={`${o.modality}-${o.aeTitle}`} value={o.aeTitle}>
+              {o.modality ? `${o.modality} - ${o.aeTitle}` : o.aeTitle}
+            </option>
+          ))}
+        </datalist>
       </div>
 
       <div className="btn-area">

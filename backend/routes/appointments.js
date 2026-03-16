@@ -21,6 +21,12 @@ async function getAppointmentColumns() {
   return new Set(result.rows.map((r) => r.column_name));
 }
 
+async function ensureAppointmentStationAetColumn() {
+  await pool.query(
+    "ALTER TABLE appointments ADD COLUMN IF NOT EXISTS scheduled_station_aetitle text"
+  );
+}
+
 function pickFromRow(row, keys, fallback = "") {
   for (const key of keys) {
     if (row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== "") {
@@ -75,6 +81,9 @@ function mapAppointmentRow(row) {
     modality: String(pickFromRow(row, ["modality"], "")),
     doctor: String(pickFromRow(row, ["doctor", "referring_doctor", "attending_physician"], "")),
     status: String(pickFromRow(row, ["status"], "Pending")),
+    scheduled_station_aetitle: String(
+      pickFromRow(row, ["scheduled_station_aetitle", "station_aet", "station_aetitle"], "")
+    ),
   };
 }
 
@@ -201,6 +210,7 @@ router.get("/", async (req, res) => {
 
 router.post("/", async (req, res) => {
   try {
+    await ensureAppointmentStationAetColumn();
     const {
       patientId,
       patientName,
@@ -210,6 +220,7 @@ router.post("/", async (req, res) => {
       doctor,
       status,
       date,
+      scheduled_station_aetitle,
     } = req.body || {};
 
     if (!patientId || !date) {
@@ -276,6 +287,12 @@ router.post("/", async (req, res) => {
     setFirstAvailable(payload, columns, ["appointment_time", "time"], normalizeTimeForDb(time));
     setFirstAvailable(payload, columns, ["modality"], modality || null);
     setFirstAvailable(payload, columns, ["doctor", "referring_doctor", "attending_physician"], doctor || null);
+    setFirstAvailable(
+      payload,
+      columns,
+      ["scheduled_station_aetitle", "station_aet", "station_aetitle"],
+      scheduled_station_aetitle || null
+    );
     setFirstAvailable(payload, columns, ["status"], status || "Pending");
     setFirstAvailable(payload, columns, ["updated_at"], new Date());
 
@@ -315,6 +332,7 @@ router.post("/", async (req, res) => {
 
 router.put("/:id", async (req, res) => {
   try {
+    await ensureAppointmentStationAetColumn();
     const { id } = req.params;
     const {
       patientId,
@@ -325,6 +343,7 @@ router.put("/:id", async (req, res) => {
       doctor,
       status,
       date,
+      scheduled_station_aetitle,
     } = req.body || {};
 
     const columns = await getAppointmentColumns();
@@ -342,6 +361,13 @@ router.put("/:id", async (req, res) => {
     if (time !== undefined) setFirstAvailable(payload, columns, ["appointment_time", "time"], normalizeTimeForDb(time));
     if (modality !== undefined) setFirstAvailable(payload, columns, ["modality"], modality || null);
     if (doctor !== undefined) setFirstAvailable(payload, columns, ["doctor", "referring_doctor", "attending_physician"], doctor || null);
+    if (scheduled_station_aetitle !== undefined)
+      setFirstAvailable(
+        payload,
+        columns,
+        ["scheduled_station_aetitle", "station_aet", "station_aetitle"],
+        scheduled_station_aetitle || null
+      );
     if (status !== undefined) setFirstAvailable(payload, columns, ["status"], status || "Pending");
     setFirstAvailable(payload, columns, ["updated_at"], new Date());
 
