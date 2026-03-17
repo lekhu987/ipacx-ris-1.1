@@ -10,10 +10,22 @@ const { logAction } = require("../utils/auditLogger");
    ORTHANC CONFIG
 ====================================================== */
 const ORTHANC_URL = (process.env.ORTHANC_URL || "http://192.168.1.34:8042/").replace(/\/?$/, "/");
-const ORTHANC_AUTH = {
-  username: process.env.ORTHANC_USER || "lekhana",
-  password: process.env.ORTHANC_PASS || "lekhana",
-};
+const ORTHANC_USER = process.env.ORTHANC_USER || "";
+const ORTHANC_PASS = process.env.ORTHANC_PASS || "";
+const DCM4CHEE_USER = process.env.DCM4CHEE_USER || "";
+const DCM4CHEE_PASS = process.env.DCM4CHEE_PASS || "";
+
+function orthancAuthConfig() {
+  if (!ORTHANC_USER || !ORTHANC_PASS) return {};
+  return { auth: { username: ORTHANC_USER, password: ORTHANC_PASS } };
+}
+
+function dcm4cheeAuthConfig(username, password) {
+  const user = username || DCM4CHEE_USER;
+  const pass = password || DCM4CHEE_PASS;
+  if (!user || !pass) return {};
+  return { auth: { username: user, password: pass } };
+}
 
 /* ======================================================
    Helper
@@ -153,7 +165,7 @@ router.post("/test", async (req, res) => {
       const { data: ids } = await axios.post(
         `http://${ip_address}:${port}/tools/find`,
         { Level: "Study", Query: {}, Limit: 1 }, // limit to 1 study for testing
-        { auth: ORTHANC_AUTH }
+        orthancAuthConfig()
       );
       return res.json({ success: true, message: "Orthanc reachable and query successful", studyCount: ids.length });
     }
@@ -161,7 +173,7 @@ router.post("/test", async (req, res) => {
     if (pacs_type === "DCM4CHEE") {
       const qidoUrl = `http://${ip_address}:${port}/dcm4chee-arc/aets/${ae_title}/rs/studies?limit=1`;
       const response = await axios.get(qidoUrl, {
-        auth: { username: "pacs", password: "pacs" },
+        ...dcm4cheeAuthConfig(),
         headers: { Accept: "application/dicom+json" },
       });
 
@@ -199,12 +211,12 @@ router.get("/studies", async (req, res) => {
           const { data: ids } = await axios.post(
             `${ORTHANC_URL}tools/find`,
             payload,
-            { auth: ORTHANC_AUTH }
+            orthancAuthConfig()
           );
 
           const studies = await Promise.all(
             ids.map(async (id) => {
-              const { data } = await axios.get(`${ORTHANC_URL}studies/${id}`, { auth: ORTHANC_AUTH });
+              const { data } = await axios.get(`${ORTHANC_URL}studies/${id}`, orthancAuthConfig());
 
               // modality fix
               let modality = "N/A";
@@ -212,7 +224,10 @@ router.get("/studies", async (req, res) => {
                 modality = data.ModalitiesInStudy.join(",");
               } else if (Array.isArray(data.Series) && data.Series.length > 0) {
                 try {
-                  const { data: series } = await axios.get(`${ORTHANC_URL}series/${data.Series[0]}`, { auth: ORTHANC_AUTH });
+                const { data: series } = await axios.get(
+                  `${ORTHANC_URL}series/${data.Series[0]}`,
+                  orthancAuthConfig()
+                );
                   modality = series.MainDicomTags?.Modality || "N/A";
                 } catch {}
               }
@@ -241,7 +256,7 @@ router.get("/studies", async (req, res) => {
           if (startDate && endDate) params.StudyDate = `${startDate}-${endDate}`;
 
           const response = await axios.get(qidoUrl, {
-            auth: { username: pacs.username || "pacs", password: pacs.password || "pacs" }, // optionally store creds per PACS
+            ...dcm4cheeAuthConfig(pacs.username, pacs.password),
             params,
             headers: { Accept: "application/dicom+json" },
           });
@@ -296,16 +311,20 @@ router.post("/:id/sync", async (req, res) => {
     if (pacs.pacs_type === "ORTHANC") {
       const orthancUrl = `http://${pacs.ip_address}:${pacs.port}/`; // optional override from DB
       const orthancAuth = {
-        username: pacs.username || ORTHANC_AUTH.username,
-        password: pacs.password || ORTHANC_AUTH.password,
+        username: pacs.username || ORTHANC_USER,
+        password: pacs.password || ORTHANC_PASS,
       };
 
       try {
-        const { data: ids } = await axios.get(`${orthancUrl}studies`, { auth: orthancAuth });
+        const { data: ids } = await axios.get(`${orthancUrl}studies`, {
+          ...(orthancAuth.username && orthancAuth.password ? { auth: orthancAuth } : {}),
+        });
 
         for (const id of ids) {
           try {
-            const { data } = await axios.get(`${orthancUrl}studies/${id}`, { auth: orthancAuth });
+            const { data } = await axios.get(`${orthancUrl}studies/${id}`, {
+              ...(orthancAuth.username && orthancAuth.password ? { auth: orthancAuth } : {}),
+            });
 
             const p = data.PatientMainDicomTags || {};
             const s = data.MainDicomTags || {};
@@ -347,7 +366,7 @@ router.post("/:id/sync", async (req, res) => {
 
       try {
         const response = await axios.get(qidoUrl, {
-          auth: { username: pacs.username || "pacs", password: pacs.password || "pacs" },
+          ...dcm4cheeAuthConfig(pacs.username, pacs.password),
           params: { includefield: "all", limit: 200 },
           headers: { Accept: "application/dicom+json" },
         });

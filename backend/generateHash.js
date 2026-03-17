@@ -1,6 +1,12 @@
-const bcrypt = require('bcryptjs');
+const bcrypt = require("bcryptjs");
 
-const password = 'admin123'; // replace with your desired password
-const hash = bcrypt.hashSync(password, 10); // 10 is the salt rounds
+const password = process.env.HASH_PASSWORD || "";
+if (!password) {
+  console.error("Set HASH_PASSWORD to generate a bcrypt hash.");
+  process.exit(1);
+}
 
-console.log('Hashed password:', hash);
+const saltRounds = Number(process.env.HASH_SALT_ROUNDS || 10);
+const hash = bcrypt.hashSync(password, saltRounds);
+
+console.log("Hashed password:", hash);

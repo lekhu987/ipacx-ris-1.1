@@ -298,6 +298,13 @@ function startAuditArchiveScheduler() {
 }
 
 function getActorFromReq(req) {
+  if (req?.user) {
+    return {
+      username: String(req.user.username || "").trim() || null,
+      role: String(req.user.role || "").trim() || null,
+      session_id: String(req.user.session_id || "").trim() || null,
+    };
+  }
   const username = String(req.headers["x-audit-username"] || "").trim() || null;
   const role = String(req.headers["x-audit-role"] || "").trim() || null;
   const session_id = String(req.headers["x-audit-session"] || "").trim() || null;

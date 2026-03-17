@@ -5,16 +5,67 @@ const pool = require("../db");
 const { getClientIp, newSessionId, writeAuditLog } = require("../utils/auditLogger");
 const router = express.Router();
 
+function getJwtSecret() {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || !String(secret).trim()) return null;
+  return String(secret);
+}
+
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const MAX_LOGIN_ATTEMPTS = 5;
+const loginAttempts = new Map();
+
+function isRateLimited(ip) {
+  const entry = loginAttempts.get(ip);
+  if (!entry) return false;
+  const now = Date.now();
+  if (now - entry.firstAttempt > LOGIN_WINDOW_MS) {
+    loginAttempts.delete(ip);
+    return false;
+  }
+  return entry.count >= MAX_LOGIN_ATTEMPTS;
+}
+
+function recordFailedAttempt(ip) {
+  const now = Date.now();
+  const entry = loginAttempts.get(ip);
+  if (!entry || now - entry.firstAttempt > LOGIN_WINDOW_MS) {
+    loginAttempts.set(ip, { count: 1, firstAttempt: now });
+  } else {
+    entry.count += 1;
+  }
+}
+
+function clearAttempts(ip) {
+  loginAttempts.delete(ip);
+}
+
 // =======================
 // LOGIN ROUTE
 // =======================
 router.post("/login", async (req, res) => {
   try {
+    const jwtSecret = getJwtSecret();
+    if (!jwtSecret) {
+      return res.status(500).json({ message: "JWT_SECRET is not configured" });
+    }
     const { username, password } = req.body;
     const ipAddress = getClientIp(req);
     const userAgent = req.headers["user-agent"] || "";
 
+    if (isRateLimited(ipAddress)) {
+      await writeAuditLog({
+        event: "LOGIN_FAILED",
+        username: username || null,
+        details: { reason: "rate_limited" },
+        ip_address: ipAddress,
+        user_agent: userAgent,
+      });
+      return res.status(429).json({ message: "Too many login attempts. Try again later." });
+    }
+
     if (!username || !password) {
+      recordFailedAttempt(ipAddress);
       await writeAuditLog({
         event: "LOGIN_FAILED",
         username: username || null,
@@ -35,6 +86,7 @@ router.post("/login", async (req, res) => {
     );
 
     if (result.rows.length === 0) {
+      recordFailedAttempt(ipAddress);
       await writeAuditLog({
         event: "LOGIN_FAILED",
         username,
@@ -48,6 +100,7 @@ router.post("/login", async (req, res) => {
     const user = result.rows[0];
 
     if (!user.is_active) {
+      recordFailedAttempt(ipAddress);
       await writeAuditLog({
         event: "LOGIN_FAILED",
         username: user.username,
@@ -61,6 +114,7 @@ router.post("/login", async (req, res) => {
 
     const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) {
+      recordFailedAttempt(ipAddress);
       await writeAuditLog({
         event: "LOGIN_FAILED",
         username: user.username,
@@ -92,9 +146,11 @@ router.post("/login", async (req, res) => {
         role: user.role,
         session_id: sessionId
       },
-      process.env.JWT_SECRET || "your-secret-key",
+      jwtSecret,
       { expiresIn: "24h" }
     );
+
+    clearAttempts(ipAddress);
 
     res.json({
       success: true,
@@ -148,12 +204,16 @@ router.post("/logout", async (req, res) => {
 // =======================
 router.get("/verify", (req, res) => {
   try {
+    const jwtSecret = getJwtSecret();
+    if (!jwtSecret) {
+      return res.status(500).json({ message: "JWT_SECRET is not configured" });
+    }
     const token = req.headers.authorization?.split(" ")[1];
     if (!token) {
       return res.status(401).json({ message: "No token provided" });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || "your-secret-key");
+    const decoded = jwt.verify(token, jwtSecret);
     res.json({ valid: true, user: decoded });
   } catch (err) {
     console.error("Token verification error:", err.message);

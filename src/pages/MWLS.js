@@ -131,12 +131,32 @@ export default function MWLS() {
     ).length,
   };
 
-  const openNew = () => {
+  const openNew = async () => {
+    let nextAccession = "";
+    let nextPatientId = "";
+    try {
+      const [accRes, pidRes] = await Promise.allSettled([
+        axiosInstance.get("/mwl/next-accession"),
+        axiosInstance.get("/mwl/next-patient-id"),
+      ]);
+      if (accRes.status === "fulfilled") {
+        nextAccession = accRes.value?.data?.accession_number || "";
+      } else {
+        console.error("load next accession", accRes.reason);
+      }
+      if (pidRes.status === "fulfilled") {
+        nextPatientId = pidRes.value?.data?.patient_id || "";
+      } else {
+        console.error("load next patient id", pidRes.reason);
+      }
+    } catch (err) {
+      console.error("load next ids", err);
+    }
     setEditing({
       pacs_id: null,
-      accession_number: "",
+      accession_number: nextAccession,
       study_instance_uid: "",
-      patient_id: "",
+      patient_id: nextPatientId,
       patient_name: "",
       modality: "CT",
       scheduled_datetime: dayjs().format("YYYY-MM-DDTHH:mm"),
@@ -437,6 +457,15 @@ export default function MWLS() {
                         {reviewItem.modality}
                       </div>
                     </div>
+                    <div>
+                      <div className="mwl-review-label">Scanner AE</div>
+                      <div className="mwl-review-value">
+                        {reviewItem.scheduled_station_aetitle ||
+                          reviewItem.scheduledstationaetitle ||
+                          reviewItem.station_aet ||
+                          "-"}
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div className="mwl-review-note">
@@ -471,6 +500,47 @@ export default function MWLS() {
 
 function MwlEditor({ initial, modalities, onSaved, onCancel }) {
   const [form, setForm] = useState(initial);
+  const [stationOptions, setStationOptions] = useState([]);
+
+  useEffect(() => {
+    let active = true;
+    const loadStations = async () => {
+      try {
+        const res = await axiosInstance.get("/mwl-targets");
+        const rows = Array.isArray(res.data?.data) ? res.data.data : [];
+        const options = rows
+          .filter((r) => r.is_active !== false)
+          .map((r) => ({
+            modality: String(r.modality_code || "").toUpperCase(),
+            aeTitle: String(
+              r.manual_called_ae || r.manual_calling_ae || r.manual_ae_title || ""
+            ).trim(),
+          }))
+          .filter((o) => o.aeTitle);
+        if (active) setStationOptions(options);
+      } catch (err) {
+        if (active) setStationOptions([]);
+      }
+    };
+    loadStations();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!form.modality) return;
+    if (String(form.scheduled_station_aetitle || "").trim()) return;
+    const key = String(form.modality || "").toUpperCase();
+    const match = stationOptions.find((o) => o.modality === key);
+    if (match?.aeTitle) {
+      setForm((prev) => ({ ...prev, scheduled_station_aetitle: match.aeTitle }));
+    }
+  }, [form.modality, form.scheduled_station_aetitle, stationOptions]);
+
+  const filteredStations = stationOptions.filter((o) =>
+    form.modality ? o.modality === String(form.modality || "").toUpperCase() : true
+  );
 
   const save = async () => {
     try {
@@ -520,14 +590,22 @@ function MwlEditor({ initial, modalities, onSaved, onCancel }) {
       </div>
 
       <div className="mwl-field">
-        <label>Scheduled Station AE Title</label>
+        <label>Scanner / Room AE Title</label>
         <input
           value={form.scheduled_station_aetitle ?? ""}
           onChange={(e) =>
             setForm({ ...form, scheduled_station_aetitle: e.target.value })
           }
-          placeholder="e.g. MWL_SERVER or CT_ROOM_1"
+          list="mwl-station-ae-options"
+          placeholder="e.g. CT_ROOM_1"
         />
+        <datalist id="mwl-station-ae-options">
+          {filteredStations.map((o) => (
+            <option key={`${o.modality}-${o.aeTitle}`} value={o.aeTitle}>
+              {o.modality ? `${o.modality} - ${o.aeTitle}` : o.aeTitle}
+            </option>
+          ))}
+        </datalist>
       </div>
 
       <div className="mwl-field">

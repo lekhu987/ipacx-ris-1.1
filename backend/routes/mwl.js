@@ -12,6 +12,8 @@ const ORTHANC_AUTH = {
   password: process.env.ORTHANC_PASS,
 };
 const DEFAULT_MWL_TARGET_AE = process.env.DEFAULT_MWL_TARGET_AE || "IPACXPACS";
+const ACCESSION_SEQ_NAME = "mwl_accession_seq";
+const ACCESSION_START = 100001;
 
 async function ensureMwlDatetimeColumn() {
   await pool.query(
@@ -27,6 +29,64 @@ async function ensureMwlStationAetColumn() {
   await pool.query(
     "ALTER TABLE mwl ADD COLUMN IF NOT EXISTS scheduledstationaetitle text"
   );
+}
+
+async function ensureAccessionSequence() {
+  await pool.query(
+    `CREATE SEQUENCE IF NOT EXISTS ${ACCESSION_SEQ_NAME} START WITH ${ACCESSION_START} INCREMENT BY 1`
+  );
+  try {
+    const maxRes = await pool.query(
+      "SELECT MAX(CASE WHEN accessionnumber ~ '^[0-9]+$' THEN accessionnumber::bigint END) AS max_acc FROM mwl"
+    );
+    const maxAcc = maxRes.rows?.[0]?.max_acc;
+    if (maxAcc && maxAcc >= ACCESSION_START) {
+      await pool.query(`SELECT setval('${ACCESSION_SEQ_NAME}', $1, true)`, [maxAcc]);
+    }
+  } catch (err) {
+    console.error("ensure accession sequence", err.message);
+  }
+}
+
+function pad3(n) {
+  return String(n).padStart(3, "0");
+}
+
+function buildPatientId(year, month, seq) {
+  return `${year}${String(month).padStart(2, "0")}${pad3(seq)}`;
+}
+
+async function generateNextPatientId() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const prefix = `${year}${String(month).padStart(2, "0")}`;
+
+  const result = await pool.query(
+    `
+    SELECT patient_id
+    FROM patients
+    WHERE patient_id LIKE $1
+    ORDER BY patient_id DESC
+    LIMIT 1
+    `,
+    [`${prefix}%`]
+  );
+
+  let nextSeq = 1;
+  if (result.rowCount > 0 && result.rows[0]?.patient_id) {
+    const raw = String(result.rows[0].patient_id);
+    if (raw.includes("/")) {
+      const parts = raw.split("/");
+      const last = Number(parts[2]);
+      if (!Number.isNaN(last)) nextSeq = last + 1;
+    } else {
+      const last = Number(raw.slice(-3));
+      if (!Number.isNaN(last)) nextSeq = last + 1;
+    }
+  }
+
+  return buildPatientId(year, month, nextSeq);
 }
 
 async function backfillSchedulingDatetime() {
@@ -183,10 +243,14 @@ router.post("/", async (req, res) => {
     await ensureMwlDatetimeColumn();
     await ensureMwlStatusColumn();
     await ensureMwlStationAetColumn();
+    await ensureAccessionSequence();
     await backfillSchedulingDatetime();
     const entry = normalizeInput(req.body);
     if (!entry.patient_name || !entry.modality) {
       return res.status(400).json({ error: "Missing required fields" });
+    }
+    if (!String(entry.patient_id || "").trim()) {
+      entry.patient_id = await generateNextPatientId();
     }
 
     const result = await pool.query(
@@ -194,10 +258,12 @@ router.post("/", async (req, res) => {
        (PatientID, PatientName, PatientSex, PatientAge,
         AccessionNumber, StudyDescription, SchedulingDate, scheduling_datetime,
         Modality, BodyPartExamined, ReferringPhysician, status, ScheduledStationAETitle)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       VALUES ($1,$2,$3,$4,
+               COALESCE(NULLIF($5::text, ''), nextval('${ACCESSION_SEQ_NAME}')::text),
+               $6,$7,$8,$9,$10,$11,$12,$13)
        RETURNING *`,
       [
-        entry.patient_id || `P${Date.now()}`,
+        entry.patient_id || "",
         entry.patient_name,
         entry.patient_sex || "O",
         entry.patient_age || "N/A",
@@ -225,10 +291,14 @@ router.post("/register", async (req, res) => {
     await ensureMwlDatetimeColumn();
     await ensureMwlStatusColumn();
     await ensureMwlStationAetColumn();
+    await ensureAccessionSequence();
     await backfillSchedulingDatetime();
     const entry = normalizeInput(req.body);
     if (!entry.patient_name || !entry.modality) {
       return res.status(400).json({ error: "PatientName and Modality are required" });
+    }
+    if (!String(entry.patient_id || "").trim()) {
+      entry.patient_id = await generateNextPatientId();
     }
 
     const created = await pool.query(
@@ -236,10 +306,12 @@ router.post("/register", async (req, res) => {
        (PatientID, PatientName, PatientSex, PatientAge,
         AccessionNumber, StudyDescription, SchedulingDate, scheduling_datetime,
         Modality, BodyPartExamined, ReferringPhysician, status, ScheduledStationAETitle)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+       VALUES ($1,$2,$3,$4,
+               COALESCE(NULLIF($5::text, ''), nextval('${ACCESSION_SEQ_NAME}')::text),
+               $6,$7,$8,$9,$10,$11,$12,$13)
        RETURNING *`,
       [
-        entry.patient_id || `P${Date.now()}`,
+        entry.patient_id || "",
         entry.patient_name,
         entry.patient_sex || "O",
         entry.patient_age || "N/A",
@@ -287,6 +359,29 @@ router.post("/register", async (req, res) => {
   } catch (err) {
     console.error("MWL register error:", err.message);
     return res.status(500).json({ success: false, error: "MWL register failed" });
+  }
+});
+
+router.get("/next-accession", async (req, res) => {
+  try {
+    await ensureAccessionSequence();
+    const result = await pool.query(
+      `SELECT nextval('${ACCESSION_SEQ_NAME}')::text AS accession_number`
+    );
+    return res.json({ accession_number: result.rows?.[0]?.accession_number || "" });
+  } catch (err) {
+    console.error("MWL next accession error:", err.message);
+    return res.status(500).json({ error: "Failed to generate accession" });
+  }
+});
+
+router.get("/next-patient-id", async (req, res) => {
+  try {
+    const patientId = await generateNextPatientId();
+    return res.json({ patient_id: patientId || "" });
+  } catch (err) {
+    console.error("MWL next patient id error:", err.message);
+    return res.status(500).json({ error: "Failed to generate patient id" });
   }
 });
 
@@ -465,6 +560,12 @@ router.post("/:id/send", async (req, res) => {
       [key]
     );
     const targetConfig = targetConfigResult.rows[0] || null;
+    if (!targetConfig) {
+      return res.status(400).json({
+        error: `No active MWL mapping found for modality ${key}`,
+        details: { modality: key },
+      });
+    }
     if (!orthancModalityName && targetConfig?.orthanc_modality_name) {
       orthancModalityName = targetConfig.orthanc_modality_name;
     }
@@ -542,36 +643,10 @@ router.post("/:id/send", async (req, res) => {
     }
 
     if (!targetPacs) {
-      target = orthancModalityName || MODALITY_MAP[key] || DEFAULT_MWL_TARGET_AE;
-      if (!target) return res.status(400).json({ error: "Unsupported modality" });
-
-      const pacsResult = await pool.query(
-        `
-        SELECT *
-        FROM pacs
-        WHERE is_active = true
-          AND (
-            UPPER(COALESCE(ae_title, '')) = UPPER($1)
-            OR UPPER(COALESCE(pacs_name, '')) = UPPER($1)
-          )
-        ORDER BY id ASC
-        LIMIT 1
-        `,
-        [target]
-      );
-      targetPacs = pacsResult.rows[0] || null;
-      if (targetPacs) targetServer = `${targetPacs.ip_address}:${targetPacs.port}`;
-    }
-
-    if (!targetPacs) {
-      const fallback = await pool.query(
-        `SELECT * FROM pacs WHERE is_active = true ORDER BY id ASC LIMIT 1`
-      );
-      targetPacs = fallback.rows[0] || null;
-      if (targetPacs && !target) {
-        target = targetPacs.ae_title || targetPacs.pacs_name || "fallback";
-        targetServer = `${targetPacs.ip_address}:${targetPacs.port}`;
-      }
+      return res.status(400).json({
+        error: `No MWL target configured for modality ${key}`,
+        details: { modality: key },
+      });
     }
 
     // Preferred: push MWL JSON to selected target PACS endpoint.

@@ -52,11 +52,28 @@ export default function ReportingPage() {
   const toggleSelectReport = (report) => {
     setSelectedReports([report.id]); // always replace with the clicked report
   };
- const handlePrintReport = () => {
-  if (!selectedReports.length) return;
-  const reportId = selectedReports[0];
-  window.open(`${api.defaults.baseURL}/api/reports/${reportId}/pdf/print`, "_blank");
-};
+  const openReportPdf = async (reportId, { print = false } = {}) => {
+    if (!reportId) return;
+    const path = print
+      ? `/api/reports/${reportId}/pdf/print`
+      : `/api/reports/${reportId}/pdf`;
+    try {
+      const { data } = await api.get(path, { responseType: "blob" });
+      const blobUrl = URL.createObjectURL(
+        new Blob([data], { type: "application/pdf" })
+      );
+      window.open(blobUrl, "_blank");
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60 * 1000);
+    } catch (err) {
+      console.error("Failed to open report PDF:", err);
+      alert("Failed to open report PDF. Please login again or check permissions.");
+    }
+  };
+  const handlePrintReport = () => {
+    if (!selectedReports.length) return;
+    const reportId = selectedReports[0];
+    openReportPdf(reportId, { print: true });
+  };
 
   useEffect(() => {
     setFilterFromDate(getPastDateInput(7));
@@ -327,10 +344,7 @@ export default function ReportingPage() {
    <button
   className="icon-btn"
   title="Preview Report"
-  onClick={() => {
-    const reportId = r.id;
-    window.open(`${api.defaults.baseURL}/api/reports/${reportId}/pdf`, "_blank");
-  }}
+  onClick={() => openReportPdf(r.id)}
 >
   📄
 </button>

@@ -1,10 +1,10 @@
-require("dotenv").config();
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 const express = require("express");
 const axios = require("axios");
 const cors = require("cors");
 const { Pool } = require("pg");
 const fs = require("fs");
-const path = require("path");
 const multer = require("multer");
 const bcrypt = require("bcryptjs");
 const app = express();
@@ -74,12 +74,15 @@ const pool = new Pool({
 // ======================================================
 const ORTHANC_URL = (process.env.ORTHANC_URL || "http://192.168.1.34:8042/").replace(/\/?$/, "/");
 const ORTHANC_AUTH = {
-  username: process.env.ORTHANC_USER || "lekhana",
-  password: process.env.ORTHANC_PASS || "lekhana",
+  username: process.env.ORTHANC_USER || "",
+  password: process.env.ORTHANC_PASS || "",
 };
 
 const authRoutes = require("./routes/auth");
 app.use("/api", authRoutes);
+
+const requireAuth = require("./middleware/auth");
+app.use("/api", requireAuth);
 
 const usersRoutes = require("./routes/users");
 app.use("/api/users", usersRoutes);

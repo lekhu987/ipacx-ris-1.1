@@ -72,7 +72,9 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
           .filter((r) => r.is_active !== false)
           .map((r) => ({
             modality: String(r.modality_code || "").toUpperCase(),
-            aeTitle: String(r.manual_calling_ae || r.manual_ae_title || "").trim(),
+            aeTitle: String(
+              r.manual_called_ae || r.manual_calling_ae || r.manual_ae_title || ""
+            ).trim(),
           }))
           .filter((o) => o.aeTitle);
         if (active) setStationOptions(options);

@@ -13,10 +13,13 @@ const generateFinalReportPDF = require("../utils/generateFinalReportPDF");
 // ORTHANC CONNECTION CONFIG
 // ======================================================
 const ORTHANC_URL = (process.env.ORTHANC_URL || "http://192.168.1.34:8042/").replace(/\/?$/, "/");
-const ORTHANC_AUTH = {
-  username: process.env.ORTHANC_USER || "lekhana",
-  password: process.env.ORTHANC_PASS || "lekhana",
-};
+const ORTHANC_USER = process.env.ORTHANC_USER || "";
+const ORTHANC_PASS = process.env.ORTHANC_PASS || "";
+
+function orthancAuthConfig() {
+  if (!ORTHANC_USER || !ORTHANC_PASS) return {};
+  return { auth: { username: ORTHANC_USER, password: ORTHANC_PASS } };
+}
 
 // 🔹 IMPORTANT: reuse SAME DB config
 const pool = new Pool({
@@ -46,22 +49,42 @@ const storage = multer.diskStorage({
       return cb(new Error("studyUID is required"));
     }
 
-    const ext = path.extname(file.originalname) || ".jpg";
+    const safeStudyUID = String(studyUID).replace(/[^A-Za-z0-9._-]/g, "");
+    if (!safeStudyUID) {
+      return cb(new Error("Invalid studyUID"));
+    }
+
+    const ext = path.extname(file.originalname || "").toLowerCase();
+    const allowedExt = new Set([".jpg", ".jpeg", ".png"]);
+    if (!allowedExt.has(ext)) {
+      return cb(new Error("Unsupported file type"));
+    }
 
     // find existing images for same studyUID
     const existingFiles = fs
       .readdirSync(reportImagesDir)
-      .filter(f => f.startsWith(studyUID));
+      .filter((f) => f.startsWith(safeStudyUID));
 
     const suffix = existingFiles.length
       ? `_${existingFiles.length + 1}`
       : "";
 
-    cb(null, `${studyUID}${suffix}${ext}`);
+    cb(null, `${safeStudyUID}${suffix}${ext}`);
   },
 });
 
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024, files: 10 },
+  fileFilter: (req, file, cb) => {
+    const ext = path.extname(file.originalname || "").toLowerCase();
+    const allowedExt = new Set([".jpg", ".jpeg", ".png"]);
+    if (!allowedExt.has(ext)) {
+      return cb(new Error("Unsupported file type"));
+    }
+    cb(null, true);
+  },
+});
 
 
 // ======================================================
@@ -226,16 +249,20 @@ approved_by: report.approved_by_signature
 router.get("/api/studies/:uid", async (req, res) => {
   try {
     const uid = req.params.uid;
-    const find = await axios.post(`${ORTHANC_URL}tools/find`, { Level: "Study", Query: { StudyInstanceUID: uid } }, { auth: ORTHANC_AUTH });
+    const find = await axios.post(
+      `${ORTHANC_URL}tools/find`,
+      { Level: "Study", Query: { StudyInstanceUID: uid } },
+      orthancAuthConfig()
+    );
     if (!find.data?.length) return res.json({ message: "No study found" });
 
     const studyId = find.data[0];
-    const study = await axios.get(`${ORTHANC_URL}studies/${studyId}`, { auth: ORTHANC_AUTH });
+    const study = await axios.get(`${ORTHANC_URL}studies/${studyId}`, orthancAuthConfig());
     const s = study.data;
 
     let modality = "", bodyPart = "";
     if (s.Series?.length) {
-      const series = await axios.get(`${ORTHANC_URL}series/${s.Series[0]}`, { auth: ORTHANC_AUTH });
+      const series = await axios.get(`${ORTHANC_URL}series/${s.Series[0]}`, orthancAuthConfig());
       modality = series.data.MainDicomTags.Modality || "";
       bodyPart = series.data.MainDicomTags.BodyPartExamined || "";
     }
