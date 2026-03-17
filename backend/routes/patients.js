@@ -106,6 +106,16 @@ async function generateNextPatientId() {
   return buildPatientId(year, month, nextSeq);
 }
 
+router.get("/next-id", async (req, res) => {
+  try {
+    const patientId = await generateNextPatientId();
+    return res.json({ patient_id: patientId || "" });
+  } catch (err) {
+    console.error("Patient next id error:", err.message);
+    return res.status(500).json({ error: "Failed to generate patient id" });
+  }
+});
+
 async function getPatientColumns() {
   const result = await pool.query(
     `

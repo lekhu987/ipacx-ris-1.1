@@ -64,6 +64,26 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
 
   useEffect(() => {
     let active = true;
+    const loadNextPatientId = async () => {
+      if (String(form.patientId || "").trim()) return;
+      try {
+        const res = await api.get("/api/patients/next-id");
+        const nextId = res.data?.patient_id || "";
+        if (active && nextId) {
+          setForm((prev) => ({ ...prev, patientId: nextId }));
+        }
+      } catch (err) {
+        // ignore - manual entry still possible
+      }
+    };
+    loadNextPatientId();
+    return () => {
+      active = false;
+    };
+  }, [form.patientId]);
+
+  useEffect(() => {
+    let active = true;
     const loadStations = async () => {
       try {
         const res = await api.get("/api/mwl-targets");

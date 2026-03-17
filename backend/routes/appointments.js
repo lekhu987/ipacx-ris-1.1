@@ -70,6 +70,47 @@ function formatDateForUi(value) {
   return String(value);
 }
 
+function pad3(n) {
+  return String(n).padStart(3, "0");
+}
+
+function buildPatientId(year, month, seq) {
+  return `${year}${String(month).padStart(2, "0")}${pad3(seq)}`;
+}
+
+async function generateNextPatientId() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const prefix = `${year}${String(month).padStart(2, "0")}`;
+
+  const result = await pool.query(
+    `
+    SELECT patient_id
+    FROM patients
+    WHERE patient_id LIKE $1
+    ORDER BY patient_id DESC
+    LIMIT 1
+    `,
+    [`${prefix}%`]
+  );
+
+  let nextSeq = 1;
+  if (result.rowCount > 0 && result.rows[0]?.patient_id) {
+    const raw = String(result.rows[0].patient_id);
+    if (raw.includes("/")) {
+      const parts = raw.split("/");
+      const last = Number(parts[2]);
+      if (!Number.isNaN(last)) nextSeq = last + 1;
+    } else {
+      const last = Number(raw.slice(-3));
+      if (!Number.isNaN(last)) nextSeq = last + 1;
+    }
+  }
+
+  return buildPatientId(year, month, nextSeq);
+}
+
 function mapAppointmentRow(row) {
   return {
     id: pickFromRow(row, ["id", "appointment_id"], ""),
@@ -211,7 +252,7 @@ router.get("/", async (req, res) => {
 router.post("/", async (req, res) => {
   try {
     await ensureAppointmentStationAetColumn();
-    const {
+    let {
       patientId,
       patientName,
       contact,
@@ -223,8 +264,12 @@ router.post("/", async (req, res) => {
       scheduled_station_aetitle,
     } = req.body || {};
 
-    if (!patientId || !date) {
-      return res.status(400).json({ success: false, error: "patientId and date are required" });
+    if (!date) {
+      return res.status(400).json({ success: false, error: "date is required" });
+    }
+
+    if (!String(patientId || "").trim()) {
+      patientId = await generateNextPatientId();
     }
 
     const columns = await getAppointmentColumns();

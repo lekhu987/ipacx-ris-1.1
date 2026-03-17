@@ -116,21 +116,23 @@ function MainLayout({ children }) {
           ))}
 
           {/* ADMIN */}
-          {role === "ADMIN" && !collapsed && (
-            <>
-              <div
-                className="ris-admin-title"
+          {role === "ADMIN" && (
+            <div className="ris-menu-item-wrapper">
+              <button
+                type="button"
+                className="ris-menu-item ris-admin-toggle"
                 onClick={(e) => {
                   e.stopPropagation();
                   setShowAdminMenu(!showAdminMenu);
                 }}
               >
                 <Settings size={16} />
-                <span>Admin Settings</span>
-              </div>
+                {!collapsed && <span>Admin Settings</span>}
+              </button>
+              {collapsed && <div className="ris-tooltip">Admin Settings</div>}
 
               {showAdminMenu && (
-                <div className="ris-admin-submenu">
+                <div className={`ris-admin-submenu ${collapsed ? "collapsed" : ""}`}>
                   <Link to="/admin/user-management">User Management</Link>
                   <Link to="/admin/templates">Template Management</Link>
                   <Link to="/admin/pacs-management">PACS Management</Link>
@@ -138,7 +140,7 @@ function MainLayout({ children }) {
                   <Link to="/admin/audit-logs">Audit Logs</Link>
                 </div>
               )}
-            </>
+            </div>
           )}
         </nav>
 
