@@ -6,7 +6,6 @@ const cors = require("cors");
 const { Pool } = require("pg");
 const fs = require("fs");
 const http = require("http");
-const https = require("https");
 const multer = require("multer");
 const bcrypt = require("bcryptjs");
 const app = express();
@@ -170,34 +169,10 @@ pool.connect()
     } else {
       console.warn("⚠️ React build/index.html not found. Run 'npm run build' (or use frontend dev server).");
     }
-    const resolveIfRelative = (maybePath) => {
-      if (!maybePath) return "";
-      return path.isAbsolute(maybePath)
-        ? maybePath
-        : path.join(__dirname, maybePath);
-    };
-
-    const sslKeyPath = resolveIfRelative(process.env.SSL_KEY_FILE);
-    const sslCertPath = resolveIfRelative(process.env.SSL_CRT_FILE);
-    const useHttps =
-      sslKeyPath &&
-      sslCertPath &&
-      fs.existsSync(sslKeyPath) &&
-      fs.existsSync(sslCertPath);
-
-    const server = useHttps
-      ? https.createServer(
-          {
-            key: fs.readFileSync(sslKeyPath),
-            cert: fs.readFileSync(sslCertPath),
-          },
-          app
-        )
-      : http.createServer(app);
+    const server = http.createServer(app);
 
     server.listen(PORT, "0.0.0.0", () => {
-      const protocol = useHttps ? "https" : "http";
-      console.log(`🚀 Server running on ${protocol}://0.0.0.0:${PORT}`);
+      console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
       startAuditArchiveScheduler();
       startMwlAutoPushScheduler();
       if (typeof mwlTargetsRoutes.syncLocalDimseScpState === "function") {
@@ -214,5 +189,6 @@ pool.connect()
   .catch(err => {
     console.error("🔴 Failed to connect to PostgreSQL:", err.message);
   });
+
 
 

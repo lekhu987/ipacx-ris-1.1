@@ -25,10 +25,10 @@ This README is written for client/demo and developer onboarding.
 - React 18 + CRACO
 - React Router v6
 - Axios
-- Express 5
+- Express
 - PostgreSQL (`pg`)
 - Multer (uploads)
-- PDFKit / Puppeteer (PDF related workflow)
+- PDF generation (backend utility)
 
 ## Project Structure
 
@@ -45,12 +45,23 @@ ipacx-ris 1.1/
 |   |   |-- patients.js
 |   |   |-- appointments.js
 |   |   |-- mwl.js
+|   |   |-- mwlDimse.js
+|   |   |-- mwlSettings.js
+|   |   |-- mwlTargets.js
+|   |   |-- mwlRoutes.js
 |   |   |-- pacs.js
 |   |   |-- reportTemplates.js
 |   |   |-- reports.js
 |   |   |-- audit.js
 |   |   |-- speech.js
 |   |   `-- publicReportSheet.js
+|   |-- services/
+|   |   |-- mwlAutoPush.js
+|   |   |-- mwlConnectivity.js
+|   |   |-- mwlDimseExport.js
+|   |   |-- mwlDimseScp.js
+|   |   |-- mwlExporter.js
+|   |   `-- mwlScpSync.js
 |   |-- utils/
 |   |   |-- auditLogger.js
 |   |   `-- generateFinalReportPDF.js
@@ -135,6 +146,7 @@ REPORT_SHEET_TOKEN=123456789
 
 ```env
 REACT_APP_API_URL=http://localhost:5000
+REACT_APP_API_BASE_URL=http://localhost:5000
 ```
 
 ## Local Setup
@@ -206,6 +218,9 @@ npm run build
   - `/api/reports/:id/pdf`
   - `/api/pacs/*`
   - `/api/mwl/*`
+  - `/api/mwl-dimse/*`
+  - `/api/mwl-settings/*`
+  - `/api/mwl-targets/*`
   - `/api/audit/*`
   - `/api/public/report-sheet/*`
 
@@ -233,4 +248,3 @@ npm run build
 - Do not commit real `.env` credentials.
 - Public report sheet token should be rotated in production.
 - Prefer HTTPS in production (reverse proxy with valid TLS certificate).
-c
