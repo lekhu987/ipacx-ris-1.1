@@ -123,6 +123,15 @@
   gap: 10px;
 }
 
+.mwl-test-status {
+  font-size: 12px;
+  color: #1f2937;
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  padding: 6px 10px;
+  border-radius: 6px;
+}
+
 .mwl-list-card {
   border: 1px solid #cbd5f5;
   border-radius: 8px;
@@ -160,6 +169,14 @@
   padding: 2px 8px;
   border-radius: 999px;
   border: 1px solid transparent;
+  background: #f3f4f6;
+  cursor: pointer;
+  line-height: 1.4;
+}
+
+.mwl-status:focus {
+  outline: 2px solid #93c5fd;
+  outline-offset: 1px;
 }
 
 .mwl-status.on {

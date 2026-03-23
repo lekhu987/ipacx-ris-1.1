@@ -7,7 +7,7 @@ async function ensureMwlTargetsTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS mwl_modality_targets (
       id SERIAL PRIMARY KEY,
-      modality_code VARCHAR(16) NOT NULL UNIQUE,
+      modality_code VARCHAR(16) NOT NULL,
       pacs_id INTEGER REFERENCES pacs(id) ON DELETE SET NULL,
       orthanc_modality_name VARCHAR(64),
       manual_host VARCHAR(128),
@@ -23,6 +23,25 @@ async function ensureMwlTargetsTable() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
+  `);
+  await pool.query(`
+    DO $$
+    DECLARE constraint_name text;
+    BEGIN
+      SELECT c.conname INTO constraint_name
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+      WHERE t.relname = 'mwl_modality_targets'
+        AND n.nspname = 'public'
+        AND c.contype = 'u'
+        AND pg_get_constraintdef(c.oid) ILIKE '%(modality_code)%'
+      LIMIT 1;
+
+      IF constraint_name IS NOT NULL THEN
+        EXECUTE 'ALTER TABLE mwl_modality_targets DROP CONSTRAINT ' || quote_ident(constraint_name);
+      END IF;
+    END $$;
   `);
   await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_host VARCHAR(128)");
   await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_port INTEGER");
@@ -57,7 +76,7 @@ async function ensureSettingsTable() {
   );
 }
 
-async function pickTargetPacs(modality) {
+async function pickTargetPacs(modality, scheduledStationAet) {
   await ensureMwlTargetsTable();
   const key = String(modality || "").toUpperCase();
 
@@ -67,11 +86,23 @@ async function pickTargetPacs(modality) {
     FROM mwl_modality_targets
     WHERE UPPER(modality_code) = UPPER($1)
       AND is_active = true
-    LIMIT 1
     `,
     [key]
   );
-  const targetConfig = targetConfigResult.rows[0] || null;
+  const targetCandidates = targetConfigResult.rows || [];
+  const desiredAet = String(scheduledStationAet || "").trim();
+  const targetConfig = desiredAet
+    ? targetCandidates.find((row) => {
+        const match = [
+          row.manual_called_ae,
+          row.manual_calling_ae,
+          row.manual_ae_title,
+        ]
+          .filter(Boolean)
+          .some((val) => String(val).trim().toUpperCase() === desiredAet.toUpperCase());
+        return match;
+      }) || targetCandidates[0] || null
+    : targetCandidates[0] || null;
 
   let targetPacs = null;
   if (targetConfig?.manual_host && targetConfig?.manual_port) {
@@ -142,7 +173,10 @@ async function processDueMwl() {
 
   for (const entry of dueRes.rows) {
     try {
-      const targetPacs = await pickTargetPacs(entry.modality || "");
+      const targetPacs = await pickTargetPacs(
+        entry.modality || "",
+        entry.scheduledstationaetitle || ""
+      );
       if (!targetPacs) {
         continue;
       }

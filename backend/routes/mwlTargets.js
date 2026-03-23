@@ -1,12 +1,38 @@
 const express = require("express");
 const router = express.Router();
 const pool = require("../db");
+const { startMwlDimseScp, stopMwlDimseScp } = require("../services/mwlDimseScp");
+
+const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "0.0.0.0"]);
+
+function isLocalDimseRow(row) {
+  const protocol = String(row.manual_protocol || row.manual_type || "")
+    .trim()
+    .toUpperCase();
+  if (protocol !== "DIMSE") return false;
+  const host = String(row.manual_host || "").trim().toLowerCase();
+  return !host || LOCAL_HOSTS.has(host);
+}
+
+async function syncLocalDimseScpState() {
+  await ensureMwlTargetsTable();
+  const result = await pool.query(
+    `
+    SELECT manual_protocol, manual_type, manual_host, is_active
+    FROM mwl_modality_targets
+    WHERE is_active = true
+    `
+  );
+  const hasLocalDimse = (result.rows || []).some(isLocalDimseRow);
+  if (hasLocalDimse) startMwlDimseScp();
+  else stopMwlDimseScp();
+}
 
 async function ensureMwlTargetsTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS mwl_modality_targets (
       id SERIAL PRIMARY KEY,
-      modality_code VARCHAR(16) NOT NULL UNIQUE,
+      modality_code VARCHAR(16) NOT NULL,
       pacs_id INTEGER REFERENCES pacs(id) ON DELETE SET NULL,
       orthanc_modality_name VARCHAR(64),
       manual_host VARCHAR(128),
@@ -22,6 +48,25 @@ async function ensureMwlTargetsTable() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
+  `);
+  await pool.query(`
+    DO $$
+    DECLARE constraint_name text;
+    BEGIN
+      SELECT c.conname INTO constraint_name
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+      WHERE t.relname = 'mwl_modality_targets'
+        AND n.nspname = 'public'
+        AND c.contype = 'u'
+        AND pg_get_constraintdef(c.oid) ILIKE '%(modality_code)%'
+      LIMIT 1;
+
+      IF constraint_name IS NOT NULL THEN
+        EXECUTE 'ALTER TABLE mwl_modality_targets DROP CONSTRAINT ' || quote_ident(constraint_name);
+      END IF;
+    END $$;
   `);
   await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_host VARCHAR(128)");
   await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_port INTEGER");
@@ -97,6 +142,7 @@ router.post("/", async (req, res) => {
   try {
     await ensureMwlTargetsTable();
     const {
+      id,
       modality_code,
       pacs_id,
       orthanc_modality_name,
@@ -124,26 +170,56 @@ router.post("/", async (req, res) => {
       }
     }
 
-    const result = await pool.query(
+    if (id) {
+      const updated = await pool.query(
+        `
+        UPDATE mwl_modality_targets
+        SET modality_code=$2,
+            pacs_id=$3,
+            orthanc_modality_name=$4,
+            manual_host=$5,
+            manual_port=$6,
+            manual_ae_title=$7,
+            manual_type=$8,
+            manual_protocol=$9,
+            manual_calling_ae=$10,
+            manual_called_ae=$11,
+            viewer_protocol=$12,
+            viewer_base_url=$13,
+            is_active=$14,
+            updated_at=NOW()
+        WHERE id=$1
+        RETURNING *
+        `,
+        [
+          Number(id),
+          modalityCode,
+          pacs_id ? Number(pacs_id) : null,
+          orthanc_modality_name || null,
+          manual_host || null,
+          manual_port ? Number(manual_port) : null,
+          manual_ae_title || null,
+          manual_type || null,
+          manual_protocol || null,
+          manual_calling_ae || null,
+          manual_called_ae || null,
+          viewer_protocol || null,
+          viewer_base_url || null,
+          Boolean(is_active),
+        ]
+      );
+      if (!updated.rows.length) {
+        return res.status(404).json({ success: false, error: "Mapping not found" });
+      }
+      await syncLocalDimseScpState();
+      return res.json({ success: true, data: updated.rows[0] });
+    }
+
+    const inserted = await pool.query(
       `
       INSERT INTO mwl_modality_targets
         (modality_code, pacs_id, orthanc_modality_name, manual_host, manual_port, manual_ae_title, manual_type, manual_protocol, manual_calling_ae, manual_called_ae, viewer_protocol, viewer_base_url, is_active, updated_at)
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW())
-      ON CONFLICT (modality_code)
-      DO UPDATE SET
-        pacs_id = EXCLUDED.pacs_id,
-        orthanc_modality_name = EXCLUDED.orthanc_modality_name,
-        manual_host = EXCLUDED.manual_host,
-        manual_port = EXCLUDED.manual_port,
-        manual_ae_title = EXCLUDED.manual_ae_title,
-        manual_type = EXCLUDED.manual_type,
-        manual_protocol = EXCLUDED.manual_protocol,
-        manual_calling_ae = EXCLUDED.manual_calling_ae,
-        manual_called_ae = EXCLUDED.manual_called_ae,
-        viewer_protocol = EXCLUDED.viewer_protocol,
-        viewer_base_url = EXCLUDED.viewer_base_url,
-        is_active = EXCLUDED.is_active,
-        updated_at = NOW()
       RETURNING *
       `,
       [
@@ -162,24 +238,29 @@ router.post("/", async (req, res) => {
         Boolean(is_active),
       ]
     );
-    return res.json({ success: true, data: result.rows[0] });
+    await syncLocalDimseScpState();
+    return res.json({ success: true, data: inserted.rows[0] });
   } catch (err) {
     console.error("MWL target save error:", err.message);
     return res.status(500).json({ success: false, error: "Failed to save MWL target" });
   }
 });
 
-router.delete("/:modalityCode", async (req, res) => {
+router.delete("/:id", async (req, res) => {
   try {
     await ensureMwlTargetsTable();
-    const modalityCode = String(req.params.modalityCode || "").trim().toUpperCase();
-    const deleted = await pool.query(
-      "DELETE FROM mwl_modality_targets WHERE UPPER(modality_code) = UPPER($1) RETURNING id",
-      [modalityCode]
-    );
+    const raw = String(req.params.id || "").trim();
+    const isNumeric = /^\d+$/.test(raw);
+    const deleted = isNumeric
+      ? await pool.query("DELETE FROM mwl_modality_targets WHERE id = $1 RETURNING id", [Number(raw)])
+      : await pool.query(
+          "DELETE FROM mwl_modality_targets WHERE UPPER(modality_code) = UPPER($1) RETURNING id",
+          [raw.toUpperCase()]
+        );
     if (!deleted.rows.length) {
       return res.status(404).json({ success: false, error: "Mapping not found" });
     }
+    await syncLocalDimseScpState();
     return res.json({ success: true });
   } catch (err) {
     console.error("MWL target delete error:", err.message);
@@ -188,3 +269,4 @@ router.delete("/:modalityCode", async (req, res) => {
 });
 
 module.exports = router;
+module.exports.syncLocalDimseScpState = syncLocalDimseScpState;

@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { spawnSync } = require("child_process");
 
 const DEFAULT_OUT_DIR = path.join(__dirname, "..", "..", "logs", "mwl-dimse");
 
@@ -54,22 +55,60 @@ function buildReadableLine(entry) {
   return parts.join(" | ");
 }
 
+function resolveDcmtkTool(tool) {
+  const binDir = process.env.DCMTK_BIN;
+  const exe = process.platform === "win32" ? `${tool}.exe` : tool;
+  return binDir ? path.join(binDir, exe) : tool;
+}
+
+function resolveWorklistOutDir(baseDir) {
+  const calledAe =
+    process.env.MWL_DIMSE_CALLED_AE ||
+    process.env.MWL_DIMSE_AE_TITLE ||
+    "WORKLIST";
+  const aeDir = path.join(baseDir, String(calledAe).trim() || "WORKLIST");
+  ensureDir(aeDir);
+  return aeDir;
+}
+
+function buildDicomFile(jsonPath, dcmPath) {
+  const tool = resolveDcmtkTool("json2dcm");
+  const result = spawnSync(tool, [jsonPath, dcmPath], { encoding: "utf8" });
+  if (result.error) {
+    return { ok: false, error: result.error.message || "json2dcm failed" };
+  }
+  if (typeof result.status === "number" && result.status !== 0) {
+    const errText = (result.stderr || "").toString().trim();
+    return { ok: false, error: errText || `json2dcm exited with ${result.status}` };
+  }
+  return { ok: true };
+}
+
 async function exportDimseWorklist(entry, options = {}) {
-  const outDir = options.outDir || process.env.MWL_DIMSE_OUT_DIR || DEFAULT_OUT_DIR;
-  ensureDir(outDir);
+  const baseDir = options.outDir || process.env.MWL_DIMSE_OUT_DIR || DEFAULT_OUT_DIR;
+  ensureDir(baseDir);
+  const outDir = resolveWorklistOutDir(baseDir);
 
   const baseName = `mwl_${entry.id || Date.now()}`;
   const jsonPath = path.join(outDir, `${baseName}.json`);
   const txtPath = path.join(outDir, `${baseName}.txt`);
+  const dcmPath = path.join(outDir, `${baseName}.dcm`);
 
   const dicomJson = buildDicomJson(entry);
   fs.writeFileSync(jsonPath, JSON.stringify(dicomJson, null, 2), "utf8");
   fs.writeFileSync(txtPath, buildReadableLine(entry) + "\n", "utf8");
 
+  const dcmResult = buildDicomFile(jsonPath, dcmPath);
+  if (!dcmResult.ok) {
+    console.warn("DIMSE export: failed to build DICOM file:", dcmResult.error);
+  }
+
   return {
     outDir,
+    baseDir,
     jsonPath,
     txtPath,
+    dcmPath: fs.existsSync(dcmPath) ? dcmPath : null,
     dicomJson,
   };
 }

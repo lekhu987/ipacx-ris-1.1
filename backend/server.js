@@ -5,6 +5,8 @@ const axios = require("axios");
 const cors = require("cors");
 const { Pool } = require("pg");
 const fs = require("fs");
+const http = require("http");
+const https = require("https");
 const multer = require("multer");
 const bcrypt = require("bcryptjs");
 const app = express();
@@ -14,13 +16,17 @@ const uploadSignature = require("./middleware/uploadSignature");
 
 const allowedOrigins = [
   process.env.FRONTEND_URL,
+  "https://localhost:3000",
+  "https://127.0.0.1:3000",
   "http://localhost:3000",
   "http://127.0.0.1:3000",
+  "https://localhost:5000",
+  "https://127.0.0.1:5000",
   "http://localhost:5000",
   "http://127.0.0.1:5000",
 ].filter(Boolean);
 
-const lanOriginPattern = /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:(3000|5000)$/;
+const lanOriginPattern = /^https?:\/\/192\.168\.\d{1,3}\.\d{1,3}:(3000|5000)$/;
 
 const corsOptions = {
   origin(origin, callback) {
@@ -81,6 +87,9 @@ const ORTHANC_AUTH = {
 const authRoutes = require("./routes/auth");
 app.use("/api", authRoutes);
 
+const mwlDimseRoutes = require("./routes/mwlDimse");
+app.use("/api/mwl-dimse", mwlDimseRoutes);
+
 const requireAuth = require("./middleware/auth");
 app.use("/api", requireAuth);
 
@@ -137,6 +146,7 @@ const auditRoutes = require("./routes/audit");
 app.use("/api/audit", auditRoutes);
 const { startAuditArchiveScheduler } = require("./utils/auditLogger");
 const { startMwlAutoPushScheduler } = require("./services/mwlAutoPush");
+const { startMwlDimseScp } = require("./services/mwlDimseScp");
 
 const publicReportSheetRoutes = require("./routes/publicReportSheet");
 app.use("/api/public/report-sheet", publicReportSheetRoutes);
@@ -160,13 +170,49 @@ pool.connect()
     } else {
       console.warn("⚠️ React build/index.html not found. Run 'npm run build' (or use frontend dev server).");
     }
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`🚀 Server running on port ${PORT}`);
+    const resolveIfRelative = (maybePath) => {
+      if (!maybePath) return "";
+      return path.isAbsolute(maybePath)
+        ? maybePath
+        : path.join(__dirname, maybePath);
+    };
+
+    const sslKeyPath = resolveIfRelative(process.env.SSL_KEY_FILE);
+    const sslCertPath = resolveIfRelative(process.env.SSL_CRT_FILE);
+    const useHttps =
+      sslKeyPath &&
+      sslCertPath &&
+      fs.existsSync(sslKeyPath) &&
+      fs.existsSync(sslCertPath);
+
+    const server = useHttps
+      ? https.createServer(
+          {
+            key: fs.readFileSync(sslKeyPath),
+            cert: fs.readFileSync(sslCertPath),
+          },
+          app
+        )
+      : http.createServer(app);
+
+    server.listen(PORT, "0.0.0.0", () => {
+      const protocol = useHttps ? "https" : "http";
+      console.log(`🚀 Server running on ${protocol}://0.0.0.0:${PORT}`);
       startAuditArchiveScheduler();
       startMwlAutoPushScheduler();
+      if (typeof mwlTargetsRoutes.syncLocalDimseScpState === "function") {
+        mwlTargetsRoutes
+          .syncLocalDimseScpState()
+          .catch((err) =>
+            console.error("Failed to sync local DIMSE SCP state:", err.message)
+          );
+      } else {
+        startMwlDimseScp();
+      }
     });
   })
   .catch(err => {
     console.error("🔴 Failed to connect to PostgreSQL:", err.message);
   });
+
 

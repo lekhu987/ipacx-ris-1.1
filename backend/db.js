@@ -1,6 +1,7 @@
 // backend/db.js
+const path = require("path");
 const { Pool } = require("pg");
-require("dotenv").config(); // load .env variables
+require("dotenv").config({ path: path.join(__dirname, ".env") }); // load backend/.env variables
 
 const pool = new Pool({
   host: process.env.POSTGRES_HOST || "localhost",

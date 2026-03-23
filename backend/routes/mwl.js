@@ -99,7 +99,7 @@ async function ensureMwlTargetsTable() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS mwl_modality_targets (
       id SERIAL PRIMARY KEY,
-      modality_code VARCHAR(16) NOT NULL UNIQUE,
+      modality_code VARCHAR(16) NOT NULL,
       pacs_id INTEGER REFERENCES pacs(id) ON DELETE SET NULL,
       orthanc_modality_name VARCHAR(64),
       manual_host VARCHAR(128),
@@ -115,6 +115,25 @@ async function ensureMwlTargetsTable() {
       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     )
+  `);
+  await pool.query(`
+    DO $$
+    DECLARE constraint_name text;
+    BEGIN
+      SELECT c.conname INTO constraint_name
+      FROM pg_constraint c
+      JOIN pg_class t ON t.oid = c.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+      WHERE t.relname = 'mwl_modality_targets'
+        AND n.nspname = 'public'
+        AND c.contype = 'u'
+        AND pg_get_constraintdef(c.oid) ILIKE '%(modality_code)%'
+      LIMIT 1;
+
+      IF constraint_name IS NOT NULL THEN
+        EXECUTE 'ALTER TABLE mwl_modality_targets DROP CONSTRAINT ' || quote_ident(constraint_name);
+      END IF;
+    END $$;
   `);
   await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_host VARCHAR(128)");
   await pool.query("ALTER TABLE mwl_modality_targets ADD COLUMN IF NOT EXISTS manual_port INTEGER");
@@ -551,15 +570,41 @@ router.post("/:id/send", async (req, res) => {
     const key = String(modality).toUpperCase();
     const targetConfigResult = await pool.query(
       `
-      SELECT modality_code, pacs_id, orthanc_modality_name, manual_host, manual_port, manual_ae_title, manual_type, manual_protocol, manual_calling_ae, manual_called_ae
-      FROM mwl_modality_targets
-      WHERE UPPER(modality_code) = UPPER($1)
-        AND is_active = true
-      LIMIT 1
+      SELECT
+        t.modality_code,
+        t.pacs_id,
+        t.orthanc_modality_name,
+        t.manual_host,
+        t.manual_port,
+        t.manual_ae_title,
+        t.manual_type,
+        t.manual_protocol,
+        t.manual_calling_ae,
+        t.manual_called_ae,
+        p.ae_title AS pacs_ae_title,
+        p.pacs_name AS pacs_name
+      FROM mwl_modality_targets t
+      LEFT JOIN pacs p ON p.id = t.pacs_id
+      WHERE UPPER(t.modality_code) = UPPER($1)
+        AND t.is_active = true
       `,
       [key]
     );
-    const targetConfig = targetConfigResult.rows[0] || null;
+    const targetCandidates = targetConfigResult.rows || [];
+    const desiredAet = String(entry.scheduledstationaetitle || "").trim();
+    const targetConfig = desiredAet
+      ? targetCandidates.find((row) => {
+          const match = [
+            row.manual_called_ae,
+            row.manual_calling_ae,
+            row.manual_ae_title,
+            row.pacs_ae_title,
+          ]
+            .filter(Boolean)
+            .some((val) => String(val).trim().toUpperCase() === desiredAet.toUpperCase());
+          return match;
+        }) || targetCandidates[0] || null
+      : targetCandidates[0] || null;
     if (!targetConfig) {
       return res.status(400).json({
         error: `No active MWL mapping found for modality ${key}`,
@@ -608,7 +653,12 @@ router.post("/:id/send", async (req, res) => {
           files: {
             json: exported.jsonPath,
             text: exported.txtPath,
+            dicom: exported.dcmPath,
             directory: exported.outDir,
+          },
+          scp: {
+            ae_title: process.env.MWL_DIMSE_AE_TITLE || "IPACX_MWL",
+            port: process.env.MWL_DIMSE_PORT || "11112",
           },
           target: `${targetConfig.manual_host}:${targetConfig.manual_port}`,
         });

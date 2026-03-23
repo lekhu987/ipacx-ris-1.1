@@ -48,6 +48,7 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
     scheduled_station_aetitle: "",
   });
   const [stationOptions, setStationOptions] = useState([]);
+  const [modalityOptions, setModalityOptions] = useState([]);
 
   useEffect(() => {
     if (!initialData) return;
@@ -88,6 +89,13 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
       try {
         const res = await api.get("/api/mwl-targets");
         const rows = Array.isArray(res.data?.data) ? res.data.data : [];
+        const activeRows = rows.filter((r) => r.is_active !== false);
+        const modalitySet = new Set(
+          activeRows
+            .map((r) => String(r.modality_code || "").toUpperCase())
+            .filter((m) => m && m !== "ALL")
+        );
+        if (active) setModalityOptions([...modalitySet]);
         const options = rows
           .filter((r) => r.is_active !== false)
           .map((r) => ({
@@ -99,7 +107,10 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
           .filter((o) => o.aeTitle);
         if (active) setStationOptions(options);
       } catch (err) {
-        if (active) setStationOptions([]);
+        if (active) {
+          setStationOptions([]);
+          setModalityOptions([]);
+        }
       }
     };
     loadStations();
@@ -112,25 +123,27 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
     if (!form.modality) return;
     if (String(form.scheduled_station_aetitle || "").trim()) return;
     const key = String(form.modality || "").toUpperCase();
-    const match = stationOptions.find((o) => o.modality === key);
+    const match =
+      stationOptions.find((o) => o.modality === key) ||
+      stationOptions.find((o) => o.modality === "ALL");
     if (match?.aeTitle) {
       setForm((prev) => ({ ...prev, scheduled_station_aetitle: match.aeTitle }));
     }
   }, [form.modality, form.scheduled_station_aetitle, stationOptions]);
 
-  const modalities = ["CT", "MRI", "X-Ray", "Ultrasound", "DEXA"];
+  const modalities = modalityOptions.length ? modalityOptions : ["CT", "MRI", "X-RAY", "ULTRASOUND", "DEXA"];
   const doctors = ["Dr. Smith", "Dr. Johnson", "Dr. Rakesh", "Dr. Priya", "Dr. Karthik"];
-  const modalityOptions = form.modality && !modalities.includes(form.modality)
+  const modalitySelectOptions = form.modality && !modalities.includes(form.modality)
     ? [form.modality, ...modalities]
     : modalities;
   const doctorOptions = form.doctor && !doctors.includes(form.doctor)
     ? [form.doctor, ...doctors]
     : doctors;
-  const filteredStations = stationOptions.filter((o) =>
-    form.modality
-      ? o.modality === String(form.modality || "").toUpperCase()
-      : true
-  );
+  const filteredStations = stationOptions.filter((o) => {
+    if (!form.modality) return true;
+    const key = String(form.modality || "").toUpperCase();
+    return o.modality === key || o.modality === "ALL";
+  });
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -247,7 +260,7 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
           <label>Modality</label>
           <select name="modality" value={form.modality} onChange={handleChange}>
             <option value="">Select</option>
-            {modalityOptions.map((m) => <option key={m}>{m}</option>)}
+            {modalitySelectOptions.map((m) => <option key={m}>{m}</option>)}
           </select>
         </div>
 

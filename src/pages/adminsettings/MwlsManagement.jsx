@@ -7,8 +7,8 @@ function MwlsManagement() {
   const [mappings, setMappings] = useState([]);
   const [loading, setLoading] = useState(false);
   const [modalityOptions, setModalityOptions] = useState([{ code: "ALL", name: "All Modalities" }]);
-
-  const [form, setForm] = useState({
+  const [testStatus, setTestStatus] = useState(null);
+  const buildEmptyForm = () => ({
     modality_code: "ALL",
     manual_host: "",
     manual_port: "",
@@ -20,6 +20,9 @@ function MwlsManagement() {
     viewer_protocol: "OHIF (Web-based)",
     is_active: true,
   });
+
+  const [form, setForm] = useState(buildEmptyForm);
+  const [editingId, setEditingId] = useState(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -65,6 +68,7 @@ function MwlsManagement() {
 
     try {
       await api.post("/api/mwl-targets", {
+        id: editingId,
         modality_code: form.modality_code || "ALL",
         manual_host: form.manual_host,
         manual_port: Number(form.manual_port),
@@ -76,7 +80,8 @@ function MwlsManagement() {
         viewer_protocol: form.viewer_protocol || null,
         is_active: form.is_active,
       });
-      setForm((prev) => ({ ...prev, manual_ae_title: "" }));
+      setForm(buildEmptyForm());
+      setEditingId(null);
       await loadData();
       alert("MWL target mapping saved");
     } catch (err) {
@@ -97,15 +102,78 @@ function MwlsManagement() {
       viewer_protocol: row.viewer_protocol || "OHIF (Web-based)",
       is_active: row.is_active !== false,
     });
+    setEditingId(row.id || null);
   };
 
-  const handleDelete = async (modalityCode) => {
-    if (!window.confirm(`Delete mapping for ${modalityCode}?`)) return;
+  const handleCancelEdit = () => {
+    setForm(buildEmptyForm());
+    setEditingId(null);
+  };
+
+  const handleToggleActive = async (row) => {
     try {
-      await api.delete(`/api/mwl-targets/${encodeURIComponent(modalityCode)}`);
+      await api.post("/api/mwl-targets", {
+        id: row.id,
+        modality_code: row.modality_code || "ALL",
+        pacs_id: row.pacs_id || null,
+        orthanc_modality_name: row.orthanc_modality_name || null,
+        manual_host: row.manual_host || row.ip_address || null,
+        manual_port: row.manual_port || row.port || null,
+        manual_ae_title: row.manual_ae_title || row.orthanc_modality_name || row.ae_title || null,
+        manual_type: row.manual_type || null,
+        manual_protocol: row.manual_protocol || null,
+        manual_calling_ae: row.manual_calling_ae || null,
+        manual_called_ae: row.manual_called_ae || null,
+        viewer_protocol: row.viewer_protocol || null,
+        viewer_base_url: row.viewer_base_url || null,
+        is_active: !(row.is_active !== false),
+      });
+      await loadData();
+    } catch (err) {
+      alert(err?.response?.data?.error || "Failed to update status");
+    }
+  };
+
+  const handleDelete = async (row) => {
+    if (!window.confirm(`Delete mapping for ${row.modality_code || "MWL"}?`)) return;
+    try {
+      await api.delete(`/api/mwl-targets/${encodeURIComponent(String(row.id || ""))}`);
       await loadData();
     } catch (err) {
       alert(err?.response?.data?.error || "Failed to delete mapping");
+    }
+  };
+
+  const runDimseTest = async (row, type) => {
+    try {
+      if (row.is_active === false) {
+        const msg = "This MWL mapping is inactive. Activate it to run tests.";
+        setTestStatus(msg);
+        alert(msg);
+        return;
+      }
+      const host = row.manual_host || row.ip_address || "127.0.0.1";
+      const port = row.manual_port || row.port || undefined;
+      const calledAe =
+        row.manual_called_ae ||
+        row.manual_ae_title ||
+        row.ae_title ||
+        "IPACX_MWL";
+      setTestStatus(`Running ${type.toUpperCase()} for ${row.modality_code || "MWL"}...`);
+      const res = await api.post("/api/mwl-dimse/test", {
+        type,
+        host,
+        port,
+        called_ae: calledAe,
+      });
+      const ok = res.data?.success;
+      const msg = ok ? `${type.toUpperCase()} OK` : `${type.toUpperCase()} FAILED`;
+      setTestStatus(msg);
+      alert(msg);
+    } catch (err) {
+      const msg = err?.response?.data?.error || err?.message || "Test failed";
+      setTestStatus(msg);
+      alert(msg);
     }
   };
 
@@ -309,12 +377,18 @@ function MwlsManagement() {
 
           <div className="mwl-form-actions">
             <button className="mwl-save-btn" onClick={handleSave} disabled={loading}>
-              {loading ? "Saving..." : "Save Server"}
+              {loading ? "Saving..." : editingId ? "Update Server" : "Save Server"}
             </button>
+            {editingId && (
+              <button className="mwl-link-btn" onClick={handleCancelEdit}>
+                Cancel
+              </button>
+            )}
           </div>
         </div>
 
         <div className="mwl-list">
+          {testStatus && <div className="mwl-test-status">{testStatus}</div>}
           {mappings.length === 0 ? (
             <div className="mwl-empty">No mappings configured</div>
           ) : (
@@ -347,14 +421,33 @@ function MwlsManagement() {
                     </div>
                   </div>
                   <div className="mwl-list-right">
-                    <div className={`mwl-status ${row.is_active ? "on" : "off"}`}>
+                    <button
+                      type="button"
+                      className={`mwl-status ${row.is_active ? "on" : "off"}`}
+                      onClick={() => handleToggleActive(row)}
+                      title="Toggle Active/Inactive"
+                    >
                       {row.is_active ? "Active" : "Inactive"}
-                    </div>
+                    </button>
                     <div className="mwl-card-actions">
+                      <button
+                        onClick={() => runDimseTest(row, "echo")}
+                        className="mwl-link-btn"
+                        title="Run echoscu"
+                      >
+                        Test Echo
+                      </button>
+                      <button
+                        onClick={() => runDimseTest(row, "find")}
+                        className="mwl-link-btn"
+                        title="Run findscu (MWL)"
+                      >
+                        Test MWL
+                      </button>
                       <button onClick={() => handleEdit(row)} className="mwl-link-btn">
                         Edit
                       </button>
-                      <button onClick={() => handleDelete(row.modality_code)} className="mwl-link-btn danger">
+                      <button onClick={() => handleDelete(row)} className="mwl-link-btn danger">
                         Delete
                       </button>
                     </div>
