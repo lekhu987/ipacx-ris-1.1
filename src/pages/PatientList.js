@@ -87,7 +87,7 @@ function PatientList() {
     payload.set("digital_signature", formData.digital_signature || "");
     payload.set("signature_file", formData.digital_signature || "");
     payload.set("photo_url", formData.photo_url || "");
-    payload.set("referring_doctor", formData.referring_doctor || formData.attending_physician || "");
+    payload.set("referring_doctor", formData.attending_physician || formData.referring_doctor || "");
     payload.set("attending_physician", formData.attending_physician || "");
     payload.set("visit_type", formData.visit_type || "");
     payload.set("modality", Array.isArray(formData.modalities) ? formData.modalities.join(", ") : (formData.modality || ""));
@@ -178,7 +178,7 @@ function PatientList() {
       )
     );
     setEditingPatient(null);
-    loadPatients();
+    await loadPatients();
     return updatedPatient;
   };
 
@@ -300,7 +300,7 @@ function PatientList() {
                     <td className="col-gender">{p.gender}</td>
                     <td>{p.dob ? new Date(p.dob).toLocaleDateString() : "-"}</td>
                     <td className="col-mobile">{p.mobile || "-"}</td>
-                    <td>{p.referring_doctor || p.attending_physician || "-"}</td>
+                    <td>{p.attending_physician || p.referring_doctor || "-"}</td>
                     <td>{p.visit_type || "-"}</td>
                     <td>{p.modality || (Array.isArray(p.modalities) ? p.modalities.join(", ") : "-")}</td>
                     <td>{p.study_type || p.indication_for_scan || "-"}</td>

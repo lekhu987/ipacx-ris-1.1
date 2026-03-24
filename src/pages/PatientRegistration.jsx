@@ -428,6 +428,8 @@ const handleChange = (e) => {
     const nextStep = () => setStep(prev => Math.min(prev + 1, STEPS.length));
     const prevStep = () => setStep(prev => Math.max(prev - 1, 1));
 
+    const isEditMode = Boolean(initialData);
+
     const handleSubmit = async () => {
         // Construct full name
         const fullName = `${formData.firstName} ${formData.lastName}`.trim();
@@ -499,7 +501,10 @@ const handleChange = (e) => {
             payload.digital_signature = await uploadDataUrlImage(payload.digital_signature, "SIGN");
             payload.photo_url = await uploadDataUrlImage(payload.photo_url, "PHOTO");
             await onSave(payload);
-            toast.success("Patient registered successfully");
+            toast.success(isEditMode ? "Patient updated successfully" : "Patient registered successfully");
+            if (typeof onClose === "function") {
+              onClose();
+            }
         } catch (error) {
             const message =
                 error?.response?.data?.error ||
@@ -1561,7 +1566,9 @@ const handleChange = (e) => {
             disabled={isSubmitting}
            className="pr-btn-primary"
           >
-            {step === 6 ? (isSubmitting ? "Saving..." : "Complete Registration") : "Next"}
+            {step === 6
+              ? (isSubmitting ? "Saving..." : (isEditMode ? "Update Registration" : "Complete Registration"))
+              : "Next"}
           </button>
         </div>
       </div>

@@ -127,6 +127,32 @@ async function getPatientColumns() {
   return new Set(result.rows.map((r) => r.column_name));
 }
 
+async function getTableColumns(tableName) {
+  const result = await pool.query(
+    `
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = $1
+    `,
+    [tableName]
+  );
+  return new Set(result.rows.map((r) => r.column_name));
+}
+
+function buildPatientDisplay(row) {
+  if (!row) return { patientId: "", patientName: "", patientSex: "", patientAge: "" };
+  const patientId = row.patient_id || row.uhid || row.mrn || "";
+  const patientName =
+    `${row.first_name || ""} ${row.last_name || ""}`.trim() ||
+    row.full_name ||
+    row.patient_name ||
+    row.name ||
+    "";
+  const patientSex = row.gender || row.patient_sex || row.sex || "";
+  const patientAge = row.age || row.patient_age || "";
+  return { patientId, patientName, patientSex, patientAge };
+}
+
 async function findPatientByIdentifier(identifier) {
   const patientColumns = await getPatientColumns();
   const searchableColumns = ["uhid", "patient_id", "mrn", "id"].filter((col) =>
@@ -238,7 +264,7 @@ router.post("/", upload.single("id_proof_path"), async (req, res) => {
       digital_signature: safeSignatureValue,
       signature_file: safeSignatureValue,
       photo_url: photo_url || null,
-      referring_doctor: referring_doctor || attending_physician || null,
+      referring_doctor: attending_physician || referring_doctor || null,
       attending_physician: attending_physician || null,
       visit_type: visit_type || null,
       modality: modality || modalities || null,
@@ -982,13 +1008,134 @@ router.put("/:identifier", upload.single("id_proof_path"), async (req, res) => {
       });
     }
 
+    const updatedRow = result.rows[0];
+    const display = buildPatientDisplay(updatedRow);
+    const identifierSet = new Set(
+      [
+        identifier,
+        updatedRow.patient_id,
+        updatedRow.uhid,
+        updatedRow.mrn,
+        display.patientId,
+      ]
+        .filter(Boolean)
+        .map((v) => String(v))
+    );
+    const identifiers = Array.from(identifierSet);
+
+    try {
+      if (identifiers.length) {
+        // Update reports table (if present)
+        const reportCols = await getTableColumns("reports");
+        if (reportCols.size && reportCols.has("patient_id")) {
+          const reportSets = [];
+          const reportValues = [];
+          if (reportCols.has("patient_name")) {
+            reportSets.push(`patient_name = $${reportValues.length + 1}`);
+            reportValues.push(display.patientName || null);
+          }
+          if (display.patientId) {
+            reportSets.push(`patient_id = $${reportValues.length + 1}`);
+            reportValues.push(String(display.patientId));
+          }
+          if (reportSets.length) {
+            reportValues.push(identifiers);
+            await pool.query(
+              `UPDATE reports SET ${reportSets.join(", ")} WHERE patient_id::text = ANY($${reportValues.length})`,
+              reportValues
+            );
+          }
+        }
+
+        // Update MWL table (if present)
+        const mwlCols = await getTableColumns("mwl");
+        if (mwlCols.size && mwlCols.has("patientid")) {
+          const mwlSets = [];
+          const mwlValues = [];
+          if (display.patientId) {
+            mwlSets.push(`patientid = $${mwlValues.length + 1}`);
+            mwlValues.push(String(display.patientId));
+          }
+          if (mwlCols.has("patientname")) {
+            mwlSets.push(`patientname = $${mwlValues.length + 1}`);
+            mwlValues.push(display.patientName || null);
+          }
+          if (mwlCols.has("patientsex")) {
+            mwlSets.push(`patientsex = $${mwlValues.length + 1}`);
+            mwlValues.push(display.patientSex || null);
+          }
+          if (mwlCols.has("patientage")) {
+            mwlSets.push(`patientage = $${mwlValues.length + 1}`);
+            mwlValues.push(display.patientAge || null);
+          }
+          if (mwlSets.length) {
+            mwlValues.push(identifiers);
+            await pool.query(
+              `UPDATE mwl SET ${mwlSets.join(", ")} WHERE patientid::text = ANY($${mwlValues.length})`,
+              mwlValues
+            );
+          }
+        }
+
+        // Update appointments table (if present)
+        const apptCols = await getTableColumns("appointments");
+        if (apptCols.size) {
+          const apptSets = [];
+          const apptValues = [];
+          const contactValue = updatedRow.mobile || updatedRow.phone || null;
+          const nameValue = display.patientName || null;
+
+          ["patient_id", "patientid", "uhid", "mrn"].forEach((col) => {
+            if (apptCols.has(col) && display.patientId) {
+              apptSets.push(`${col} = $${apptValues.length + 1}`);
+              apptValues.push(String(display.patientId));
+            }
+          });
+          if (apptCols.has("patient_name")) {
+            apptSets.push(`patient_name = $${apptValues.length + 1}`);
+            apptValues.push(nameValue);
+          }
+          if (apptCols.has("name")) {
+            apptSets.push(`name = $${apptValues.length + 1}`);
+            apptValues.push(nameValue);
+          }
+          if (apptCols.has("full_name")) {
+            apptSets.push(`full_name = $${apptValues.length + 1}`);
+            apptValues.push(nameValue);
+          }
+          ["contact", "contact_number", "contact_no", "mobile", "phone"].forEach((col) => {
+            if (apptCols.has(col)) {
+              apptSets.push(`${col} = $${apptValues.length + 1}`);
+              apptValues.push(contactValue);
+            }
+          });
+          if (apptCols.has("updated_at")) {
+            apptSets.push(`updated_at = $${apptValues.length + 1}`);
+            apptValues.push(new Date());
+          }
+
+          const idCols = ["patient_id", "patientid", "uhid", "mrn"].filter((col) => apptCols.has(col));
+          if (apptSets.length && idCols.length) {
+            apptValues.push(identifiers);
+            const where = idCols.map((col) => `${col}::text = ANY($${apptValues.length})`).join(" OR ");
+            await pool.query(
+              `UPDATE appointments SET ${apptSets.join(", ")} WHERE ${where}`,
+              apptValues
+            );
+          }
+        }
+      }
+    } catch (syncErr) {
+      console.warn("Patient update sync failed:", syncErr.message);
+    }
+
     res.json({
       success: true,
       message: "Patient updated successfully",
       patient: {
-        ...result.rows[0],
-        patient_id: normalizeIdValue(result.rows[0].patient_id),
-        uhid: normalizeIdValue(result.rows[0].uhid),
+        ...updatedRow,
+        patient_id: normalizeIdValue(updatedRow.patient_id),
+        uhid: normalizeIdValue(updatedRow.uhid),
       },
     });
   } catch (error) {
