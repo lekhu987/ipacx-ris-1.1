@@ -56,6 +56,135 @@ function buildPatientId(year, month, seq) {
   return `${year}${String(month).padStart(2, "0")}${pad3(seq)}`;
 }
 
+async function getTableColumns(tableName) {
+  const result = await pool.query(
+    `
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = $1
+    `,
+    [tableName]
+  );
+  return new Set(result.rows.map((r) => r.column_name));
+}
+
+function splitPatientName(name) {
+  const raw = String(name || "").trim();
+  if (!raw) return { first: "", last: "" };
+  const parts = raw.split(/\s+/);
+  return {
+    first: parts[0] || "",
+    last: parts.slice(1).join(" "),
+  };
+}
+
+async function syncPatientFromMwl(entry) {
+  const patientId = String(entry?.patient_id || "").trim();
+  if (!patientId) return;
+
+  const patientCols = await getTableColumns("patients");
+  if (!patientCols.size) return;
+
+  const idCols = ["patient_id", "uhid", "mrn", "id"].filter((c) => patientCols.has(c));
+  if (!idCols.length) return;
+
+  const where = idCols.map((c) => `${c}::text = $1`).join(" OR ");
+  const existing = await pool.query(`SELECT * FROM patients WHERE ${where} LIMIT 1`, [patientId]);
+  if (existing.rowCount === 0) return;
+
+  const row = existing.rows[0];
+  const updates = {};
+
+  if (entry.patient_name) {
+    if (patientCols.has("full_name")) updates.full_name = entry.patient_name;
+    const parts = splitPatientName(entry.patient_name);
+    if (patientCols.has("first_name") && parts.first) updates.first_name = parts.first;
+    if (patientCols.has("last_name") && parts.last) updates.last_name = parts.last;
+  }
+  if (entry.patient_sex && patientCols.has("gender")) updates.gender = entry.patient_sex;
+  if (entry.patient_age && patientCols.has("age")) updates.age = entry.patient_age;
+  if (patientCols.has("updated_at")) updates.updated_at = new Date();
+
+  const setCols = Object.keys(updates);
+  if (setCols.length) {
+    const setClause = setCols.map((c, i) => `${c} = $${i + 1}`).join(", ");
+    const whereIndex = setCols.length + 1;
+    const whereClause = idCols.map((c) => `${c}::text = $${whereIndex}`).join(" OR ");
+    const values = setCols.map((c) => updates[c]);
+    values.push(patientId);
+    await pool.query(`UPDATE patients SET ${setClause} WHERE ${whereClause}`, values);
+  }
+
+  const identifiers = Array.from(
+    new Set(
+      [patientId, row.patient_id, row.uhid, row.mrn].filter(Boolean).map((v) => String(v))
+    )
+  );
+  if (!identifiers.length) return;
+
+  // Sync reports patient name/id
+  const reportCols = await getTableColumns("reports");
+  if (reportCols.size && reportCols.has("patient_id")) {
+    const reportSets = [];
+    const reportValues = [];
+    if (reportCols.has("patient_name") && entry.patient_name) {
+      reportSets.push(`patient_name = $${reportValues.length + 1}`);
+      reportValues.push(entry.patient_name);
+    }
+    if (entry.patient_id) {
+      reportSets.push(`patient_id = $${reportValues.length + 1}`);
+      reportValues.push(String(entry.patient_id));
+    }
+    if (reportSets.length) {
+      reportValues.push(identifiers);
+      await pool.query(
+        `UPDATE reports SET ${reportSets.join(", ")} WHERE patient_id::text = ANY($${reportValues.length})`,
+        reportValues
+      );
+    }
+  }
+
+  // Sync appointments patient name/id
+  const apptCols = await getTableColumns("appointments");
+  if (apptCols.size) {
+    const apptSets = [];
+    const apptValues = [];
+    const nameValue = entry.patient_name || null;
+
+    ["patient_id", "patientid", "uhid", "mrn"].forEach((col) => {
+      if (apptCols.has(col) && entry.patient_id) {
+        apptSets.push(`${col} = $${apptValues.length + 1}`);
+        apptValues.push(String(entry.patient_id));
+      }
+    });
+    if (apptCols.has("patient_name") && nameValue) {
+      apptSets.push(`patient_name = $${apptValues.length + 1}`);
+      apptValues.push(nameValue);
+    }
+    if (apptCols.has("name") && nameValue) {
+      apptSets.push(`name = $${apptValues.length + 1}`);
+      apptValues.push(nameValue);
+    }
+    if (apptCols.has("full_name") && nameValue) {
+      apptSets.push(`full_name = $${apptValues.length + 1}`);
+      apptValues.push(nameValue);
+    }
+    if (apptCols.has("updated_at")) {
+      apptSets.push(`updated_at = $${apptValues.length + 1}`);
+      apptValues.push(new Date());
+    }
+
+    const apptIdCols = ["patient_id", "patientid", "uhid", "mrn"].filter((c) => apptCols.has(c));
+    if (apptSets.length && apptIdCols.length) {
+      apptValues.push(identifiers);
+      const apptWhere = apptIdCols
+        .map((c) => `${c}::text = ANY($${apptValues.length})`)
+        .join(" OR ");
+      await pool.query(`UPDATE appointments SET ${apptSets.join(", ")} WHERE ${apptWhere}`, apptValues);
+    }
+  }
+}
+
 async function generateNextPatientId() {
   const now = new Date();
   const year = now.getFullYear();
@@ -297,6 +426,11 @@ router.post("/", async (req, res) => {
         entry.scheduled_station_aetitle || "",
       ]
     );
+    try {
+      await syncPatientFromMwl(entry);
+    } catch (syncErr) {
+      console.warn("MWL->patient sync failed:", syncErr.message);
+    }
 
     res.json({ message: "Added to MWL successfully", entry: result.rows[0] });
   } catch (err) {
@@ -345,6 +479,11 @@ router.post("/register", async (req, res) => {
         entry.scheduled_station_aetitle || "",
       ]
     );
+    try {
+      await syncPatientFromMwl(entry);
+    } catch (syncErr) {
+      console.warn("MWL->patient sync failed:", syncErr.message);
+    }
 
     const row = created.rows[0];
     const response = { success: true, status: "NEW", data: toWorklistItem(row) };
@@ -529,6 +668,11 @@ router.put("/:id", async (req, res) => {
     );
 
     if (result.rowCount === 0) return res.status(404).json({ error: "MWL entry not found" });
+    try {
+      await syncPatientFromMwl(entry);
+    } catch (syncErr) {
+      console.warn("MWL->patient sync failed:", syncErr.message);
+    }
     res.json({ message: "MWL updated", entry: result.rows[0] });
   } catch (err) {
     console.error("MWL update error:", err.message);

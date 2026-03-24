@@ -10,6 +10,71 @@ const pool = new Pool({
   database: process.env.POSTGRES_DB || "RIS",
 });
 
+function combineDateTime(dateStr, timeStr) {
+  const date = String(dateStr || "").trim();
+  const time = String(timeStr || "").trim();
+  if (!date) return null;
+  if (!time) return `${date}T00:00`;
+
+  const ampm = time.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+  if (ampm) {
+    let hour = Number(ampm[1]);
+    const minute = ampm[2];
+    const period = ampm[3].toUpperCase();
+    if (period === "PM" && hour < 12) hour += 12;
+    if (period === "AM" && hour === 12) hour = 0;
+    return `${date}T${String(hour).padStart(2, "0")}:${minute}`;
+  }
+
+  const m24 = time.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (m24) {
+    const hour = String(Number(m24[1])).padStart(2, "0");
+    return `${date}T${hour}:${m24[2]}`;
+  }
+
+  return `${date}T00:00`;
+}
+
+async function syncMwlFromAppointment(appt = {}) {
+  const patientId = String(appt.patientId || "").trim();
+  if (!patientId) return 0;
+  const date = String(appt.date || "").trim();
+  if (!date) return 0;
+  const scheduledDateTime = combineDateTime(date, appt.time);
+
+  try {
+    const updated = await pool.query(
+      `
+      UPDATE mwl
+      SET
+        schedulingdate = $1,
+        scheduling_datetime = $2,
+        modality = COALESCE($3, modality),
+        referringphysician = COALESCE($4, referringphysician),
+        scheduledstationaetitle = COALESCE($5, scheduledstationaetitle),
+        patientname = COALESCE($6, patientname)
+      WHERE REPLACE(patientid::text, '/', '') = REPLACE($7, '/', '')
+      `,
+      [
+        date,
+        scheduledDateTime,
+        appt.modality || null,
+        appt.doctor || null,
+        appt.scheduled_station_aetitle || null,
+        appt.patientName || null,
+        patientId,
+      ]
+    );
+    if (updated.rowCount === 0) {
+      console.warn("MWL sync skipped: no MWL rows for patient", patientId);
+    }
+    return updated.rowCount || 0;
+  } catch (err) {
+    console.warn("MWL sync from appointment failed:", err.message);
+    return 0;
+  }
+}
+
 async function getAppointmentColumns() {
   const result = await pool.query(
     `
@@ -368,7 +433,16 @@ router.post("/", async (req, res) => {
       saved = inserted.rows[0];
     }
 
-    return res.json({ success: true, appointment: mapAppointmentRow(saved) });
+    const mwlUpdated = await syncMwlFromAppointment({
+      patientId,
+      patientName: patientNameValue,
+      date,
+      time,
+      modality,
+      doctor,
+      scheduled_station_aetitle,
+    });
+    return res.json({ success: true, appointment: mapAppointmentRow(saved), mwl_updated: mwlUpdated });
   } catch (err) {
     console.error("Error saving appointment:", err.message);
     return res.status(500).json({ success: false, error: "Failed to save appointment" });
@@ -431,7 +505,16 @@ router.put("/:id", async (req, res) => {
     if (updated.rowCount === 0) {
       return res.status(404).json({ success: false, error: "Appointment not found" });
     }
-    return res.json({ success: true, appointment: mapAppointmentRow(updated.rows[0]) });
+    const mwlUpdated = await syncMwlFromAppointment({
+      patientId,
+      patientName,
+      date,
+      time,
+      modality,
+      doctor,
+      scheduled_station_aetitle,
+    });
+    return res.json({ success: true, appointment: mapAppointmentRow(updated.rows[0]), mwl_updated: mwlUpdated });
   } catch (err) {
     console.error("Error updating appointment:", err.message);
     return res.status(500).json({ success: false, error: "Failed to update appointment" });

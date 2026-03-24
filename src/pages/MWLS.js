@@ -103,12 +103,9 @@ export default function MWLS() {
           .map((r) => String(r.modality_code || "").toUpperCase())
           .filter(Boolean);
         if (!active) return;
-        if (list.length) {
-          const unique = Array.from(new Set(list));
-          setModalities(["ALL", ...unique]);
-        } else {
-          setModalities(DEFAULT_MODALITIES);
-        }
+        const base = DEFAULT_MODALITIES.filter((m) => m !== "ALL");
+        const unique = Array.from(new Set([...base, ...list]));
+        setModalities(["ALL", ...unique]);
       } catch {
         if (active) setModalities(DEFAULT_MODALITIES);
       }
@@ -185,7 +182,7 @@ export default function MWLS() {
       study_instance_uid: "",
       patient_id: nextPatientId,
       patient_name: "",
-      modality: "CT",
+      modality: "",
       scheduled_datetime: dayjs().format("YYYY-MM-DDTHH:mm"),
       scheduled_station_aetitle: "",
     });
