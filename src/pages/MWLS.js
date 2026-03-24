@@ -69,7 +69,7 @@ export default function MWLS() {
   const [activeModality, setActiveModality] = useState("ALL");
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState(null);
-  const [modalities] = useState(DEFAULT_MODALITIES);
+  const [modalities, setModalities] = useState(DEFAULT_MODALITIES);
   const [reviewItem, setReviewItem] = useState(null);
   const [autoPush, setAutoPush] = useState(false);
   const [autoPushLoaded, setAutoPushLoaded] = useState(false);
@@ -91,6 +91,33 @@ export default function MWLS() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    let active = true;
+    const loadConfiguredModalities = async () => {
+      try {
+        const res = await axiosInstance.get("/mwl-targets");
+        const rows = Array.isArray(res.data?.data) ? res.data.data : [];
+        const list = rows
+          .filter((r) => r.is_active !== false)
+          .map((r) => String(r.modality_code || "").toUpperCase())
+          .filter(Boolean);
+        if (!active) return;
+        if (list.length) {
+          const unique = Array.from(new Set(list));
+          setModalities(["ALL", ...unique]);
+        } else {
+          setModalities(DEFAULT_MODALITIES);
+        }
+      } catch {
+        if (active) setModalities(DEFAULT_MODALITIES);
+      }
+    };
+    loadConfiguredModalities();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     const loadSetting = async () => {
@@ -201,7 +228,14 @@ export default function MWLS() {
       await axiosInstance.delete(`/mwl/${row.id}`);
       load();
     } catch (err) {
-      console.error("delete mwl", err);
+      const apiError = err?.response?.data;
+      const message =
+        apiError?.error ||
+        apiError?.message ||
+        err?.message ||
+        "Failed to delete MWL entry";
+      console.error("delete mwl", err, apiError);
+      toast.error(message);
     }
   };
 
