@@ -63,14 +63,16 @@ function startMwlDimseScp() {
 
   lastArgs = [tool, ...args];
   lastStartAt = new Date().toISOString();
-  console.info("Starting MWL DIMSE SCP:", {
-    port,
-    args,
-    tool,
-    out_dir: outDir,
-    called_ae: calledAe,
-    ae_dir: aeDir,
-  });
+  if (String(process.env.MWL_DIMSE_SCP_LOG_STARTUP || "false").toLowerCase() === "true") {
+    console.info("Starting MWL DIMSE SCP:", {
+      port,
+      args,
+      tool,
+      out_dir: outDir,
+      called_ae: calledAe,
+      ae_dir: aeDir,
+    });
+  }
   scpProcess = spawn(tool, args, { stdio: ["ignore", "pipe", "pipe"] });
   lastPid = scpProcess.pid || null;
   const handleOutput = (chunk) => {
