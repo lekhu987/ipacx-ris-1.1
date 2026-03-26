@@ -60,7 +60,7 @@ function UserManagement() {
       setUsers(res.data);
     } catch (err) {
       console.error("Fetch users error:", err);
-      setError(err.response?.data?.error || "Failed to fetch users");
+      setError(err.response?.data?.error || err.message || "Failed to fetch users");
     } finally {
       setLoading(false);
     }

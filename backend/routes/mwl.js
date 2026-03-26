@@ -729,8 +729,9 @@ router.post("/:id/send", async (req, res) => {
         p.pacs_name AS pacs_name
       FROM mwl_modality_targets t
       LEFT JOIN pacs p ON p.id = t.pacs_id
-      WHERE UPPER(t.modality_code) = UPPER($1)
+      WHERE UPPER(t.modality_code) IN (UPPER($1), 'ALL')
         AND t.is_active = true
+      ORDER BY CASE WHEN UPPER(t.modality_code) = UPPER($1) THEN 0 ELSE 1 END, t.id ASC
       `,
       [key]
     );

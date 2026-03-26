@@ -104,6 +104,9 @@
 
 .mwl-form-actions {
   margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .mwl-save-btn {
@@ -115,6 +118,10 @@
   padding: 0 16px;
   font-size: 13px;
   cursor: pointer;
+}
+
+.mwl-form-actions .mwl-link-btn {
+  height: 34px;
 }
 
 .mwl-list {

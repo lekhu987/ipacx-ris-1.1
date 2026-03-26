@@ -1,17 +1,36 @@
 const express = require("express");
+const os = require("os");
 const router = express.Router();
 const pool = require("../db");
 const { startMwlDimseScp, stopMwlDimseScp } = require("../services/mwlDimseScp");
 
 const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "::1", "0.0.0.0"]);
 
+function getLocalIpSet() {
+  const set = new Set(LOCAL_HOSTS);
+  const nets = os.networkInterfaces();
+  Object.values(nets || {}).forEach((entries) => {
+    (entries || []).forEach((info) => {
+      if (!info || !info.address) return;
+      set.add(String(info.address).toLowerCase());
+    });
+  });
+  return set;
+}
+
+function normalizeHost(host) {
+  return String(host || "").trim().toLowerCase();
+}
+
 function isLocalDimseRow(row) {
   const protocol = String(row.manual_protocol || row.manual_type || "")
     .trim()
     .toUpperCase();
   if (protocol !== "DIMSE") return false;
-  const host = String(row.manual_host || "").trim().toLowerCase();
-  return !host || LOCAL_HOSTS.has(host);
+  const host = normalizeHost(row.manual_host);
+  if (!host) return true;
+  const localIps = getLocalIpSet();
+  return localIps.has(host);
 }
 
 async function syncLocalDimseScpState() {

@@ -6,19 +6,13 @@ import "./MwlsManagement.css";
 function MwlsManagement() {
   const [mappings, setMappings] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [modalityOptions, setModalityOptions] = useState([{ code: "ALL", name: "All Modalities" }]);
   const [testStatus, setTestStatus] = useState(null);
   const buildEmptyForm = () => ({
-    modality_code: "ALL",
     manual_host: "",
     manual_port: "",
-    manual_ae_title: "",
     manual_type: "ORTHANC",
     manual_protocol: "DICOMWEB",
-    manual_calling_ae: "",
     manual_called_ae: "",
-    viewer_protocol: "OHIF (Web-based)",
-    is_active: true,
   });
 
   const [form, setForm] = useState(buildEmptyForm);
@@ -29,20 +23,6 @@ function MwlsManagement() {
     try {
       const mappingsRes = await api.get("/api/mwl-targets");
       setMappings(mappingsRes.data?.data || []);
-
-      try {
-        const optionsRes = await api.get("/api/mwl-targets/options");
-        const options = Array.isArray(optionsRes.data?.modalities) ? optionsRes.data.modalities : [];
-        const normalized = options.map((m) => ({
-          code: String(m.code || "").toUpperCase(),
-          name: m.name || m.code || "Unknown",
-        }));
-        const withAll = [{ code: "ALL", name: "All Modalities" }, ...normalized];
-        setModalityOptions(withAll);
-      } catch (err) {
-        // Fallback to default option if modal list is unavailable.
-        setModalityOptions([{ code: "ALL", name: "All Modalities" }]);
-      }
     } catch (err) {
       alert(err?.response?.data?.error || "Failed to load MWLS management data");
     } finally {
@@ -69,16 +49,15 @@ function MwlsManagement() {
     try {
       await api.post("/api/mwl-targets", {
         id: editingId,
-        modality_code: form.modality_code || "ALL",
+        modality_code: "ALL",
         manual_host: form.manual_host,
         manual_port: Number(form.manual_port),
-        manual_ae_title: form.manual_ae_title || null,
         manual_type: form.manual_type,
-        manual_protocol: form.manual_protocol || null,
-        manual_calling_ae: form.manual_calling_ae || null,
+        manual_protocol: form.manual_type === "DIMSE" ? "DIMSE" : "DICOMWEB",
+        manual_calling_ae: null,
         manual_called_ae: form.manual_called_ae || null,
-        viewer_protocol: form.viewer_protocol || null,
-        is_active: form.is_active,
+        viewer_protocol: null,
+        is_active: true,
       });
       setForm(buildEmptyForm());
       setEditingId(null);
@@ -91,16 +70,11 @@ function MwlsManagement() {
 
   const handleEdit = (row) => {
     setForm({
-      modality_code: row.modality_code || "ALL",
       manual_host: row.manual_host || row.ip_address || "",
       manual_port: row.manual_port || row.port || "",
-      manual_ae_title: row.manual_ae_title || row.orthanc_modality_name || row.ae_title || "",
       manual_type: row.manual_type || "ORTHANC",
       manual_protocol: row.manual_protocol || "DICOMWEB",
-      manual_calling_ae: row.manual_calling_ae || "",
       manual_called_ae: row.manual_called_ae || "",
-      viewer_protocol: row.viewer_protocol || "OHIF (Web-based)",
-      is_active: row.is_active !== false,
     });
     setEditingId(row.id || null);
   };
@@ -194,21 +168,6 @@ function MwlsManagement() {
 
           <div className="mwl-form-grid">
             <div className="mwl-field">
-              <label>Modality</label>
-              <select
-                name="modality_code"
-                value={form.modality_code}
-                onChange={handleChange}
-              >
-                {modalityOptions.map((m) => (
-                  <option key={m.code} value={m.code}>
-                    {m.name} ({m.code})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="mwl-field">
               <label>Server Type</label>
               <div className="mwl-toggle-group">
                 <button
@@ -218,7 +177,7 @@ function MwlsManagement() {
                     setForm((prev) => ({
                       ...prev,
                       manual_type: "ORTHANC",
-                      manual_protocol: prev.manual_protocol === "DIMSE" ? "DICOMWEB" : prev.manual_protocol,
+                      manual_protocol: "DICOMWEB",
                     }))
                   }
                 >
@@ -231,7 +190,7 @@ function MwlsManagement() {
                     setForm((prev) => ({
                       ...prev,
                       manual_type: "DCM4CHEE",
-                      manual_protocol: prev.manual_protocol === "DIMSE" ? "DICOMWEB" : prev.manual_protocol,
+                      manual_protocol: "DICOMWEB",
                     }))
                   }
                 >
@@ -267,52 +226,10 @@ function MwlsManagement() {
             </div>
 
             <div className="mwl-field">
-              <label>Protocol</label>
-              <div className="mwl-toggle-group">
-                <button
-                  type="button"
-                  className={`mwl-toggle-btn ${form.manual_protocol === "DICOMWEB" ? "active" : ""}`}
-                  onClick={() =>
-                    setForm((prev) => ({
-                      ...prev,
-                      manual_protocol: "DICOMWEB",
-                      manual_type: prev.manual_type === "DIMSE" ? "DICOMWEB" : prev.manual_type,
-                    }))
-                  }
-                >
-                  DICOMWEB
-                </button>
-                <button
-                  type="button"
-                  className={`mwl-toggle-btn ${form.manual_protocol === "DIMSE" ? "active" : ""}`}
-                  onClick={() =>
-                    setForm((prev) => ({
-                      ...prev,
-                      manual_protocol: "DIMSE",
-                      manual_type: prev.manual_type === "DICOMWEB" ? "DIMSE" : prev.manual_type,
-                    }))
-                  }
-                >
-                  DIMSE
-                </button>
-              </div>
-            </div>
-
-            <div className="mwl-field">
-              <label>Server Display Name</label>
-              <input
-                name="manual_ae_title"
-                placeholder="e.g. Main Hospital MWL"
-                value={form.manual_ae_title}
-                onChange={handleChange}
-              />
-            </div>
-
-            <div className="mwl-field">
               <label>MWL Server AE Title</label>
               <input
                 name="manual_called_ae"
-                placeholder="e.g. MWL_SERVER"
+                placeholder="e.g. IPACX_MWL"
                 value={form.manual_called_ae}
                 onChange={handleChange}
               />
@@ -350,29 +267,6 @@ function MwlsManagement() {
                 readOnly
               />
             </div>
-
-            <div className="mwl-field">
-              <label>Viewer Protocol</label>
-              <select
-                name="viewer_protocol"
-                value={form.viewer_protocol}
-                onChange={handleChange}
-              >
-                <option value="OHIF (Web-based)">OHIF (Web-based)</option>
-              </select>
-            </div>
-
-            <div className="mwl-field mwl-field-inline">
-              <label className="mwl-inline-check">
-                <input
-                  type="checkbox"
-                  name="is_active"
-                  checked={form.is_active}
-                  onChange={handleChange}
-                />
-                Active mapping
-              </label>
-            </div>
           </div>
 
           <div className="mwl-form-actions">
@@ -395,13 +289,39 @@ function MwlsManagement() {
             mappings.map((row) => {
               const host = row.manual_host || row.ip_address || row.host || "-";
               const port = row.manual_port || row.port || "-";
+              const rawModality = String(row.modality_code || "").trim().toUpperCase();
+              const aeTitle = String(
+                row.manual_called_ae ||
+                  row.manual_ae_title ||
+                  row.ae_title ||
+                  row.orthanc_modality_name ||
+                  ""
+              )
+                .trim()
+                .toUpperCase();
+              const aePrefix = aeTitle.split(/[^A-Z0-9]/)[0];
+              const aeToModality = {
+                CT: "CT",
+                MR: "MR",
+                MRI: "MR",
+                US: "US",
+                CR: "CR",
+                DX: "DX",
+                XRAY: "DX",
+                "X-RAY": "DX",
+                MG: "MG",
+                NM: "NM",
+              };
+              const modalityCode =
+                rawModality && rawModality !== "ALL"
+                  ? rawModality
+                  : aeToModality[aePrefix] || "";
               const title =
-                row.manual_ae_title ||
-                row.pacs_name ||
-                `${row.modality_code || "MWL"} Server`;
+                modalityCode && modalityCode !== "ALL"
+                  ? `${modalityCode} Server`
+                  : row.pacs_name || "MWL Server";
               const type = row.manual_type || "MANUAL";
               const protocol = row.manual_protocol || "DICOMWEB";
-              const viewerProtocol = row.viewer_protocol || "OHIF (Web-based)";
               return (
                 <div key={row.id} className="mwl-list-card">
                   <div className="mwl-list-left">
@@ -412,7 +332,6 @@ function MwlsManagement() {
                   <span>TYPE: {type}</span>
                   <span>PROTOCOL: {protocol}</span>
                   <span>AE: {row.manual_called_ae || row.manual_ae_title || "-"}</span>
-                  <span>VIEWER: {viewerProtocol}</span>
                 </div>
                     <div className="mwl-list-sub">
                       {host !== "-" && port !== "-"
@@ -430,13 +349,6 @@ function MwlsManagement() {
                       {row.is_active ? "Active" : "Inactive"}
                     </button>
                     <div className="mwl-card-actions">
-                      <button
-                        onClick={() => runDimseTest(row, "echo")}
-                        className="mwl-link-btn"
-                        title="Run echoscu"
-                      >
-                        Test Echo
-                      </button>
                       <button
                         onClick={() => runDimseTest(row, "find")}
                         className="mwl-link-btn"

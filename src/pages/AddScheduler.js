@@ -89,15 +89,13 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
       try {
         const res = await api.get("/api/mwl-targets");
         const rows = Array.isArray(res.data?.data) ? res.data.data : [];
-        const activeRows = rows.filter((r) => r.is_active !== false);
         const modalitySet = new Set(
-          activeRows
+          rows
             .map((r) => String(r.modality_code || "").toUpperCase())
             .filter((m) => m && m !== "ALL")
         );
         if (active) setModalityOptions([...modalitySet]);
         const options = rows
-          .filter((r) => r.is_active !== false)
           .map((r) => ({
             modality: String(r.modality_code || "").toUpperCase(),
             aeTitle: String(
@@ -139,11 +137,7 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
   const doctorOptions = form.doctor && !doctors.includes(form.doctor)
     ? [form.doctor, ...doctors]
     : doctors;
-  const filteredStations = stationOptions.filter((o) => {
-    if (!form.modality) return true;
-    const key = String(form.modality || "").toUpperCase();
-    return o.modality === key || o.modality === "ALL";
-  });
+  const filteredStations = stationOptions;
 
   const handleChange = (e) => {
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -275,20 +269,20 @@ export default function AddScheduler({ onSave, onClose, initialData }) {
 
       <div className="row">
         <label>Scanner / Room AE Title</label>
-        <input
+        <select
           name="scheduled_station_aetitle"
           value={form.scheduled_station_aetitle}
           onChange={handleChange}
-          list="mwl-station-ae-options"
-          placeholder="e.g. CT_ROOM_1"
-        />
-        <datalist id="mwl-station-ae-options">
+        >
+          <option value="">Select</option>
           {filteredStations.map((o) => (
             <option key={`${o.modality}-${o.aeTitle}`} value={o.aeTitle}>
-              {o.modality ? `${o.modality} - ${o.aeTitle}` : o.aeTitle}
+              {o.modality && o.modality !== "ALL"
+                ? `${o.modality} - ${o.aeTitle}`
+                : o.aeTitle}
             </option>
           ))}
-        </datalist>
+        </select>
       </div>
 
       <div className="btn-area">

@@ -73,6 +73,7 @@ export default function MWLS() {
   const [reviewItem, setReviewItem] = useState(null);
   const [autoPush, setAutoPush] = useState(false);
   const [autoPushLoaded, setAutoPushLoaded] = useState(false);
+  const [mwlServerAlive, setMwlServerAlive] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -128,6 +129,25 @@ export default function MWLS() {
       }
     };
     loadSetting();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const checkStatus = async () => {
+      try {
+        const res = await axiosInstance.get("/mwl-dimse/health");
+        const alive = Boolean(res.data?.success && (res.data?.running || res.data?.port_open));
+        if (active) setMwlServerAlive(alive);
+      } catch (err) {
+        if (active) setMwlServerAlive(false);
+      }
+    };
+    checkStatus();
+    const timer = setInterval(checkStatus, 10000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, []);
 
   const filtered = useMemo(() => {
@@ -281,6 +301,20 @@ export default function MWLS() {
               <div className="mwl-stat">
                 <div className="mwl-stat-label">Live Nodes</div>
                 <div className="mwl-stat-value ok">{stats.synced}</div>
+              </div>
+              <div className="mwl-stat">
+                <div className="mwl-stat-label">MWL Server</div>
+                <div
+                  className={`mwl-stat-value ${
+                    mwlServerAlive === true ? "ok" : mwlServerAlive === false ? "warn" : ""
+                  }`}
+                >
+                  {mwlServerAlive === null
+                    ? "Checking..."
+                    : mwlServerAlive
+                      ? "Online"
+                      : "Offline"}
+                </div>
               </div>
             </div>
 
