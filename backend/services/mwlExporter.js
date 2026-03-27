@@ -1,4 +1,38 @@
 const axios = require("axios");
+const mwlLogger = require("../utils/mwlLogger");
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function shouldRetry(err) {
+  const status = err?.response?.status;
+  if (status === 408 || status === 429) return true;
+  if (typeof status === "number" && status >= 500) return true;
+  const code = String(err?.code || "").toUpperCase();
+  return ["ECONNRESET", "ETIMEDOUT", "ECONNREFUSED", "EAI_AGAIN", "ENOTFOUND", "ECONNABORTED"].includes(code);
+}
+
+async function requestWithRetry(fn, context = {}) {
+  const retries = Math.max(Number(process.env.MWL_SEND_RETRY_COUNT || 3), 0);
+  const baseDelay = Math.max(Number(process.env.MWL_SEND_RETRY_DELAY_MS || 500), 100);
+
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!shouldRetry(err) || attempt >= retries) {
+        mwlLogger.error("MWL send failed", { ...context, attempt, error: err?.message });
+        throw err;
+      }
+      const delay = Math.min(baseDelay * Math.pow(2, attempt), 5000);
+      mwlLogger.warn("MWL send retrying", { ...context, attempt: attempt + 1, delay_ms: delay, error: err?.message });
+      await sleep(delay);
+      attempt += 1;
+    }
+  }
+}
 
 function normalizePacs(pacs = {}) {
   return {
@@ -30,6 +64,13 @@ function buildMWL(appointment = {}) {
 
 async function sendMWL(pacsInput, appointment) {
   const pacs = normalizePacs(pacsInput);
+  if (!appointment?.patient_id || !appointment?.patient_name) {
+    mwlLogger.warn("MWL payload missing patient info", {
+      patient_id: appointment?.patient_id,
+      patient_name: appointment?.patient_name,
+      pacs: pacs.name,
+    });
+  }
   let baseUrl = `${pacs.host}:${pacs.port}`;
   if (!/^https?:\/\//i.test(baseUrl)) baseUrl = `http://${baseUrl}`;
   baseUrl = baseUrl.replace(/\/+$/, "");
@@ -59,7 +100,10 @@ async function sendMWL(pacsInput, appointment) {
     for (const endpoint of endpoints) {
       const url = `${baseUrl}${endpoint.startsWith("/") ? endpoint : `/${endpoint}`}`;
       try {
-        const response = await axios.post(url, payload, config);
+        const response = await requestWithRetry(
+          () => axios.post(url, payload, config),
+          { pacs: pacs.name, url, type: pacs.type }
+        );
         return { url, payload, data: response.data };
       } catch (err) {
         const status = err?.response?.status;
@@ -83,7 +127,10 @@ async function sendMWL(pacsInput, appointment) {
   }
 
   const url = `${baseUrl}/mwl`;
-  const response = await axios.post(url, payload, config);
+  const response = await requestWithRetry(
+    () => axios.post(url, payload, config),
+    { pacs: pacs.name, url, type: pacs.type }
+  );
   return { url, payload, data: response.data };
 }
 

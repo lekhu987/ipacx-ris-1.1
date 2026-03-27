@@ -1,5 +1,6 @@
 const pool = require("../db");
 const { sendMWL } = require("./mwlExporter");
+const mwlLogger = require("../utils/mwlLogger");
 
 const DEFAULT_MWL_TARGET_AE = process.env.DEFAULT_MWL_TARGET_AE || "IPACXPACS";
 
@@ -171,6 +172,10 @@ async function processDueMwl() {
     `
   );
 
+  if (dueRes.rows.length) {
+    mwlLogger.info("MWL auto-push batch", { count: dueRes.rows.length });
+  }
+
   for (const entry of dueRes.rows) {
     try {
       const targetPacs = await pickTargetPacs(
@@ -178,6 +183,10 @@ async function processDueMwl() {
         entry.scheduledstationaetitle || ""
       );
       if (!targetPacs) {
+        mwlLogger.warn("MWL auto-push skipped: no target PACS", {
+          mwl_id: entry.id,
+          modality: entry.modality,
+        });
         continue;
       }
 
@@ -195,8 +204,9 @@ async function processDueMwl() {
         "UPDATE mwl SET status = $1 WHERE id = $2",
         ["SYNCED", entry.id]
       );
+      mwlLogger.info("MWL auto-push synced", { mwl_id: entry.id, pacs: targetPacs.pacs_name });
     } catch (err) {
-      console.error("Auto-push MWL failed:", err.message);
+      mwlLogger.error("MWL auto-push failed", { mwl_id: entry.id, error: err?.message });
     }
   }
 }
@@ -223,6 +233,8 @@ function startMwlAutoPushScheduler() {
         settingRes.rows.length === 0 ? false : Boolean(settingRes.rows[0].autopush_enabled);
       if (!autopushEnabled) return;
       await processDueMwl();
+    } catch (err) {
+      mwlLogger.error("MWL auto-push loop error", { error: err?.message });
     } finally {
       running = false;
     }

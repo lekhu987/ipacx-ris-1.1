@@ -1,55 +1,8 @@
 const express = require("express");
 const router = express.Router();
-const { Pool } = require("pg");
-const axios = require("axios");
+const modalitiesController = require("../controllers/modalitiesController");
 
-// Use SAME DB config as server.js
-const pool = new Pool({
-  host: process.env.POSTGRES_HOST || "localhost",
-  port: process.env.POSTGRES_PORT || 5432,
-  user: process.env.POSTGRES_USER || "postgres",
-  password: process.env.POSTGRES_PASSWORD || "",
-  database: process.env.POSTGRES_DB || "RIS",
-});
-
-/* ============================
-   GET ALL ACTIVE MODALITIES
-============================ */
-router.get("/modalities", async (req, res) => {
-  try {
-    const result = await pool.query(
-      "SELECT id, code, name FROM modalities WHERE is_active = true ORDER BY id"
-    );
-    res.json(result.rows);
-  } catch (err) {
-    console.error("Fetch modalities error:", err.message);
-    res.status(500).json({ error: "Failed to fetch modalities" });
-  }
-});
-
-/* ============================
-   GET BODY PARTS BY MODALITY
-============================ */
-router.get("/body-parts", async (req, res) => {
-  try {
-    const { modality_id } = req.query;
-    if (!modality_id) {
-      return res.status(400).json({ error: "modality_id is required" });
-    }
-
-    const result = await pool.query(
-      `SELECT id, name 
-       FROM body_parts 
-       WHERE modality_id = $1 AND is_active = true 
-       ORDER BY id`,
-      [modality_id]
-    );
-
-    res.json(result.rows);
-  } catch (err) {
-    console.error("Fetch body parts error:", err.message);
-    res.status(500).json({ error: "Failed to fetch body parts" });
-  }
-});
+router.get("/modalities", modalitiesController.getModalities);
+router.get("/body-parts", modalitiesController.getBodyParts);
 
 module.exports = router;

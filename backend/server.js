@@ -86,14 +86,16 @@ const ORTHANC_AUTH = {
 const authRoutes = require("./routes/auth");
 app.use("/api", authRoutes);
 
-const mwlDimseRoutes = require("./routes/mwlDimse");
-app.use("/api/mwl-dimse", mwlDimseRoutes);
-
 const requireAuth = require("./middleware/auth");
 app.use("/api", requireAuth);
 
+const { allowRoles } = require("./middleware/roles");
+
+const mwlDimseRoutes = require("./routes/mwlDimse");
+app.use("/api/mwl-dimse", allowRoles("ADMIN", "TECHNICIAN"), mwlDimseRoutes);
+
 const usersRoutes = require("./routes/users");
-app.use("/api/users", usersRoutes);
+app.use("/api/users", allowRoles("ADMIN"), usersRoutes);
 
 const reportedByRouter = require("./routes/reportedBy");
 app.use("/api/reported-by", reportedByRouter);
@@ -116,9 +118,9 @@ const mwlPublicRoutes = require("./routes/mwlRoutes");
 app.use("/api/mwl", mwlRoutes);
 app.use("/mwl", mwlPublicRoutes);
 const mwlTargetsRoutes = require("./routes/mwlTargets");
-app.use("/api/mwl-targets", mwlTargetsRoutes);
+app.use("/api/mwl-targets", allowRoles("ADMIN", "TECHNICIAN"), mwlTargetsRoutes);
 const mwlSettingsRoutes = require("./routes/mwlSettings");
-app.use("/api/mwl-settings", mwlSettingsRoutes);
+app.use("/api/mwl-settings", allowRoles("ADMIN", "TECHNICIAN"), mwlSettingsRoutes);
 
 const reportsRoutes = require("./routes/reports");
 app.use("/", reportsRoutes);
@@ -142,7 +144,7 @@ const speechRoutes = require("./routes/speech");
 app.use("/api/speech", speechRoutes);
 
 const auditRoutes = require("./routes/audit");
-app.use("/api/audit", auditRoutes);
+app.use("/api/audit", allowRoles("ADMIN"), auditRoutes);
 const { startAuditArchiveScheduler } = require("./utils/auditLogger");
 const { startMwlAutoPushScheduler } = require("./services/mwlAutoPush");
 const { startMwlDimseScp } = require("./services/mwlDimseScp");

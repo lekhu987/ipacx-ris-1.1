@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
+import api from "../api/axios";
+import { getTokenExpiry } from "../utils/tokenUtils";
 import { logLogoutEvent } from "../utils/auditClient";
 
 const AuthContext = createContext();
@@ -8,15 +10,46 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Restore user and token from sessionStorage
+  // Restore user and token from sessionStorage, then verify with /api/me
   useEffect(() => {
-    const storedUser = sessionStorage.getItem("user");
-    const storedToken = sessionStorage.getItem("token");
-    if (storedUser && storedToken) {
-      setUser(JSON.parse(storedUser));
-      setToken(storedToken);
-    }
-    setLoading(false);
+    let isActive = true;
+
+    const bootstrap = async () => {
+      const storedToken = sessionStorage.getItem("token");
+      if (!storedToken) {
+        if (isActive) setLoading(false);
+        return;
+      }
+
+      try {
+        const res = await api.get("/api/me");
+        const userData = res.data?.user || null;
+        if (isActive) {
+          if (userData) {
+            setUser(userData);
+            setToken(storedToken);
+            sessionStorage.setItem("user", JSON.stringify(userData));
+          } else {
+            sessionStorage.removeItem("user");
+            sessionStorage.removeItem("token");
+          }
+        }
+      } catch {
+        sessionStorage.removeItem("user");
+        sessionStorage.removeItem("token");
+        if (isActive) {
+          setUser(null);
+          setToken(null);
+        }
+      } finally {
+        if (isActive) setLoading(false);
+      }
+    };
+
+    bootstrap();
+    return () => {
+      isActive = false;
+    };
   }, []);
 
   // Login with token
@@ -29,7 +62,11 @@ export const AuthProvider = ({ children }) => {
 
   // Logout
   const logout = async () => {
-    await logLogoutEvent();
+    try {
+      await logLogoutEvent();
+    } catch {
+      // no-op
+    }
     setUser(null);
     setToken(null);
     sessionStorage.removeItem("user");
@@ -73,6 +110,48 @@ export const AuthProvider = ({ children }) => {
         events.forEach((event) => window.removeEventListener(event, resetTimer));
       };
     }
+  }, [token]);
+
+  // Refresh token before expiry
+  useEffect(() => {
+    let refreshTimer;
+
+    const scheduleRefresh = async () => {
+      if (!token) return;
+      const expiry = getTokenExpiry(token);
+      if (!expiry) return;
+
+      const now = Date.now();
+      const refreshAt = Math.max(expiry - 5 * 60 * 1000, now + 10 * 1000);
+      const delay = Math.max(refreshAt - now, 1000);
+
+      refreshTimer = setTimeout(async () => {
+        try {
+          const res = await api.post("/api/refresh");
+          const newToken = res.data?.token;
+          const userData = res.data?.user;
+          if (newToken) {
+            setToken(newToken);
+            sessionStorage.setItem("token", newToken);
+            if (userData) {
+              setUser(userData);
+              sessionStorage.setItem("user", JSON.stringify(userData));
+            }
+          }
+        } catch {
+          sessionStorage.removeItem("user");
+          sessionStorage.removeItem("token");
+          setUser(null);
+          setToken(null);
+          window.location.href = "/";
+        }
+      }, delay);
+    };
+
+    scheduleRefresh();
+    return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+    };
   }, [token]);
 
 

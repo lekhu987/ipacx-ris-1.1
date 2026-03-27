@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { spawn, spawnSync } = require("child_process");
+const mwlLogger = require("../utils/mwlLogger");
 
 const DEFAULT_OUT_DIR = path.join(__dirname, "..", "..", "logs", "mwl-dimse");
 let scpProcess = null;
@@ -9,6 +10,9 @@ let lastArgs = null;
 let lastStartAt = null;
 let lastPid = null;
 let lastForcedKillAt = null;
+let restartTimer = null;
+let restartAttempts = 0;
+let stopRequested = false;
 
 function ensureDir(dirPath) {
   if (!fs.existsSync(dirPath)) {
@@ -40,6 +44,7 @@ function startMwlDimseScp() {
   const enabled = String(process.env.MWL_DIMSE_SCP_ENABLED || "true").toLowerCase() !== "false";
   if (!enabled) return;
   if (scpProcess) return;
+  stopRequested = false;
 
   const outDir = process.env.MWL_DIMSE_OUT_DIR || DEFAULT_OUT_DIR;
   ensureDir(outDir);
@@ -64,7 +69,7 @@ function startMwlDimseScp() {
   lastArgs = [tool, ...args];
   lastStartAt = new Date().toISOString();
   if (String(process.env.MWL_DIMSE_SCP_LOG_STARTUP || "false").toLowerCase() === "true") {
-    console.info("Starting MWL DIMSE SCP:", {
+    mwlLogger.info("Starting MWL DIMSE SCP", {
       port,
       args,
       tool,
@@ -75,12 +80,13 @@ function startMwlDimseScp() {
   }
   scpProcess = spawn(tool, args, { stdio: ["ignore", "pipe", "pipe"] });
   lastPid = scpProcess.pid || null;
+  restartAttempts = 0;
   const handleOutput = (chunk) => {
     const text = chunk.toString();
     if (/WlmDataSourceFileSystem::SetReadlock: Cannot open file .*\\lockfile/i.test(text)) {
       return;
     }
-    process.stderr.write(text);
+    mwlLogger.debug("MWL DIMSE SCP output", { text: text.trim() });
   };
   if (scpProcess.stdout) {
     scpProcess.stdout.on("data", handleOutput);
@@ -94,14 +100,33 @@ function startMwlDimseScp() {
     if (typeof code === "number" && code !== 0) {
       lastError = `SCP exited with code ${code}`;
     }
-    console.warn(`MWL DIMSE SCP exited with code ${code}`);
+    mwlLogger.warn("MWL DIMSE SCP exited", { code });
+    scheduleRestart();
   });
   scpProcess.on("error", (err) => {
     scpProcess = null;
     lastPid = null;
     lastError = err?.message || String(err);
-    console.error("Failed to start MWL DIMSE SCP:", err.message);
+    mwlLogger.error("Failed to start MWL DIMSE SCP", { error: err?.message });
+    scheduleRestart();
   });
+}
+
+function scheduleRestart() {
+  const autoRestart = String(process.env.MWL_DIMSE_SCP_AUTO_RESTART || "true").toLowerCase() !== "false";
+  if (!autoRestart || stopRequested) return;
+  if (restartTimer) return;
+
+  const baseDelay = Math.max(Number(process.env.MWL_DIMSE_SCP_RESTART_DELAY_MS || 5000), 1000);
+  const delay = Math.min(baseDelay * Math.pow(2, restartAttempts), 60000);
+  restartAttempts += 1;
+  mwlLogger.warn("Scheduling MWL DIMSE SCP restart", { delay_ms: delay, attempts: restartAttempts });
+
+  restartTimer = setTimeout(() => {
+    restartTimer = null;
+    if (stopRequested) return;
+    startMwlDimseScp();
+  }, delay);
 }
 
 function killWlmscpfsOnPort(port) {
@@ -160,13 +185,18 @@ function killWlmscpfsOnPort(port) {
 
 function stopMwlDimseScp() {
   const port = process.env.MWL_DIMSE_PORT || "11112";
+  stopRequested = true;
+  if (restartTimer) {
+    clearTimeout(restartTimer);
+    restartTimer = null;
+  }
   if (!scpProcess) {
     return killWlmscpfsOnPort(port);
   }
   try {
     scpProcess.kill();
   } catch (err) {
-    console.warn("Failed to stop MWL DIMSE SCP:", err?.message || err);
+    mwlLogger.warn("Failed to stop MWL DIMSE SCP", { error: err?.message || err });
   }
   scpProcess = null;
   lastPid = null;
