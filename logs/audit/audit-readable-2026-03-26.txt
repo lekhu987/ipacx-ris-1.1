@@ -1,0 +1,236 @@
+IPACX RIS - DAILY AUDIT LOG
+Date: 2026-03-26
+Total Rows: 230
+
+TIME | USER | ROLE | EVENT | PAGE | IP | SESSION | DETAILS
+--------------------------------------------------------------------------------------------------------------------------------
+26/3/2026, 10:25:04 am | admin | ADMIN | LOGIN_SUCCESS | / | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"user_id":1}
+26/3/2026, 10:25:04 am | admin | ADMIN | PAGE_VIEW | /dashboard | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"pathname":"/dashboard"}
+26/3/2026, 10:25:04 am | admin | ADMIN | PAGE_VIEW | /dashboard | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"pathname":"/dashboard"}
+26/3/2026, 10:25:12 am | admin | ADMIN | PAGE_VIEW | /patient-list | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"pathname":"/patient-list"}
+26/3/2026, 10:25:12 am | admin | ADMIN | PAGE_VIEW | /patient-list | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"pathname":"/patient-list"}
+26/3/2026, 10:25:13 am | admin | ADMIN | CLICK | /patient-list | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"tag":"A","label":"Patient List"}
+26/3/2026, 10:25:14 am | admin | ADMIN | PAGE_VIEW | /scheduling | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"pathname":"/scheduling"}
+26/3/2026, 10:25:14 am | admin | ADMIN | PAGE_VIEW | /scheduling | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"pathname":"/scheduling"}
+26/3/2026, 10:25:14 am | admin | ADMIN | CLICK | /scheduling | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"tag":"A","label":"Scheduling"}
+26/3/2026, 10:25:15 am | admin | ADMIN | CLICK | /scheduling | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"tag":"BUTTON","label":"←"}
+26/3/2026, 10:25:17 am | admin | ADMIN | PAGE_VIEW | /mwls | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"pathname":"/mwls"}
+26/3/2026, 10:25:17 am | admin | ADMIN | PAGE_VIEW | /mwls | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"pathname":"/mwls"}
+26/3/2026, 10:25:17 am | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"tag":"A","label":"Modality WorkList"}
+26/3/2026, 10:25:22 am | admin | ADMIN | PAGE_VIEW | /admin/user-management | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"pathname":"/admin/user-management"}
+26/3/2026, 10:25:22 am | admin | ADMIN | PAGE_VIEW | /admin/user-management | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"pathname":"/admin/user-management"}
+26/3/2026, 10:25:22 am | admin | ADMIN | CLICK | /admin/user-management | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"tag":"A","label":"User Management"}
+26/3/2026, 10:25:25 am | admin | ADMIN | PAGE_VIEW | /admin/templates | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"pathname":"/admin/templates"}
+26/3/2026, 10:25:25 am | admin | ADMIN | PAGE_VIEW | /admin/templates | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"pathname":"/admin/templates"}
+26/3/2026, 10:25:25 am | admin | ADMIN | CLICK | /admin/templates | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"tag":"A","label":"Template Management"}
+26/3/2026, 10:25:27 am | admin | ADMIN | PAGE_VIEW | /admin/pacs-management | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"pathname":"/admin/pacs-management"}
+26/3/2026, 10:25:27 am | admin | ADMIN | PAGE_VIEW | /admin/pacs-management | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"pathname":"/admin/pacs-management"}
+26/3/2026, 10:25:27 am | admin | ADMIN | CLICK | /admin/pacs-management | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"tag":"A","label":"PACS Management"}
+26/3/2026, 10:25:29 am | admin | ADMIN | PAGE_VIEW | /admin/mwls-management | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"pathname":"/admin/mwls-management"}
+26/3/2026, 10:25:29 am | admin | ADMIN | PAGE_VIEW | /admin/mwls-management | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"pathname":"/admin/mwls-management"}
+26/3/2026, 10:25:29 am | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"tag":"A","label":"MWLS Management"}
+26/3/2026, 10:25:34 am | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"tag":"BUTTON","label":"Test MWL"}
+26/3/2026, 10:40:43 am | admin | ADMIN | LOGOUT | /admin/mwls-management | 127.0.0.1 | 43d492a8-2ada-486c-8684-b1f33b8f2c22 | {"reason":"user_initiated_or_timeout"}
+26/3/2026, 11:06:03 am | admin | ADMIN | LOGIN_SUCCESS | / | 127.0.0.1 | 3009b9db-6397-4f2c-8f2c-b02d6a16e573 | {"user_id":1}
+26/3/2026, 11:06:03 am | admin | ADMIN | PAGE_VIEW | /dashboard | 127.0.0.1 | 3009b9db-6397-4f2c-8f2c-b02d6a16e573 | {"pathname":"/dashboard"}
+26/3/2026, 11:06:03 am | admin | ADMIN | PAGE_VIEW | /dashboard | 127.0.0.1 | 3009b9db-6397-4f2c-8f2c-b02d6a16e573 | {"pathname":"/dashboard"}
+26/3/2026, 11:21:18 am | admin | ADMIN | LOGOUT | /dashboard | 127.0.0.1 | 3009b9db-6397-4f2c-8f2c-b02d6a16e573 | {"reason":"user_initiated_or_timeout"}
+26/3/2026, 11:34:05 am | admin | ADMIN | LOGIN_SUCCESS | / | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"user_id":1}
+26/3/2026, 11:34:05 am | admin | ADMIN | PAGE_VIEW | /dashboard | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"pathname":"/dashboard"}
+26/3/2026, 11:34:05 am | admin | ADMIN | PAGE_VIEW | /dashboard | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"pathname":"/dashboard"}
+26/3/2026, 11:34:09 am | admin | ADMIN | PAGE_VIEW | /admin/mwls-management | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"pathname":"/admin/mwls-management"}
+26/3/2026, 11:34:09 am | admin | ADMIN | PAGE_VIEW | /admin/mwls-management | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"pathname":"/admin/mwls-management"}
+26/3/2026, 11:34:09 am | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"tag":"A","label":"MWLS Management"}
+26/3/2026, 11:34:12 am | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"tag":"BUTTON","label":"Test MWL"}
+26/3/2026, 11:56:07 am | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"tag":"BUTTON","label":"Test MWL"}
+26/3/2026, 11:56:27 am | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"tag":"BUTTON","label":"Test MWL"}
+26/3/2026, 12:03:55 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"tag":"BUTTON","label":"Test MWL"}
+26/3/2026, 12:04:31 pm | admin | ADMIN | PAGE_VIEW | /mwls | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"pathname":"/mwls"}
+26/3/2026, 12:04:31 pm | admin | ADMIN | PAGE_VIEW | /mwls | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"pathname":"/mwls"}
+26/3/2026, 12:04:31 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"tag":"A","label":"Modality WorkList"}
+26/3/2026, 12:04:39 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"tag":"BUTTON","label":"mwl-toggle on"}
+26/3/2026, 12:04:42 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"tag":"BUTTON","label":"mwl-toggle off"}
+26/3/2026, 12:05:15 pm | admin | ADMIN | PAGE_VIEW | /admin/mwls-management | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"pathname":"/admin/mwls-management"}
+26/3/2026, 12:05:15 pm | admin | ADMIN | PAGE_VIEW | /admin/mwls-management | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"pathname":"/admin/mwls-management"}
+26/3/2026, 12:05:15 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"tag":"A","label":"MWLS Management"}
+26/3/2026, 12:05:31 pm | admin | ADMIN | PAGE_VIEW | /admin/pacs-management | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"pathname":"/admin/pacs-management"}
+26/3/2026, 12:05:31 pm | admin | ADMIN | CLICK | /admin/pacs-management | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"tag":"A","label":"PACS Management"}
+26/3/2026, 12:05:31 pm | admin | ADMIN | PAGE_VIEW | /admin/pacs-management | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"pathname":"/admin/pacs-management"}
+26/3/2026, 12:05:49 pm | admin | ADMIN | PAGE_VIEW | /pacspage | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"pathname":"/pacspage"}
+26/3/2026, 12:05:49 pm | admin | ADMIN | PAGE_VIEW | /pacspage | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"pathname":"/pacspage"}
+26/3/2026, 12:05:49 pm | admin | ADMIN | CLICK | /pacspage | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"tag":"A","label":"PACS Page"}
+26/3/2026, 12:07:57 pm | admin | ADMIN | PAGE_VIEW | /admin/pacs-management | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"pathname":"/admin/pacs-management"}
+26/3/2026, 12:07:57 pm | admin | ADMIN | PAGE_VIEW | /admin/pacs-management | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"pathname":"/admin/pacs-management"}
+26/3/2026, 12:07:58 pm | admin | ADMIN | CLICK | /admin/pacs-management | 127.0.0.1 | 27bdf0aa-8423-4d7d-9f0e-af92b98005a8 | {"tag":"A","label":"PACS Management"}
+26/3/2026, 12:45:23 pm | admin | ADMIN | LOGIN_SUCCESS | / | 127.0.0.1 | e63f0548-ecba-42ce-9b8c-25e95ee4c2b0 | {"user_id":1}
+26/3/2026, 12:45:23 pm | admin | ADMIN | PAGE_VIEW | /dashboard | 127.0.0.1 | e63f0548-ecba-42ce-9b8c-25e95ee4c2b0 | {"pathname":"/dashboard"}
+26/3/2026, 12:45:23 pm | admin | ADMIN | PAGE_VIEW | /dashboard | 127.0.0.1 | e63f0548-ecba-42ce-9b8c-25e95ee4c2b0 | {"pathname":"/dashboard"}
+26/3/2026, 12:45:31 pm | admin | ADMIN | PAGE_VIEW | /admin/pacs-management | 127.0.0.1 | e63f0548-ecba-42ce-9b8c-25e95ee4c2b0 | {"pathname":"/admin/pacs-management"}
+26/3/2026, 12:45:31 pm | admin | ADMIN | CLICK | /admin/pacs-management | 127.0.0.1 | e63f0548-ecba-42ce-9b8c-25e95ee4c2b0 | {"tag":"A","label":"PACS Management"}
+26/3/2026, 12:45:31 pm | admin | ADMIN | PAGE_VIEW | /admin/pacs-management | 127.0.0.1 | e63f0548-ecba-42ce-9b8c-25e95ee4c2b0 | {"pathname":"/admin/pacs-management"}
+26/3/2026, 1:34:23 pm | admin | ADMIN | LOGOUT | /admin/pacs-management | 127.0.0.1 | e63f0548-ecba-42ce-9b8c-25e95ee4c2b0 | {"reason":"user_initiated_or_timeout"}
+26/3/2026, 2:39:07 pm | admin | ADMIN | LOGIN_SUCCESS | / | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"user_id":1}
+26/3/2026, 2:39:08 pm | admin | ADMIN | PAGE_VIEW | /dashboard | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/dashboard"}
+26/3/2026, 2:39:08 pm | admin | ADMIN | PAGE_VIEW | /dashboard | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/dashboard"}
+26/3/2026, 3:06:19 pm | admin | ADMIN | PAGE_VIEW | /patient-list | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/patient-list"}
+26/3/2026, 3:06:19 pm | admin | ADMIN | PAGE_VIEW | /patient-list | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/patient-list"}
+26/3/2026, 3:06:19 pm | admin | ADMIN | CLICK | /patient-list | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"tag":"A","label":"Patient List"}
+26/3/2026, 3:06:20 pm | admin | ADMIN | PAGE_VIEW | /scheduling | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/scheduling"}
+26/3/2026, 3:06:20 pm | admin | ADMIN | PAGE_VIEW | /scheduling | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/scheduling"}
+26/3/2026, 3:06:20 pm | admin | ADMIN | CLICK | /scheduling | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"tag":"A","label":"Scheduling"}
+26/3/2026, 3:06:21 pm | admin | ADMIN | PAGE_VIEW | /mwls | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/mwls"}
+26/3/2026, 3:06:21 pm | admin | ADMIN | PAGE_VIEW | /mwls | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/mwls"}
+26/3/2026, 3:06:21 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"tag":"A","label":"Modality WorkList"}
+26/3/2026, 3:06:24 pm | admin | ADMIN | PAGE_VIEW | /admin/mwls-management | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/admin/mwls-management"}
+26/3/2026, 3:06:24 pm | admin | ADMIN | PAGE_VIEW | /admin/mwls-management | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/admin/mwls-management"}
+26/3/2026, 3:06:24 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"tag":"A","label":"MWLS Management"}
+26/3/2026, 3:06:27 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"tag":"BUTTON","label":"Test MWL"}
+26/3/2026, 3:06:31 pm | admin | ADMIN | PAGE_VIEW | /dashboard | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/dashboard"}
+26/3/2026, 3:06:31 pm | admin | ADMIN | PAGE_VIEW | /dashboard | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/dashboard"}
+26/3/2026, 3:06:31 pm | admin | ADMIN | CLICK | /dashboard | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"tag":"A","label":"Dashboard"}
+26/3/2026, 3:06:32 pm | admin | ADMIN | PAGE_VIEW | /patient-list | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/patient-list"}
+26/3/2026, 3:06:32 pm | admin | ADMIN | PAGE_VIEW | /patient-list | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/patient-list"}
+26/3/2026, 3:06:32 pm | admin | ADMIN | CLICK | /patient-list | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"tag":"A","label":"Patient List"}
+26/3/2026, 3:06:33 pm | admin | ADMIN | PAGE_VIEW | /dashboard | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/dashboard"}
+26/3/2026, 3:06:33 pm | admin | ADMIN | PAGE_VIEW | /dashboard | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/dashboard"}
+26/3/2026, 3:06:33 pm | admin | ADMIN | CLICK | /dashboard | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"tag":"A","label":"Dashboard"}
+26/3/2026, 3:06:39 pm | admin | ADMIN | PAGE_VIEW | /scheduling | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/scheduling"}
+26/3/2026, 3:06:39 pm | admin | ADMIN | PAGE_VIEW | /scheduling | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/scheduling"}
+26/3/2026, 3:06:39 pm | admin | ADMIN | CLICK | /scheduling | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"tag":"A","label":"Scheduling"}
+26/3/2026, 3:06:42 pm | admin | ADMIN | CLICK | /scheduling | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"tag":"BUTTON","label":"←"}
+26/3/2026, 3:06:44 pm | admin | ADMIN | PAGE_VIEW | /mwls | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/mwls"}
+26/3/2026, 3:06:44 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"tag":"A","label":"Modality WorkList"}
+26/3/2026, 3:06:44 pm | admin | ADMIN | PAGE_VIEW | /mwls | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/mwls"}
+26/3/2026, 3:07:03 pm | admin | ADMIN | PAGE_VIEW | /pacspage | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/pacspage"}
+26/3/2026, 3:07:04 pm | admin | ADMIN | PAGE_VIEW | /pacspage | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/pacspage"}
+26/3/2026, 3:07:04 pm | admin | ADMIN | CLICK | /pacspage | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"tag":"A","label":"PACS Page"}
+26/3/2026, 3:07:28 pm | admin | ADMIN | PAGE_VIEW | /admin/user-management | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/admin/user-management"}
+26/3/2026, 3:07:28 pm | admin | ADMIN | PAGE_VIEW | /admin/user-management | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/admin/user-management"}
+26/3/2026, 3:07:28 pm | admin | ADMIN | CLICK | /admin/user-management | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"tag":"A","label":"User Management"}
+26/3/2026, 3:07:31 pm | admin | ADMIN | PAGE_VIEW | /admin/templates | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/admin/templates"}
+26/3/2026, 3:07:31 pm | admin | ADMIN | PAGE_VIEW | /admin/templates | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/admin/templates"}
+26/3/2026, 3:07:31 pm | admin | ADMIN | CLICK | /admin/templates | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"tag":"A","label":"Template Management"}
+26/3/2026, 3:07:33 pm | admin | ADMIN | PAGE_VIEW | /admin/pacs-management | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/admin/pacs-management"}
+26/3/2026, 3:07:33 pm | admin | ADMIN | PAGE_VIEW | /admin/pacs-management | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/admin/pacs-management"}
+26/3/2026, 3:07:33 pm | admin | ADMIN | CLICK | /admin/pacs-management | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"tag":"A","label":"PACS Management"}
+26/3/2026, 3:07:42 pm | admin | ADMIN | PAGE_VIEW | /admin/pacs-management | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/admin/pacs-management"}
+26/3/2026, 3:07:42 pm | admin | ADMIN | PAGE_VIEW | /admin/pacs-management | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/admin/pacs-management"}
+26/3/2026, 3:07:45 pm | admin | ADMIN | PAGE_VIEW | /admin/mwls-management | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/admin/mwls-management"}
+26/3/2026, 3:07:45 pm | admin | ADMIN | PAGE_VIEW | /admin/mwls-management | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"pathname":"/admin/mwls-management"}
+26/3/2026, 3:07:45 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"tag":"A","label":"MWLS Management"}
+26/3/2026, 3:07:48 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"tag":"BUTTON","label":"Test MWL"}
+26/3/2026, 3:41:26 pm | admin | ADMIN | LOGOUT | /admin/audit-logs | 127.0.0.1 | 66d5fa44-3b35-4fe5-ae87-6159b9a8eda5 | {"reason":"user_initiated_or_timeout"}
+26/3/2026, 3:42:19 pm | admin | ADMIN | LOGIN_SUCCESS | / | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"user_id":1}
+26/3/2026, 3:42:20 pm | admin | ADMIN | PAGE_VIEW | /dashboard | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/dashboard"}
+26/3/2026, 3:42:20 pm | admin | ADMIN | PAGE_VIEW | /dashboard | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/dashboard"}
+26/3/2026, 4:02:14 pm | admin | ADMIN | PAGE_VIEW | /patient-list | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/patient-list"}
+26/3/2026, 4:02:14 pm | admin | ADMIN | PAGE_VIEW | /patient-list | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/patient-list"}
+26/3/2026, 4:02:14 pm | admin | ADMIN | CLICK | /patient-list | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"Patient List"}
+26/3/2026, 4:02:15 pm | admin | ADMIN | PAGE_VIEW | /scheduling | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/scheduling"}
+26/3/2026, 4:02:15 pm | admin | ADMIN | PAGE_VIEW | /scheduling | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/scheduling"}
+26/3/2026, 4:02:15 pm | admin | ADMIN | CLICK | /scheduling | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"Scheduling"}
+26/3/2026, 4:02:16 pm | admin | ADMIN | PAGE_VIEW | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/mwls"}
+26/3/2026, 4:02:16 pm | admin | ADMIN | PAGE_VIEW | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/mwls"}
+26/3/2026, 4:02:16 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"Modality WorkList"}
+26/3/2026, 4:02:17 pm | admin | ADMIN | PAGE_VIEW | /pacspage | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/pacspage"}
+26/3/2026, 4:02:17 pm | admin | ADMIN | PAGE_VIEW | /pacspage | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/pacspage"}
+26/3/2026, 4:02:17 pm | admin | ADMIN | CLICK | /pacspage | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"PACS Page"}
+26/3/2026, 4:02:18 pm | admin | ADMIN | PAGE_VIEW | /reporting | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/reporting"}
+26/3/2026, 4:02:18 pm | admin | ADMIN | PAGE_VIEW | /reporting | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/reporting"}
+26/3/2026, 4:02:18 pm | admin | ADMIN | CLICK | /reporting | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"Reporting"}
+26/3/2026, 4:02:21 pm | admin | ADMIN | PAGE_VIEW | /admin/user-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/admin/user-management"}
+26/3/2026, 4:02:21 pm | admin | ADMIN | PAGE_VIEW | /admin/user-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/admin/user-management"}
+26/3/2026, 4:02:21 pm | admin | ADMIN | CLICK | /admin/user-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"User Management"}
+26/3/2026, 4:02:24 pm | admin | ADMIN | PAGE_VIEW | /admin/templates | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/admin/templates"}
+26/3/2026, 4:02:24 pm | admin | ADMIN | PAGE_VIEW | /admin/templates | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/admin/templates"}
+26/3/2026, 4:02:24 pm | admin | ADMIN | CLICK | /admin/templates | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"Template Management"}
+26/3/2026, 4:02:27 pm | admin | ADMIN | PAGE_VIEW | /admin/pacs-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/admin/pacs-management"}
+26/3/2026, 4:02:27 pm | admin | ADMIN | PAGE_VIEW | /admin/pacs-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/admin/pacs-management"}
+26/3/2026, 4:02:27 pm | admin | ADMIN | CLICK | /admin/pacs-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"PACS Management"}
+26/3/2026, 4:02:30 pm | admin | ADMIN | PAGE_VIEW | /admin/user-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/admin/user-management"}
+26/3/2026, 4:02:30 pm | admin | ADMIN | PAGE_VIEW | /admin/user-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/admin/user-management"}
+26/3/2026, 4:02:30 pm | admin | ADMIN | CLICK | /admin/user-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"User Management"}
+26/3/2026, 5:02:20 pm | admin | ADMIN | CLICK | /admin/user-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"User Management"}
+26/3/2026, 5:02:21 pm | admin | ADMIN | PAGE_VIEW | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/admin/mwls-management"}
+26/3/2026, 5:02:21 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"MWLS Management"}
+26/3/2026, 5:02:21 pm | admin | ADMIN | PAGE_VIEW | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/admin/mwls-management"}
+26/3/2026, 5:02:24 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Test MWL"}
+26/3/2026, 5:03:42 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Test MWL"}
+26/3/2026, 5:03:51 pm | admin | ADMIN | PAGE_VIEW | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/admin/mwls-management"}
+26/3/2026, 5:03:51 pm | admin | ADMIN | PAGE_VIEW | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/admin/mwls-management"}
+26/3/2026, 5:04:21 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Test MWL"}
+26/3/2026, 5:06:03 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Test MWL"}
+26/3/2026, 5:06:21 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Test MWL"}
+26/3/2026, 5:25:03 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Test MWL"}
+26/3/2026, 5:31:55 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Test MWL"}
+26/3/2026, 5:36:47 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Test MWL"}
+26/3/2026, 5:39:39 pm | admin | ADMIN | PAGE_VIEW | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/admin/mwls-management"}
+26/3/2026, 5:39:39 pm | admin | ADMIN | PAGE_VIEW | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/admin/mwls-management"}
+26/3/2026, 5:39:41 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Test MWL"}
+26/3/2026, 5:41:40 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Test MWL"}
+26/3/2026, 5:42:49 pm | admin | ADMIN | PAGE_VIEW | /reporting | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/reporting"}
+26/3/2026, 5:42:49 pm | admin | ADMIN | PAGE_VIEW | /pacspage | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/pacspage"}
+26/3/2026, 5:42:49 pm | admin | ADMIN | PAGE_VIEW | /pacspage | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/pacspage"}
+26/3/2026, 5:42:49 pm | admin | ADMIN | CLICK | /pacspage | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"PACS Page"}
+26/3/2026, 5:42:49 pm | admin | ADMIN | PAGE_VIEW | /reporting | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/reporting"}
+26/3/2026, 5:42:49 pm | admin | ADMIN | CLICK | /reporting | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"Reporting"}
+26/3/2026, 5:42:49 pm | admin | ADMIN | PAGE_VIEW | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/mwls"}
+26/3/2026, 5:42:49 pm | admin | ADMIN | PAGE_VIEW | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/mwls"}
+26/3/2026, 5:42:49 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"Modality WorkList"}
+26/3/2026, 5:42:50 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"Modality WorkList"}
+26/3/2026, 5:42:50 pm | admin | ADMIN | PAGE_VIEW | /scheduling | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/scheduling"}
+26/3/2026, 5:42:50 pm | admin | ADMIN | PAGE_VIEW | /scheduling | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/scheduling"}
+26/3/2026, 5:42:50 pm | admin | ADMIN | CLICK | /scheduling | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"Scheduling"}
+26/3/2026, 5:42:51 pm | admin | ADMIN | PAGE_VIEW | /patient-list | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/patient-list"}
+26/3/2026, 5:42:51 pm | admin | ADMIN | PAGE_VIEW | /patient-list | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/patient-list"}
+26/3/2026, 5:42:51 pm | admin | ADMIN | CLICK | /patient-list | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"Patient List"}
+26/3/2026, 5:42:51 pm | admin | ADMIN | PAGE_VIEW | /dashboard | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/dashboard"}
+26/3/2026, 5:42:51 pm | admin | ADMIN | PAGE_VIEW | /dashboard | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/dashboard"}
+26/3/2026, 5:42:51 pm | admin | ADMIN | CLICK | /dashboard | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"Dashboard"}
+26/3/2026, 5:45:08 pm | admin | ADMIN | CLICK | /dashboard | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"Dashboard"}
+26/3/2026, 5:45:08 pm | admin | ADMIN | PAGE_VIEW | /patient-list | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/patient-list"}
+26/3/2026, 5:45:08 pm | admin | ADMIN | PAGE_VIEW | /patient-list | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/patient-list"}
+26/3/2026, 5:45:08 pm | admin | ADMIN | CLICK | /patient-list | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"Patient List"}
+26/3/2026, 5:45:08 pm | admin | ADMIN | PAGE_VIEW | /scheduling | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/scheduling"}
+26/3/2026, 5:45:08 pm | admin | ADMIN | PAGE_VIEW | /scheduling | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/scheduling"}
+26/3/2026, 5:45:08 pm | admin | ADMIN | CLICK | /scheduling | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"Scheduling"}
+26/3/2026, 5:45:09 pm | admin | ADMIN | PAGE_VIEW | /patient-list | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/patient-list"}
+26/3/2026, 5:45:09 pm | admin | ADMIN | PAGE_VIEW | /patient-list | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/patient-list"}
+26/3/2026, 5:45:09 pm | admin | ADMIN | CLICK | /patient-list | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"Patient List"}
+26/3/2026, 5:45:14 pm | admin | ADMIN | PAGE_VIEW | /scheduling | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/scheduling"}
+26/3/2026, 5:45:14 pm | admin | ADMIN | PAGE_VIEW | /scheduling | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/scheduling"}
+26/3/2026, 5:45:14 pm | admin | ADMIN | CLICK | /scheduling | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Schedule"}
+26/3/2026, 5:45:22 pm | admin | ADMIN | CLICK | /scheduling | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Cancel"}
+26/3/2026, 5:45:23 pm | admin | ADMIN | PAGE_VIEW | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/mwls"}
+26/3/2026, 5:45:23 pm | admin | ADMIN | PAGE_VIEW | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/mwls"}
+26/3/2026, 5:45:23 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"Modality WorkList"}
+26/3/2026, 5:45:23 pm | admin | ADMIN | PAGE_VIEW | /pacspage | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/pacspage"}
+26/3/2026, 5:45:23 pm | admin | ADMIN | PAGE_VIEW | /pacspage | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/pacspage"}
+26/3/2026, 5:45:23 pm | admin | ADMIN | CLICK | /pacspage | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"PACS Page"}
+26/3/2026, 5:45:24 pm | admin | ADMIN | PAGE_VIEW | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/mwls"}
+26/3/2026, 5:45:24 pm | admin | ADMIN | PAGE_VIEW | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/mwls"}
+26/3/2026, 5:45:24 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"Modality WorkList"}
+26/3/2026, 5:45:25 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"mwl-icon-btn"}
+26/3/2026, 5:45:27 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Confirm and Broadcast"}
+26/3/2026, 5:45:38 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"mwl-icon-btn"}
+26/3/2026, 5:45:39 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Confirm and Broadcast"}
+26/3/2026, 5:45:56 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"mwl-icon-btn"}
+26/3/2026, 5:45:57 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Confirm and Broadcast"}
+26/3/2026, 5:46:22 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"mwl-icon-btn"}
+26/3/2026, 5:46:23 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Confirm and Broadcast"}
+26/3/2026, 5:48:19 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"mwl-icon-btn"}
+26/3/2026, 5:48:20 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Confirm and Broadcast"}
+26/3/2026, 5:51:07 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"mwl-icon-btn"}
+26/3/2026, 5:51:35 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Confirm and Broadcast"}
+26/3/2026, 5:51:44 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"mwl-icon-btn"}
+26/3/2026, 5:57:29 pm | admin | ADMIN | CLICK | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Confirm and Broadcast"}
+26/3/2026, 6:00:33 pm | admin | ADMIN | PAGE_VIEW | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/mwls"}
+26/3/2026, 6:00:33 pm | admin | ADMIN | PAGE_VIEW | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/mwls"}
+26/3/2026, 6:00:36 pm | admin | ADMIN | PAGE_VIEW | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/mwls"}
+26/3/2026, 6:00:37 pm | admin | ADMIN | PAGE_VIEW | /mwls | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/mwls"}
+26/3/2026, 6:00:39 pm | admin | ADMIN | PAGE_VIEW | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/admin/mwls-management"}
+26/3/2026, 6:00:39 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"A","label":"MWLS Management"}
+26/3/2026, 6:00:39 pm | admin | ADMIN | PAGE_VIEW | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"pathname":"/admin/mwls-management"}
+26/3/2026, 6:00:41 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Test MWL"}
+26/3/2026, 6:02:47 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Test MWL"}
+26/3/2026, 6:07:42 pm | admin | ADMIN | CLICK | /admin/mwls-management | 127.0.0.1 | 5661fe9a-917e-44df-90da-17e27d3a318e | {"tag":"BUTTON","label":"Test MWL"}
