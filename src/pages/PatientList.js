@@ -187,12 +187,29 @@ function PatientList() {
     navigate("/scheduling", { state: { patient } });
   };
 
-  const handlePrint = (patient) => {
+  const handlePrint = async (patient) => {
     const identifier = patient?.uhid || patient?.patient_id || patient?.mrn || patient?.id;
     if (!identifier) return;
-    const base = (api?.defaults?.baseURL || "").replace(/\/$/, "");
-    const printUrl = `${base}/api/patients/print/${encodeURIComponent(identifier)}`;
-    window.open(printUrl, "_blank", "noopener,noreferrer");
+    try {
+      const res = await api.get(`/api/patients/print/${encodeURIComponent(identifier)}`, {
+        responseType: "blob",
+      });
+      const blob = new Blob([res.data], { type: "application/pdf" });
+      const url = window.URL.createObjectURL(blob);
+      const opened = window.open(url, "_blank", "noopener,noreferrer");
+      if (!opened) {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `patient_${identifier}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
+      setTimeout(() => window.URL.revokeObjectURL(url), 4000);
+    } catch (err) {
+      console.error("Print failed:", err);
+      alert("Failed to open print. Please try again.");
+    }
   };
 
   const handleEdit = async (patient) => {

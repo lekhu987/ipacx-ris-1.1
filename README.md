@@ -32,91 +32,173 @@ This README is written for client/demo and developer onboarding.
 
 ## Project Structure
 
+This list includes **all tracked files** and source files, excluding large runtime artifacts: `node_modules/`, `build/`, `logs/`, `backend/uploads/`, `backend/generated_pdfs/`, and `backend/routes/uploads/`.
+
 ```text
-ipacx-ris 1.1/
-|-- backend/
-|   |-- server.js                  # Main backend entry
+ipacx-ris 1.1
+|-- backend
+|   |-- controllers
+|   |   |-- appointmentsController.js
+|   |   |-- auditController.js
+|   |   |-- authController.js
+|   |   |-- modalitiesController.js
+|   |   |-- mwlController.js
+|   |   |-- mwlControllerV2.js
+|   |   |-- mwlDimseController.js
+|   |   |-- mwlSettingsController.js
+|   |   |-- mwlTargetsController.js
+|   |   |-- pacsController.js
+|   |   |-- patientsController.js
+|   |   |-- publicReportSheetController.js
+|   |   |-- reportedByController.js
+|   |   |-- reportsController.js
+|   |   |-- reportTemplatesController.js
+|   |   |-- speechController.js
+|   |   |-- studiesController.js
+|   |   +-- usersController.js
 |   |-- db.js
-|   |-- package.json
-|   |-- routes/
+|   |-- generateHash.js
+|   |-- middleware
+|   |   |-- auditlog.js
 |   |   |-- auth.js
-|   |   |-- users.js
-|   |   |-- reportedBy.js
-|   |   |-- patients.js
+|   |   |-- roles.js
+|   |   +-- uploadSignature.js
+|   |-- package.json
+|   |-- package-lock.json
+|   |-- routes
 |   |   |-- appointments.js
+|   |   |-- audit.js
+|   |   |-- auth.js
+|   |   |-- modalities.js
 |   |   |-- mwl.js
 |   |   |-- mwlDimse.js
+|   |   |-- mwlRoutes.js
 |   |   |-- mwlSettings.js
 |   |   |-- mwlTargets.js
-|   |   |-- mwlRoutes.js
 |   |   |-- pacs.js
-|   |   |-- reportTemplates.js
+|   |   |-- patients.js
+|   |   |-- publicReportSheet.js
+|   |   |-- reportedBy.js
 |   |   |-- reports.js
-|   |   |-- audit.js
+|   |   |-- reportTemplates.js
 |   |   |-- speech.js
-|   |   `-- publicReportSheet.js
-|   |-- services/
+|   |   |-- studies.js
+|   |   +-- users.js
+|   |-- server.js
+|   |-- services
+|   |   |-- appointmentsService.js
+|   |   |-- auditService.js
+|   |   |-- authService.js
+|   |   |-- modalitiesService.js
 |   |   |-- mwlAutoPush.js
 |   |   |-- mwlConnectivity.js
 |   |   |-- mwlDimseExport.js
 |   |   |-- mwlDimseScp.js
+|   |   |-- mwlDimseService.js
 |   |   |-- mwlExporter.js
-|   |   `-- mwlScpSync.js
-|   |-- utils/
-|   |   |-- auditLogger.js
-|   |   `-- generateFinalReportPDF.js
-|   |-- middleware/
-|   |   `-- uploadSignature.js
-|   |-- uploads/
-|   |   |-- signatures/
-|   |   `-- report_images/
-|   `-- generated_pdfs/
-|
-|-- src/
-|   |-- App.js                     # Frontend route map
-|   |-- index.js
-|   |-- api/
+|   |   |-- mwlScpSync.js
+|   |   |-- mwlSettingsService.js
+|   |   |-- mwlTargetsService.js
+|   |   |-- pacsService.js
+|   |   |-- publicReportSheetService.js
+|   |   |-- reportedByService.js
+|   |   |-- reportTemplatesService.js
+|   |   |-- speechService.js
+|   |   |-- studiesService.js
+|   |   +-- usersService.js
+|   +-- utils
+|       |-- auditLogger.js
+|       |-- generateFinalReportPDF.js
+|       +-- mwlLogger.js
+|-- craco.config.js
+|-- package.json
+|-- package-lock.json
+|-- postcss.config.js
+|-- public
+|   |-- favicon.ico
+|   |-- index.html
+|   |-- logo192.png
+|   |-- logo512.png
+|   |-- manifest.json
+|   +-- robots.txt
+|-- README.md
+|-- schema.sql
+|-- src
+|   |-- api
 |   |   |-- axios.js
-|   |   `-- urls.js
-|   |-- context/
-|   |   |-- AuthContext.jsx
-|   |   |-- PatientContext.js
-|   |   `-- StudiesContext.js
-|   |-- layout/
-|   |   |-- MainLayout.js
-|   |   `-- MainLayout.css
-|   |-- components/
+|   |   +-- urls.js
+|   |-- App.js
+|   |-- App.test.js
+|   |-- components
+|   |   |-- CustomDatePicker.css
+|   |   |-- CustomDatePicker.js
+|   |   |-- DigitalSignatureField.jsx
+|   |   |-- Login
+|   |   |   |-- login.css
+|   |   |   +-- login.js
+|   |   |-- LoginRedirect.jsx
 |   |   |-- ProtectedRoute.js
 |   |   |-- ReportPrintLayout.jsx
-|   |   |-- DigitalSignatureField.jsx
-|   |   `-- Login/
-|   |       |-- login.js
-|   |       `-- login.css
-|   |-- pages/
-|   |   |-- Dashboard.js
-|   |   |-- PatientList.js
-|   |   |-- PatientRegistration.jsx
-|   |   |-- Scheduling.js
-|   |   |-- MWLS.js
-|   |   |-- PACSpage.jsx
-|   |   |-- ReportingPage.jsx
-|   |   |-- ReportPanel.jsx
+|   |   +-- StudiesTable.jsx
+|   |-- context
+|   |   |-- AuthContext.jsx
+|   |   |-- PatientContext.js
+|   |   +-- StudiesContext.js
+|   |-- hooks
+|   |   +-- useIdleTimer.js
+|   |-- index.css
+|   |-- index.js
+|   |-- layout
+|   |   |-- MainLayout.css
+|   |   +-- MainLayout.js
+|   |-- logo.svg
+|   |-- pages
+|   |   |-- AddendumReport.jsx
+|   |   |-- AddNewReportPage.js
+|   |   |-- AddPatient.css
+|   |   |-- AddPatient.js
+|   |   |-- AddScheduler.css
+|   |   |-- AddScheduler.js
+|   |   |-- adminsettings
+|   |   |   |-- AuditLogs.css
+|   |   |   |-- AuditLogs.jsx
+|   |   |   |-- MwlsManagement.css
+|   |   |   |-- MwlsManagement.jsx
+|   |   |   |-- PacsManagement.css
+|   |   |   |-- PacsManagement.jsx
+|   |   |   |-- ReportedBy.jsx
+|   |   |   |-- TemplateManagement.css
+|   |   |   |-- TemplateManagement.jsx
+|   |   |   |-- UserManagement.css
+|   |   |   +-- UserManagement.jsx
+|   |   |-- Billing.jsx
+|   |   |-- CreateReport.css
 |   |   |-- CreateReport.js
-|   |   `-- adminsettings/
-|   |       |-- UserManagement.jsx
-|   |       |-- ReportedBy.jsx
-|   |       |-- PacsManagement.jsx
-|   |       |-- TemplateManagement.jsx
-|   |       `-- AuditLogs.jsx
-|   `-- utils/
+|   |   |-- Dashboard.css
+|   |   |-- Dashboard.js
+|   |   |-- MWLS.css
+|   |   |-- MWLS.js
+|   |   |-- PACSpage.css
+|   |   |-- PACSpage.jsx
+|   |   |-- PatientList.css
+|   |   |-- PatientList.js
+|   |   |-- PatientRegistration.css
+|   |   |-- PatientRegistration.jsx
+|   |   |-- ReportingPage.css
+|   |   |-- ReportingPage.jsx
+|   |   |-- ReportPanel.css
+|   |   |-- ReportPanel.jsx
+|   |   |-- Scheduling.css
+|   |   +-- Scheduling.js
+|   |-- print.css
+|   |-- reportWebVitals.js
+|   |-- services
+|   |   +-- axiosInstance.js
+|   |-- setupTests.js
+|   +-- utils
 |       |-- auditClient.js
-|       `-- tokenUtils.js
-|
-|-- public/
-|-- logs/
-|-- schema.sql
-|-- package.json                   # Frontend package
-`-- README.md
+|       +-- tokenUtils.js
++-- tailwind.config.js
 ```
 
 ## Environment Variables

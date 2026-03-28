@@ -133,36 +133,46 @@ function buildPatientId(year, month, seq) {
   return `${year}${String(month).padStart(2, "0")}${pad3(seq)}`;
 }
 
+async function ensurePatientIdCounterTable() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS patient_id_counters (
+      ym VARCHAR(6) PRIMARY KEY,
+      last_seq INTEGER NOT NULL
+    )
+  `);
+}
+
 async function generateNextPatientId() {
+  await ensurePatientIdCounterTable();
+
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth() + 1;
   const prefix = `${year}${String(month).padStart(2, "0")}`;
+  const slashPrefix = `${year}/${String(month).padStart(2, "0")}`;
 
   const result = await pool.query(
     `
-    SELECT patient_id
-    FROM patients
-    WHERE patient_id LIKE $1
-    ORDER BY patient_id DESC
-    LIMIT 1
+    WITH candidate AS (
+      SELECT
+        CASE
+          WHEN patient_id ~ '^\\d{9}$' THEN right(patient_id, 3)::int
+          WHEN patient_id ~ '^\\d{4}/\\d{2}/\\d{3}$' THEN split_part(patient_id, '/', 3)::int
+          ELSE NULL
+        END AS seq
+      FROM patients
+      WHERE patient_id LIKE $1 OR patient_id LIKE $2
+    )
+    INSERT INTO patient_id_counters (ym, last_seq)
+    VALUES ($3, COALESCE((SELECT MAX(seq) FROM candidate), 0) + 1)
+    ON CONFLICT (ym) DO UPDATE
+    SET last_seq = patient_id_counters.last_seq + 1
+    RETURNING last_seq
     `,
-    [`${prefix}%`]
+    [`${prefix}%`, `${slashPrefix}%`, prefix]
   );
 
-  let nextSeq = 1;
-  if (result.rowCount > 0 && result.rows[0]?.patient_id) {
-    const raw = String(result.rows[0].patient_id);
-    if (raw.includes("/")) {
-      const parts = raw.split("/");
-      const last = Number(parts[2]);
-      if (!Number.isNaN(last)) nextSeq = last + 1;
-    } else {
-      const last = Number(raw.slice(-3));
-      if (!Number.isNaN(last)) nextSeq = last + 1;
-    }
-  }
-
+  const nextSeq = Number(result.rows?.[0]?.last_seq) || 1;
   return buildPatientId(year, month, nextSeq);
 }
 
