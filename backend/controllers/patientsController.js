@@ -82,6 +82,26 @@ async function ensurePatientIdCounterTable() {
   `);
 }
 
+async function getMaxPatientSeqForMonth(prefix, slashPrefix) {
+  const result = await pool.query(
+    `
+    SELECT MAX(seq) AS max_seq
+    FROM (
+      SELECT
+        CASE
+          WHEN patient_id ~ '^\\d{9}$' THEN right(patient_id, 3)::int
+          WHEN patient_id ~ '^\\d{4}/\\d{2}/\\d{3}$' THEN split_part(patient_id, '/', 3)::int
+          ELSE NULL
+        END AS seq
+      FROM patients
+      WHERE patient_id LIKE $1 OR patient_id LIKE $2
+    ) AS candidate
+    `,
+    [`${prefix}%`, `${slashPrefix}%`]
+  );
+  return Number(result.rows?.[0]?.max_seq) || 0;
+}
+
 function parsePatientIdSeed(input) {
   const raw = String(input || "").trim();
   if (!raw) return null;
@@ -93,7 +113,7 @@ function parsePatientIdSeed(input) {
   return { ym, seq };
 }
 
-async function generateNextPatientId() {
+async function allocateNextPatientId() {
   await ensurePatientIdCounterTable();
 
   const now = new Date();
@@ -124,6 +144,31 @@ async function generateNextPatientId() {
   );
 
   const nextSeq = Number(result.rows?.[0]?.last_seq) || 1;
+  return buildPatientId(year, month, nextSeq);
+}
+
+async function peekNextPatientId() {
+  await ensurePatientIdCounterTable();
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const prefix = `${year}${String(month).padStart(2, "0")}`;
+  const slashPrefix = `${year}/${String(month).padStart(2, "0")}`;
+
+  const counter = await pool.query(
+    "SELECT last_seq FROM patient_id_counters WHERE ym = $1 LIMIT 1",
+    [prefix]
+  );
+
+  let nextSeq = 1;
+  if (counter.rowCount > 0) {
+    nextSeq = Number(counter.rows[0]?.last_seq || 0) + 1;
+  } else {
+    const maxSeq = await getMaxPatientSeqForMonth(prefix, slashPrefix);
+    nextSeq = maxSeq + 1;
+  }
+
   return buildPatientId(year, month, nextSeq);
 }
 
@@ -174,7 +219,7 @@ router.post("/id-counter", async (req, res) => {
 
 router.get("/next-id", async (req, res) => {
   try {
-    const patientId = await generateNextPatientId();
+    const patientId = await peekNextPatientId();
     return res.json({ patient_id: patientId || "" });
   } catch (err) {
     console.error("Patient next id error:", err.message);
@@ -276,7 +321,7 @@ router.post("/", upload.single("id_proof_path"), async (req, res) => {
       });
     }
 
-    const patientId = await generateNextPatientId();
+    const patientId = await allocateNextPatientId();
     const uhid = patientId;
     const mrn = generateMRN();
     const fullName = [first_name, last_name].filter(Boolean).join(" ").trim();

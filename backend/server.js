@@ -87,12 +87,57 @@ const authRoutes = require("./routes/auth");
 app.use("/api", authRoutes);
 
 const requireAuth = require("./middleware/auth");
+const crypto = require("crypto");
+app.use((req, res, next) => {
+  req.request_id =
+    req.headers["x-request-id"] ||
+    (crypto.randomUUID ? crypto.randomUUID() : crypto.randomBytes(16).toString("hex"));
+  res.setHeader("x-request-id", req.request_id);
+  next();
+});
 app.use("/api", requireAuth);
 
 const { allowRoles } = require("./middleware/roles");
+const { logAction } = require("./utils/auditLogger");
+
+// Global audit logging for all API actions + errors (non-admin users included).
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on("finish", () => {
+    try {
+      const path = req.originalUrl || "";
+      if (path.startsWith("/api/audit")) return;
+
+      const status = res.statusCode || 0;
+      const method = req.method || "GET";
+      const isWrite = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+      const isError = status >= 400;
+
+      if (!isError && !isWrite) return;
+      if (isError && res.locals._auditErrorLogged) return;
+
+      const details = {
+        method,
+        status,
+        ms: Date.now() - start,
+      };
+
+      if (isError) {
+        details.message =
+          res.locals._auditErrorMessage || res.statusMessage || "Error";
+      }
+
+      const event = isError ? "API_ERROR" : "API_ACTION";
+      logAction(req, { event, page: path, details }).catch(() => {});
+    } catch {
+      // Avoid breaking the request cycle if audit logging fails.
+    }
+  });
+  next();
+});
 
 const mwlDimseRoutes = require("./routes/mwlDimse");
-app.use("/api/mwl-dimse", allowRoles("ADMIN", "TECHNICIAN"), mwlDimseRoutes);
+app.use("/api/mwl-dimse", allowRoles("ADMIN", "TECHNICIAN", "RADIOLOGIST"), mwlDimseRoutes);
 
 const usersRoutes = require("./routes/users");
 app.use("/api/users", allowRoles("ADMIN"), usersRoutes);
@@ -144,13 +189,40 @@ const speechRoutes = require("./routes/speech");
 app.use("/api/speech", speechRoutes);
 
 const auditRoutes = require("./routes/audit");
-app.use("/api/audit", allowRoles("ADMIN"), auditRoutes);
+app.use("/api/audit", auditRoutes);
 const { startAuditArchiveScheduler } = require("./utils/auditLogger");
 const { startMwlAutoPushScheduler } = require("./services/mwlAutoPush");
 const { startMwlDimseScp } = require("./services/mwlDimseScp");
 
 const publicReportSheetRoutes = require("./routes/publicReportSheet");
 app.use("/api/public/report-sheet", publicReportSheetRoutes);
+
+// Central error handler (logs API errors to audit)
+app.use((err, req, res, next) => {
+  const status = err.status || err.statusCode || 500;
+  const path = req.originalUrl || "";
+  if (!path.startsWith("/api/audit")) {
+    res.locals._auditErrorLogged = true;
+    res.locals._auditErrorMessage = err.message;
+    logAction(req, {
+      event: "API_ERROR",
+      page: path,
+      details: {
+        method: req.method,
+        status,
+        message: err.message || "Server error",
+      },
+    }).catch(() => {});
+  }
+
+  if (res.headersSent) {
+    return next(err);
+  }
+  return res.status(status).json({
+    success: false,
+    message: err.message || "Server error",
+  });
+});
 
 //const studiesRoutes = require("./routes/studies");
 //app.use("/api/studies", studiesRoutes);

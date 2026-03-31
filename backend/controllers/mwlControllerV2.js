@@ -5,6 +5,7 @@ const pool = require("../db");
 const { sendMWL } = require("../services/mwlExporter");
 const { exportDimseWorklist } = require("../services/mwlDimseExport");
 const { checkTcpReachable } = require("../services/mwlConnectivity");
+const { logAction } = require("../utils/auditLogger");
 
 const ORTHANC_URL = process.env.ORTHANC_URL;
 const ORTHANC_AUTH = {
@@ -63,6 +64,26 @@ async function ensurePatientIdCounterTable() {
       last_seq INTEGER NOT NULL
     )
   `);
+}
+
+async function getMaxPatientSeqForMonth(prefix, slashPrefix) {
+  const result = await pool.query(
+    `
+    SELECT MAX(seq) AS max_seq
+    FROM (
+      SELECT
+        CASE
+          WHEN patient_id ~ '^\\d{9}$' THEN right(patient_id, 3)::int
+          WHEN patient_id ~ '^\\d{4}/\\d{2}/\\d{3}$' THEN split_part(patient_id, '/', 3)::int
+          ELSE NULL
+        END AS seq
+      FROM patients
+      WHERE patient_id LIKE $1 OR patient_id LIKE $2
+    ) AS candidate
+    `,
+    [`${prefix}%`, `${slashPrefix}%`]
+  );
+  return Number(result.rows?.[0]?.max_seq) || 0;
 }
 
 async function getTableColumns(tableName) {
@@ -194,7 +215,7 @@ async function syncPatientFromMwl(entry) {
   }
 }
 
-async function generateNextPatientId() {
+async function allocateNextPatientId() {
   await ensurePatientIdCounterTable();
 
   const now = new Date();
@@ -225,6 +246,31 @@ async function generateNextPatientId() {
   );
 
   const nextSeq = Number(result.rows?.[0]?.last_seq) || 1;
+  return buildPatientId(year, month, nextSeq);
+}
+
+async function peekNextPatientId() {
+  await ensurePatientIdCounterTable();
+
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const prefix = `${year}${String(month).padStart(2, "0")}`;
+  const slashPrefix = `${year}/${String(month).padStart(2, "0")}`;
+
+  const counter = await pool.query(
+    "SELECT last_seq FROM patient_id_counters WHERE ym = $1 LIMIT 1",
+    [prefix]
+  );
+
+  let nextSeq = 1;
+  if (counter.rowCount > 0) {
+    nextSeq = Number(counter.rows[0]?.last_seq || 0) + 1;
+  } else {
+    const maxSeq = await getMaxPatientSeqForMonth(prefix, slashPrefix);
+    nextSeq = maxSeq + 1;
+  }
+
   return buildPatientId(year, month, nextSeq);
 }
 
@@ -408,7 +454,7 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: "Missing required fields" });
     }
     if (!String(entry.patient_id || "").trim()) {
-      entry.patient_id = await generateNextPatientId();
+      entry.patient_id = await allocateNextPatientId();
     }
 
     const result = await pool.query(
@@ -461,7 +507,7 @@ router.post("/register", async (req, res) => {
       return res.status(400).json({ error: "PatientName and Modality are required" });
     }
     if (!String(entry.patient_id || "").trim()) {
-      entry.patient_id = await generateNextPatientId();
+      entry.patient_id = await allocateNextPatientId();
     }
 
     const created = await pool.query(
@@ -515,11 +561,33 @@ router.post("/register", async (req, res) => {
             station_aet: pacs.ae_title || "",
           });
           response.status = "SYNCED";
+          await logAction(req, {
+            event: "MWL_PUSH_SUCCESS",
+            details: {
+              mwl_id: row.id,
+              patient_id: row.patientid,
+              accession_number: row.accessionnumber,
+              modality: row.modality,
+              target: pacs.ae_title || pacs.pacs_name || null,
+              server: `${pacs.ip_address}:${pacs.port}`,
+            },
+          }).catch(() => {});
         }
       } catch (pushErr) {
         console.error("MWL register push error:", pushErr.message);
         response.status = "FAILED";
         response.error = pushErr.message;
+        await logAction(req, {
+          event: "MWL_PUSH_FAILED",
+          details: {
+            mwl_id: row.id,
+            patient_id: row.patientid,
+            accession_number: row.accessionnumber,
+            modality: row.modality,
+            target: row.modality || null,
+            error: pushErr.message,
+          },
+        }).catch(() => {});
       }
     }
 
@@ -545,7 +613,7 @@ router.get("/next-accession", async (req, res) => {
 
 router.get("/next-patient-id", async (req, res) => {
   try {
-    const patientId = await generateNextPatientId();
+    const patientId = await peekNextPatientId();
     return res.json({ patient_id: patientId || "" });
   } catch (err) {
     console.error("MWL next patient id error:", err.message);
@@ -799,6 +867,16 @@ router.post("/:id/send", async (req, res) => {
           "UPDATE mwl SET status = $1 WHERE id = $2",
           ["QUEUED", req.params.id]
         );
+        await logAction(req, {
+          event: "MWL_DIMSE_EXPORT_SUCCESS",
+          details: {
+            mwl_id: entry.id,
+            patient_id: entry.patientid,
+            accession_number: entry.accessionnumber,
+            modality: entry.modality,
+            target: `${targetConfig.manual_host}:${targetConfig.manual_port}`,
+          },
+        }).catch(() => {});
         return res.json({
           success: true,
           mode: "dimse_export",
@@ -890,6 +968,17 @@ router.post("/:id/send", async (req, res) => {
         "UPDATE mwl SET status = $1 WHERE id = $2",
         ["SYNCED", req.params.id]
       );
+      await logAction(req, {
+        event: "MWL_PUSH_SUCCESS",
+        details: {
+          mwl_id: entry.id,
+          patient_id: entry.patientid,
+          accession_number: entry.accessionnumber,
+          modality: entry.modality,
+          target: target || targetPacs.ae_title || targetPacs.pacs_name,
+          server: targetServer || `${targetPacs.ip_address}:${targetPacs.port}`,
+        },
+      }).catch(() => {});
       return res.json({
         success: true,
         sentTo: target || targetPacs.ae_title || targetPacs.pacs_name,
@@ -913,6 +1002,17 @@ router.post("/:id/send", async (req, res) => {
       (typeof upstream === "string" ? upstream : upstream?.Message || upstream?.OrthancError) ||
       err?.message ||
       "Failed to send MWL";
+    await logAction(req, {
+      event: "MWL_PUSH_FAILED",
+      details: {
+        mwl_id: req.params?.id || null,
+        error: publicMessage,
+        code: err?.code || null,
+        target: typeof target === "string" ? target : null,
+        server: targetServer || null,
+        manual: usingManualTarget || false,
+      },
+    }).catch(() => {});
     res.status(statusCode).json({
       error: publicMessage,
       details: upstream || err.message,

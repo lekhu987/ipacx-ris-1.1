@@ -131,9 +131,23 @@ router.post("/api/reports/upload", upload.array("images", 10), (req, res) => {
     const paths = req.files.map(
       f => `/uploads/report_images/${f.filename}`
     );
+    logAction(req, {
+      event: "REPORT_IMAGE_UPLOAD_SUCCESS",
+      details: {
+        study_uid: req.body?.studyUID || null,
+        count: paths.length,
+      },
+    }).catch(() => {});
     res.json({ success: true, paths });
   } catch (err) {
     console.error("Upload error:", err.message);
+    logAction(req, {
+      event: "REPORT_IMAGE_UPLOAD_FAILED",
+      details: {
+        study_uid: req.body?.studyUID || null,
+        error: err.message,
+      },
+    }).catch(() => {});
     res.status(500).json({ success: false });
   }
 });
@@ -585,6 +599,16 @@ router.post("/api/reports/save", async (req, res) => {
     res.json({ success: true, reportId });
   } catch (err) {
     console.error("Save report error:", err);
+    await logAction(req, {
+      event: "REPORT_SAVE_FAILED",
+      details: {
+        study_uid: req.body?.study_uid || null,
+        accession_number: req.body?.accession_number || null,
+        patient_id: req.body?.patient_id || null,
+        status: req.body?.status || null,
+        error: err.message,
+      },
+    }).catch(() => {});
     res.status(500).json({ error: "Failed to save report" });
   }
 });
@@ -771,11 +795,30 @@ router.get("/api/reports/:id/pdf", async (req, res) => {
       { printMode: false }
     );
 
+    await logAction(req, {
+      event: "REPORT_PDF_VIEWED",
+      details: {
+        report_id: reportId,
+        study_uid: report.study_uid || null,
+        accession_number: report.accession_number || null,
+        patient_id: report.patient_id || null,
+        modality: report.modality || null,
+      },
+    }).catch(() => {});
+
     res.contentType("application/pdf");
     res.sendFile(path.resolve(pdfPath));
 
   } catch (err) {
     console.error("PDF Route Error:", err);
+    await logAction(req, {
+      event: "REPORT_PDF_FAILED",
+      details: {
+        report_id: req.params?.id || null,
+        mode: "view",
+        error: err.message,
+      },
+    }).catch(() => {});
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
@@ -856,10 +899,29 @@ router.get("/api/reports/study/:studyUid/pdf", async (req, res) => {
   { printMode: false }   // explicitly VIEW MODE
 );
 
+    await logAction(req, {
+      event: "REPORT_PDF_VIEWED",
+      details: {
+        report_id: report.id,
+        study_uid: report.study_uid || studyUid,
+        accession_number: report.accession_number || null,
+        patient_id: report.patient_id || null,
+        modality: report.modality || null,
+      },
+    }).catch(() => {});
+
     res.contentType("application/pdf").sendFile(path.resolve(pdfPath));
 
   } catch (err) {
     console.error("Study PDF Route Error:", err);
+    await logAction(req, {
+      event: "REPORT_PDF_FAILED",
+      details: {
+        study_uid: req.params?.studyUid || null,
+        mode: "view",
+        error: err.message,
+      },
+    }).catch(() => {});
     res.status(500).send("Error generating PDF");
   }
 });
@@ -923,10 +985,29 @@ const reportRes = await pool.query(
       { printMode: true }
     );
 
+    await logAction(req, {
+      event: "REPORT_PDF_PRINTED",
+      details: {
+        report_id: reportId,
+        study_uid: reportRes.rows[0]?.study_uid || null,
+        accession_number: reportRes.rows[0]?.accession_number || null,
+        patient_id: reportRes.rows[0]?.patient_id || null,
+        modality: reportRes.rows[0]?.modality || null,
+      },
+    }).catch(() => {});
+
     res.contentType("application/pdf");
     res.sendFile(path.resolve(pdfPath));
   } catch (err) {
     console.error("Print PDF error:", err);
+    await logAction(req, {
+      event: "REPORT_PDF_FAILED",
+      details: {
+        report_id: req.params?.id || null,
+        mode: "print",
+        error: err.message,
+      },
+    }).catch(() => {});
     res.status(500).send("Error generating print PDF");
   }
 });

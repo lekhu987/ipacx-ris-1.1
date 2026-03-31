@@ -169,7 +169,7 @@ async function fetchLogs(query) {
   const total = Number(summaryRow.total || 0);
 
   let sql = `
-    SELECT id, session_id, username, role, event, page, details, ip_address, user_agent, created_at
+    SELECT id, session_id, username, role, event, page, details, ip_address, user_agent, prev_hash, hash, created_at
     FROM audit_logs
     ${whereSql}
     ORDER BY created_at DESC
@@ -306,7 +306,7 @@ async function downloadFilteredTxt(query) {
 
   const liveRes = await pool.query(
     `
-      SELECT id, session_id, username, role, event, page, details, ip_address, user_agent,
+      SELECT id, session_id, username, role, event, page, details, ip_address, user_agent, prev_hash, hash,
              (created_at AT TIME ZONE 'Asia/Kolkata')::date AS log_date, created_at
       FROM audit_logs
       ${liveWhere}

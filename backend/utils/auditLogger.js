@@ -23,12 +23,18 @@ function ensureAuditTable() {
       details JSONB,
       ip_address TEXT,
       user_agent TEXT,
+      prev_hash TEXT,
+      hash TEXT,
       log_date DATE DEFAULT (NOW() AT TIME ZONE 'Asia/Kolkata')::date,
       created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()
     );
     
     ALTER TABLE audit_logs
     ADD COLUMN IF NOT EXISTS log_date DATE DEFAULT (NOW() AT TIME ZONE 'Asia/Kolkata')::date;
+    ALTER TABLE audit_logs
+    ADD COLUMN IF NOT EXISTS prev_hash TEXT;
+    ALTER TABLE audit_logs
+    ADD COLUMN IF NOT EXISTS hash TEXT;
 
     UPDATE audit_logs
     SET log_date = (created_at AT TIME ZONE 'Asia/Kolkata')::date
@@ -38,6 +44,7 @@ function ensureAuditTable() {
     CREATE INDEX IF NOT EXISTS idx_audit_logs_log_date ON audit_logs(log_date DESC);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_username ON audit_logs(username);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_session_id ON audit_logs(session_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_hash ON audit_logs(hash);
 
     CREATE TABLE IF NOT EXISTS audit_log_archives (
       id BIGSERIAL PRIMARY KEY,
@@ -83,13 +90,32 @@ async function writeAuditLog({
 }) {
   if (!event) return;
   await ensureAuditTable();
+  const prevRes = await pool.query(
+    `SELECT hash FROM audit_logs ORDER BY id DESC LIMIT 1`
+  );
+  const prevHash = prevRes.rows?.[0]?.hash || "";
+  const payload = {
+    session_id,
+    username,
+    role,
+    event,
+    page,
+    details,
+    ip_address,
+    user_agent,
+    log_date: getISTDateString(),
+  };
+  const hash = crypto
+    .createHash("sha256")
+    .update(`${prevHash}|${JSON.stringify(payload)}`)
+    .digest("hex");
   await pool.query(
     `
       INSERT INTO audit_logs
-      (session_id, username, role, event, page, details, ip_address, user_agent, log_date)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,(NOW() AT TIME ZONE 'Asia/Kolkata')::date)
+      (session_id, username, role, event, page, details, ip_address, user_agent, prev_hash, hash, log_date)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,(NOW() AT TIME ZONE 'Asia/Kolkata')::date)
     `,
-    [session_id, username, role, event, page, details, ip_address, user_agent]
+    [session_id, username, role, event, page, details, ip_address, user_agent, prevHash, hash]
   );
 }
 
@@ -145,6 +171,8 @@ function toArchiveLine(row) {
     details: row.details,
     ip_address: row.ip_address,
     user_agent: row.user_agent,
+    prev_hash: row.prev_hash,
+    hash: row.hash,
     log_date: row.log_date,
     created_at: row.created_at,
   });
@@ -173,6 +201,7 @@ function toReadableArchiveLine(row) {
     row.ip_address || "-",
     row.session_id || "-",
     formatDetails(row.details),
+    row.hash || "-",
   ].join(" | ");
 }
 
@@ -184,6 +213,7 @@ async function archiveLogDate(logDate) {
     `
       SELECT
         id, session_id, username, role, event, page, details, ip_address, user_agent,
+        prev_hash, hash,
         (created_at AT TIME ZONE 'Asia/Kolkata')::date AS log_date,
         created_at
       FROM audit_logs
@@ -198,17 +228,21 @@ async function archiveLogDate(logDate) {
 
   ensureArchiveDir();
   const readableFileName = `audit-readable-${logDate}.txt`;
+  const rawFileName = `audit-raw-${logDate}.jsonl`;
   const readablePath = path.join(AUDIT_ARCHIVE_DIR, readableFileName);
+  const rawPath = path.join(AUDIT_ARCHIVE_DIR, rawFileName);
   const readableHeader = [
     "IPACX RIS - DAILY AUDIT LOG",
     `Date: ${logDate}`,
     `Total Rows: ${rows.length}`,
     "",
-    "TIME | USER | ROLE | EVENT | PAGE | IP | SESSION | DETAILS",
+    "TIME | USER | ROLE | EVENT | PAGE | IP | SESSION | DETAILS | HASH",
     "--------------------------------------------------------------------------------------------------------------------------------",
   ].join("\n");
   const readableBody = rows.map(toReadableArchiveLine).join("\n");
   fs.writeFileSync(readablePath, `${readableHeader}\n${readableBody}\n`, "utf8");
+  const rawBody = rows.map(toArchiveLine).join("\n");
+  fs.writeFileSync(rawPath, `${rawBody}\n`, "utf8");
 
   await pool.query(
     `
@@ -313,13 +347,23 @@ function getActorFromReq(req) {
 
 async function logAction(req, { event, page = null, details = null }) {
   const actor = getActorFromReq(req);
+  const baseDetails = {
+    request_id: req.request_id || null,
+    user_id: req.user?.id || null,
+  };
+  const mergedDetails =
+    details && typeof details === "object" && !Array.isArray(details)
+      ? { ...baseDetails, ...details }
+      : details !== null && details !== undefined
+      ? { ...baseDetails, value: details }
+      : baseDetails;
   await writeAuditLog({
     session_id: actor.session_id,
     username: actor.username,
     role: actor.role,
     event,
     page: page || req.originalUrl || null,
-    details,
+    details: mergedDetails,
     ip_address: getClientIp(req),
     user_agent: req.headers["user-agent"] || "",
   });

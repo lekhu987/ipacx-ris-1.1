@@ -218,7 +218,12 @@ async function me(req, res) {
     if (!user.is_active) {
       return res.status(403).json({ message: "Account disabled" });
     }
-    res.json({ user });
+    res.json({
+      user: {
+        ...user,
+        session_id: req.user.session_id || null,
+      },
+    });
   } catch (err) {
     console.error("Me error:", err.message);
     res.status(500).json({ message: "Failed to load user" });
